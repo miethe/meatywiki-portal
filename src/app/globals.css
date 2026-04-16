@@ -1,5 +1,39 @@
 @import "tailwindcss";
 
+/**
+ * Portal v1 design tokens — CSS variables
+ *
+ * Base: shadcn/ui slate palette (preserved for component compatibility).
+ * Extended with Portal-specific semantic tokens:
+ *   --portal-sidebar-width  — sidebar column width (Standard shell)
+ *   --portal-topbar-height  — top bar height
+ *   --portal-lens-*         — Lens Badge Set accent colours
+ *
+ * Design spec §3.1 (colour system), §3.2 (shell dimensions).
+ * Stitch reference: Unified Shell token layer.
+ */
+@layer base {
+  :root {
+    /* Portal layout dimensions */
+    --portal-sidebar-width: 15rem;       /* 240px — standard shell */
+    --portal-sidebar-width-compact: 12.5rem; /* 200px — compact shell */
+    --portal-topbar-height: 3.5rem;      /* 56px */
+
+    /* Lens Badge accent colours (light mode) */
+    --portal-lens-fidelity-high: 142 71% 45%;   /* emerald-600 equivalent */
+    --portal-lens-fidelity-medium: 37 91% 55%;  /* amber-500 */
+    --portal-lens-fidelity-low: 0 84% 60%;      /* red-500 */
+
+    --portal-lens-freshness-current: 199 89% 48%;  /* sky-500 */
+    --portal-lens-freshness-stale: 37 91% 55%;     /* amber-500 */
+    --portal-lens-freshness-outdated: 21 90% 55%;  /* orange-500 */
+
+    --portal-lens-verified: 142 71% 45%;    /* emerald-600 */
+    --portal-lens-disputed: 347 77% 50%;    /* rose-600 */
+    --portal-lens-unverified: 215 16% 47%;  /* slate-500 */
+  }
+}
+
 /* shadcn/ui CSS variable tokens — slate base */
 @layer base {
   :root {

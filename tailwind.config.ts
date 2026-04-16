@@ -49,6 +49,18 @@ const config: Config = {
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },
+      // Portal layout spacing tokens (design spec §3.2 shell dimensions)
+      width: {
+        sidebar: "var(--portal-sidebar-width)",
+        "sidebar-compact": "var(--portal-sidebar-width-compact)",
+      },
+      height: {
+        topbar: "var(--portal-topbar-height)",
+      },
+      // Breakpoints match design spec: 320 (mobile) / 768 (tablet) / 1024 (desktop)
+      screens: {
+        xs: "320px",
+      },
     },
   },
   plugins: [],
