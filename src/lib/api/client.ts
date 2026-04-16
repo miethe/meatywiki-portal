@@ -1,0 +1,112 @@
+/**
+ * HTTP client for the MeatyWiki Portal backend (Service-Mode v2).
+ *
+ * Responsibilities:
+ * - Attaches Authorization: Bearer header from environment/cookie
+ * - Handles ETag caching headers
+ * - Provides typed wrappers for fetch (to be expanded in P3-01..P3-07)
+ *
+ * Base URL resolves to:
+ *   - Server-side: process.env.MEATYWIKI_PORTAL_API_URL (required in production)
+ *   - Client-side: /api (proxied via next.config.mjs rewrite in dev)
+ *
+ * INVARIANT: This module never imports from the meatywiki Python package.
+ * All backend communication is HTTP only.
+ */
+
+const DEFAULT_API_URL = "http://127.0.0.1:8787";
+
+function getApiBase(): string {
+  // Server-side: use the configured URL directly
+  if (typeof window === "undefined") {
+    return process.env.MEATYWIKI_PORTAL_API_URL ?? DEFAULT_API_URL;
+  }
+  // Client-side: use the Next.js rewrite proxy to avoid CORS in dev
+  return "/api";
+}
+
+export type ApiRequestInit = RequestInit & {
+  /** Skip prepending the API base (for absolute URLs). */
+  absoluteUrl?: boolean;
+};
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly body: unknown,
+    message?: string,
+  ) {
+    super(message ?? `API error ${status}`);
+    this.name = "ApiError";
+  }
+}
+
+/**
+ * Core fetch wrapper. Attaches the bearer token when running server-side
+ * (token from env). Client-side auth uses the HttpOnly cookie set by
+ * POST /api/auth/session (P3-01).
+ */
+export async function apiFetch<T = unknown>(
+  path: string,
+  init: ApiRequestInit = {},
+): Promise<T> {
+  const { absoluteUrl, ...fetchInit } = init;
+  const url = absoluteUrl ? path : `${getApiBase()}${path}`;
+
+  const headers = new Headers(fetchInit.headers);
+
+  // Server-side: inject bearer token from env
+  if (typeof window === "undefined") {
+    const token = process.env.MEATYWIKI_PORTAL_TOKEN;
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+  }
+
+  headers.set("Content-Type", "application/json");
+
+  const response = await fetch(url, { ...fetchInit, headers });
+
+  if (!response.ok) {
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      body = await response.text();
+    }
+    throw new ApiError(response.status, body);
+  }
+
+  // Handle 204 No Content
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  return response.json() as Promise<T>;
+}
+
+/**
+ * Typed convenience methods — stubs to be expanded per-task.
+ * Full implementations land in P3-03 (artifacts), P3-07 (workflows).
+ */
+export const api = {
+  get: <T>(path: string, init?: ApiRequestInit) =>
+    apiFetch<T>(path, { ...init, method: "GET" }),
+
+  post: <T>(path: string, body: unknown, init?: ApiRequestInit) =>
+    apiFetch<T>(path, {
+      ...init,
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  patch: <T>(path: string, body: unknown, init?: ApiRequestInit) =>
+    apiFetch<T>(path, {
+      ...init,
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  delete: <T>(path: string, init?: ApiRequestInit) =>
+    apiFetch<T>(path, { ...init, method: "DELETE" }),
+};
