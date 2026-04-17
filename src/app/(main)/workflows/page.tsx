@@ -1,62 +1,87 @@
+"use client";
+
 /**
- * Workflow Status Surface — Stitch-informed scaffold.
+ * /workflows — Workflow Status Surface (P3-07).
  *
- * Renders the WorkflowStatusPanel (full variant) listing active + recent runs.
- * P3-07 wires:
- *   - GET /api/workflows (run list — SSE or polling)
- *   - SSE multiplexing per active run (P3-08)
- *   - WorkflowStatusBadge on produced-artifact chips
+ * Full-variant WorkflowStatusPanel showing:
+ *   - Active runs (pending | running) at top with SSE live updates
+ *   - Recent runs (last 24 h, any terminal status) below
+ *   - Collapsible sections, inline expand, loading/error/empty states
+ *
+ * The page owns useWorkflowRuns so it can also drive the WorkflowTopBarIndicator
+ * from the same data — no double fetch.
  *
  * Stitch reference: "Workflows Dashboard" (ID: 4f203d7cc78b4229b71c017c15c055cb)
- * Shell: Standard Archival or Compact (per audit §3.2 row 10)
+ * Shell: Standard Archival (per audit §3.2 row 10)
  */
 
+import { useWorkflowRuns } from "@/hooks/useWorkflowRuns";
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel";
-import type { WorkflowRun } from "@/types/artifact";
+import { cn } from "@/lib/utils";
 
-// Placeholder runs — replaced by API call in P3-07
-const PLACEHOLDER_RUNS: WorkflowRun[] = [
-  {
-    id: "wf-ingest-20260416-001",
-    template_id: "source_ingest_v1",
-    workspace: "inbox",
-    status: "running",
-    current_stage: 1,
-    started_at: new Date(Date.now() - 45_000).toISOString(),
-    initiator: "portal",
-  },
-  {
-    id: "wf-compile-20260416-001",
-    template_id: "compile_v1",
-    workspace: "library",
-    status: "complete",
-    current_stage: 3,
-    started_at: new Date(Date.now() - 5 * 60_000).toISOString(),
-    completed_at: new Date(Date.now() - 2 * 60_000).toISOString(),
-    initiator: "cli",
-  },
-  {
-    id: "wf-lint-20260415-003",
-    template_id: "lint_scope_v1",
-    workspace: "library",
-    status: "failed",
-    current_stage: 1,
-    started_at: new Date(Date.now() - 30 * 60_000).toISOString(),
-    initiator: "portal",
-  },
-];
+function RefreshIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-3.5"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"
+      />
+    </svg>
+  );
+}
 
 export default function WorkflowsPage() {
+  const workflowHook = useWorkflowRuns();
+  const { activeCount, isLoading, refetch } = workflowHook;
+
   return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Workflows</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Active and recent workflow runs
-        </p>
+    <div className="flex flex-col gap-6">
+      {/* Page header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Workflows</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {isLoading
+              ? "Loading workflow runs…"
+              : activeCount > 0
+              ? `${activeCount} active run${activeCount === 1 ? "" : "s"} in progress`
+              : "No active runs — showing last 24 h history"}
+          </p>
+        </div>
+
+        {/* Manual refresh */}
+        <button
+          type="button"
+          onClick={() => void refetch()}
+          disabled={isLoading}
+          aria-label="Refresh workflow list"
+          className={cn(
+            "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium",
+            "border border-input bg-background text-foreground",
+            "transition-colors hover:bg-accent hover:text-accent-foreground",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            "disabled:pointer-events-none disabled:opacity-50",
+            isLoading && "animate-pulse",
+          )}
+        >
+          <RefreshIcon />
+          <span className="hidden sm:inline">Refresh</span>
+        </button>
       </div>
 
-      <WorkflowStatusPanel runs={PLACEHOLDER_RUNS} variant="full" />
+      {/* Main panel */}
+      <WorkflowStatusPanel
+        variant="full"
+        controlled={workflowHook}
+      />
     </div>
   );
 }

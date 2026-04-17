@@ -3,6 +3,9 @@
 /**
  * ShellHeader — top bar for the authenticated shell.
  *
+ * Updated in P3-07: WorkflowTopBarIndicator slot is now wired with the real
+ * component — shows animated badge with active-run count, navigates to /workflows.
+ *
  * Updated in P3-02: Stitch-informed Standard Archival shell top bar.
  * Stitch reference: "Unified Shell — Standard Archival" top bar.
  *
@@ -10,17 +13,16 @@
  * - Skip-to-main-content link (WCAG 2.1 AA)
  * - Mobile menu toggle with hamburger icon
  * - Page title slot (provided via context in P3-03+)
+ * - WorkflowTopBarIndicator (P3-07) — active run count badge → /workflows
  * - Quick Add button (triggers QuickAddModal — P3-04 wires the actual submit)
  * - Logout button
- *
- * The Workflow status indicator (audit §2.1, §3.2 row 2) is a slot here;
- * P3-07 mounts the real WorkflowStatusBadge once SSE subscription is wired.
  */
 
 import { useState, useTransition } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
+import { WorkflowTopBarIndicator } from "@/components/workflow/workflow-top-bar-indicator";
 
 function PlusIcon() {
   return (
@@ -99,10 +101,10 @@ export function ShellHeader() {
           <span className="hidden text-sm font-semibold sm:block">{pageTitle}</span>
         </div>
 
-        {/* Right: workflow indicator slot + Quick Add + sign out */}
+        {/* Right: workflow indicator + Quick Add + sign out */}
         <div className="ml-auto flex items-center gap-2">
-          {/* Workflow status indicator slot — P3-07 mounts real indicator here */}
-          {/* <WorkflowTopBarIndicator /> */}
+          {/* Workflow status indicator — self-contained, polls every 30 s */}
+          <WorkflowTopBarIndicator />
 
           {/* Quick Add */}
           <button
