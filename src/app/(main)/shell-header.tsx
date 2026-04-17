@@ -3,6 +3,11 @@
 /**
  * ShellHeader — top bar for the authenticated shell.
  *
+ * Updated in P3-10:
+ *   - Wired hamburger button to MobileNavContext toggle (was a no-op).
+ *   - Bumped touch targets to ≥44×44px on mobile (min-h-[44px] on small screens).
+ *   - Quick Add and Sign out buttons meet 44px tap target at xs/sm.
+ *
  * Updated in P3-07: WorkflowTopBarIndicator slot is now wired with the real
  * component — shows animated badge with active-run count, navigates to /workflows.
  *
@@ -11,7 +16,7 @@
  *
  * Contains:
  * - Skip-to-main-content link (WCAG 2.1 AA)
- * - Mobile menu toggle with hamburger icon
+ * - Mobile menu toggle with hamburger icon (wired to MobileNavContext in P3-10)
  * - Page title slot (provided via context in P3-03+)
  * - WorkflowTopBarIndicator (P3-07) — active run count badge → /workflows
  * - Quick Add button (triggers QuickAddModal — P3-04 wires the actual submit)
@@ -23,6 +28,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
 import { WorkflowTopBarIndicator } from "@/components/workflow/workflow-top-bar-indicator";
+import { useMobileNav } from "./shell-client";
 
 function PlusIcon() {
   return (
@@ -52,6 +58,7 @@ export function ShellHeader() {
   const pathname = usePathname();
   const [isPending, startTransition] = useTransition();
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const { toggle: toggleMobileNav } = useMobileNav();
 
   const pageTitle = pageTitleFromPathname(pathname);
 
@@ -84,13 +91,18 @@ export function ShellHeader() {
       >
         {/* Left: mobile menu toggle + page title */}
         <div className="flex items-center gap-3">
-          {/* Mobile toggle — visible below md breakpoint */}
+          {/*
+           * Mobile toggle — visible below md breakpoint.
+           * P3-10: wired to MobileNavContext.toggle (was no-op).
+           * Touch target: size-11 on xs (44px), size-8 on md+ (visual only).
+           */}
           <button
             type="button"
             aria-label="Toggle navigation menu"
+            onClick={toggleMobileNav}
             className={cn(
-              "inline-flex size-8 items-center justify-center rounded-md md:hidden",
-              "text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+              "inline-flex items-center justify-center rounded-md md:hidden",
+              "size-11 text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
             )}
           >
@@ -106,13 +118,16 @@ export function ShellHeader() {
           {/* Workflow status indicator — self-contained, polls every 30 s */}
           <WorkflowTopBarIndicator />
 
-          {/* Quick Add */}
+          {/*
+           * Quick Add — touch target: min-h-[44px] on mobile for ≥44px tap area.
+           * P3-10: Added min-h-[44px] xs variant.
+           */}
           <button
             type="button"
             onClick={() => setQuickAddOpen(true)}
             aria-label="Quick Add artifact"
             className={cn(
-              "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium",
+              "inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-xs font-medium sm:h-8 sm:min-h-0",
               "bg-primary text-primary-foreground",
               "transition-colors hover:bg-primary/90",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
@@ -122,14 +137,17 @@ export function ShellHeader() {
             <span className="hidden sm:inline">Add</span>
           </button>
 
-          {/* Sign out */}
+          {/*
+           * Sign out — touch target: min-h-[44px] on mobile.
+           * P3-10: Added min-h-[44px] xs variant.
+           */}
           <button
             type="button"
             onClick={handleLogout}
             disabled={isPending}
             aria-label="Sign out"
             className={cn(
-              "inline-flex h-8 items-center rounded-md px-3 text-xs font-medium",
+              "inline-flex min-h-[44px] items-center rounded-md px-3 text-xs font-medium sm:h-8 sm:min-h-0",
               "border border-input bg-background text-foreground",
               "transition-colors hover:bg-accent hover:text-accent-foreground",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",

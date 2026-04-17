@@ -3,6 +3,9 @@
 /**
  * ShellNav — sidebar navigation for the authenticated shell.
  *
+ * Updated in P3-10: accepts optional onNavClick callback so mobile drawer
+ * can close when a nav link is activated.
+ *
  * Updated in P3-02: full Stitch-informed nav hierarchy.
  * Stitch reference: "Unified Shell — Standard Archival" sidebar.
  *
@@ -12,7 +15,9 @@
  *   - Admin (Settings)
  *
  * Responsive: hidden on mobile (< 768px), shown md+.
- * Mobile menu managed via MobileNav in ShellHeader.
+ * Mobile menu managed via MobileNavContext → ShellClient drawer.
+ *
+ * Touch targets: nav links use min-h-[44px] on xs for compliant touch target.
  */
 
 import Link from "next/link";
@@ -98,16 +103,23 @@ const NAV_SECTIONS: NavSection[] = [
 
 interface NavLinkProps extends NavItem {
   isActive: boolean;
+  onClick?: () => void;
 }
 
-function NavLink({ label, href, ariaLabel, icon, isActive }: NavLinkProps) {
+/**
+ * NavLink — touch target meets ≥44px via min-h-[44px] on xs, reduced to h-8
+ * on md+ where pointer device is assumed.
+ */
+function NavLink({ label, href, ariaLabel, icon, isActive, onClick }: NavLinkProps) {
   return (
     <Link
       href={href}
       aria-label={ariaLabel ?? label}
       aria-current={isActive ? "page" : undefined}
+      onClick={onClick}
       className={cn(
-        "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors",
+        "flex min-h-[44px] items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors",
+        "md:h-8 md:min-h-0",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         isActive
           ? "bg-accent text-accent-foreground"
@@ -120,7 +132,12 @@ function NavLink({ label, href, ariaLabel, icon, isActive }: NavLinkProps) {
   );
 }
 
-export function ShellNav() {
+interface ShellNavProps {
+  /** Called when a nav link is clicked — used by mobile drawer to close itself. */
+  onNavClick?: () => void;
+}
+
+export function ShellNav({ onNavClick }: ShellNavProps = {}) {
   const pathname = usePathname();
 
   return (
@@ -128,8 +145,8 @@ export function ShellNav() {
       className="flex flex-col gap-1 p-3"
       aria-label="Primary navigation"
     >
-      {/* Brand */}
-      <div className="mb-3 flex items-center gap-2 px-2 py-1">
+      {/* Brand — only shown inside mobile drawer (desktop sidebar has its own header) */}
+      <div className="mb-3 hidden items-center gap-2 px-2 py-1 md:flex">
         <span className="text-base font-semibold tracking-tight">
           MeatyWiki
         </span>
@@ -149,7 +166,12 @@ export function ShellNav() {
                   ? pathname === "/"
                   : pathname.startsWith(item.href);
               return (
-                <NavLink key={item.href} {...item} isActive={isActive} />
+                <NavLink
+                  key={item.href}
+                  {...item}
+                  isActive={isActive}
+                  onClick={onNavClick}
+                />
               );
             })}
           </div>

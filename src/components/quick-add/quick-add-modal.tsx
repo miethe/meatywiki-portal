@@ -123,7 +123,7 @@ function AbandonConfirmDialog({ onConfirm, onCancel }: AbandonConfirmProps) {
       aria-labelledby="abandon-title"
       aria-describedby="abandon-desc"
       className={cn(
-        "fixed left-1/2 top-1/2 z-[60] w-full max-w-sm -translate-x-1/2 -translate-y-1/2",
+        "fixed left-1/2 top-1/2 z-[60] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2",
         "rounded-xl border bg-card shadow-2xl p-6",
       )}
     >
@@ -140,7 +140,7 @@ function AbandonConfirmDialog({ onConfirm, onCancel }: AbandonConfirmProps) {
           onClick={onCancel}
           autoFocus
           className={cn(
-            "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium",
+            "inline-flex min-h-[44px] items-center rounded-md px-3 text-sm font-medium sm:h-8 sm:min-h-0",
             "border border-input bg-background text-foreground",
             "transition-colors hover:bg-accent hover:text-accent-foreground",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -152,7 +152,7 @@ function AbandonConfirmDialog({ onConfirm, onCancel }: AbandonConfirmProps) {
           type="button"
           onClick={onConfirm}
           className={cn(
-            "inline-flex h-8 items-center rounded-md px-4 text-sm font-medium",
+            "inline-flex min-h-[44px] items-center rounded-md px-4 text-sm font-medium sm:h-8 sm:min-h-0",
             "bg-destructive text-destructive-foreground",
             "transition-colors hover:bg-destructive/90",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -402,7 +402,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
         aria-modal="true"
         aria-labelledby="quick-add-title"
         className={cn(
-          "fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2",
+          "fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2",
           "rounded-xl border bg-card shadow-xl",
           "focus:outline-none",
         )}
@@ -612,7 +612,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                   type="button"
                   onClick={handleCloseAttempt}
                   className={cn(
-                    "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium",
+                    "inline-flex min-h-[44px] items-center rounded-md px-3 text-sm font-medium sm:h-8 sm:min-h-0",
                     "border border-input bg-background text-foreground",
                     "transition-colors hover:bg-accent hover:text-accent-foreground",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -625,7 +625,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                   disabled={isSubmitDisabled()}
                   aria-disabled={isSubmitDisabled()}
                   className={cn(
-                    "inline-flex h-8 items-center rounded-md px-4 text-sm font-medium",
+                    "inline-flex min-h-[44px] items-center rounded-md px-4 text-sm font-medium sm:h-8 sm:min-h-0",
                     "bg-primary text-primary-foreground",
                     "transition-colors hover:bg-primary/90",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -794,7 +794,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                 type="button"
                 onClick={handleCloseAttempt}
                 className={cn(
-                  "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium",
+                  "inline-flex min-h-[44px] items-center rounded-md px-3 text-sm font-medium sm:h-8 sm:min-h-0",
                   "border border-input bg-background text-foreground",
                   "transition-colors hover:bg-accent hover:text-accent-foreground",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -806,7 +806,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                 type="button"
                 onClick={resetAll}
                 className={cn(
-                  "inline-flex h-8 items-center rounded-md px-4 text-sm font-medium",
+                  "inline-flex min-h-[44px] items-center rounded-md px-4 text-sm font-medium sm:h-8 sm:min-h-0",
                   "bg-primary text-primary-foreground",
                   "transition-colors hover:bg-primary/90",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",

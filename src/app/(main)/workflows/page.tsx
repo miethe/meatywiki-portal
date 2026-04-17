@@ -45,7 +45,7 @@ export default function WorkflowsPage() {
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Workflows</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
@@ -64,7 +64,7 @@ export default function WorkflowsPage() {
           disabled={isLoading}
           aria-label="Refresh workflow list"
           className={cn(
-            "inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium",
+            "inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-xs font-medium sm:h-8 sm:min-h-0",
             "border border-input bg-background text-foreground",
             "transition-colors hover:bg-accent hover:text-accent-foreground",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",

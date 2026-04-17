@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom";
+import { toHaveNoViolations } from "jest-axe";
+
+// Register jest-axe matchers once, globally, so no individual test file
+// needs to call expect.extend(toHaveNoViolations).
+expect.extend(toHaveNoViolations);
 
 /**
  * Global test setup for Jest + React Testing Library.

@@ -115,9 +115,9 @@ export function ArtifactCard({
             verification_state={metadata?.verification_state}
             variant="compact"
           />
-          {relativeTime && (
+          {relativeTime && updated && (
             <time
-              dateTime={updated ?? undefined}
+              dateTime={updated}
               className="shrink-0 text-[11px] text-muted-foreground"
             >
               {relativeTime}

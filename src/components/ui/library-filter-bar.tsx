@@ -96,7 +96,7 @@ function MultiSelectChips({
             aria-label={`Filter by ${label}: ${optLabel}`}
             onClick={() => toggle(value)}
             className={cn(
-              "inline-flex h-6 items-center rounded-sm px-2 text-[11px] font-medium transition-colors",
+              "inline-flex h-6 min-h-[44px] items-center rounded-sm px-2 text-[11px] font-medium transition-colors sm:min-h-0",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               isActive
                 ? "bg-primary text-primary-foreground"
@@ -112,7 +112,7 @@ function MultiSelectChips({
           type="button"
           aria-label={`Clear ${label} filter`}
           onClick={() => onChange([])}
-          className="ml-0.5 inline-flex h-5 w-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="ml-0.5 inline-flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-5"
         >
           <svg aria-hidden="true" className="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18 18 6M6 6l12 12" />
@@ -159,7 +159,7 @@ function SortSelect({ sort, order, onChange }: SortSelectProps) {
         onChange={handleChange}
         aria-label="Sort artifacts"
         className={cn(
-          "h-6 rounded-sm border border-input bg-background px-2 text-[11px] text-foreground",
+          "min-h-[44px] rounded-sm border border-input bg-background px-2 text-[11px] text-foreground sm:h-6 sm:min-h-0",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           "cursor-pointer",
         )}

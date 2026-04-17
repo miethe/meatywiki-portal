@@ -76,7 +76,7 @@ function ViewToggle({ view, onChange }: ViewToggleProps) {
         aria-pressed={view === "list"}
         onClick={() => onChange("list")}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-l-md border-r px-3 text-xs font-medium transition-colors",
+          "inline-flex min-h-[44px] items-center gap-1.5 rounded-l-md border-r px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           view === "list"
             ? "bg-accent text-accent-foreground"
@@ -92,7 +92,7 @@ function ViewToggle({ view, onChange }: ViewToggleProps) {
         aria-pressed={view === "grid"}
         onClick={() => onChange("grid")}
         className={cn(
-          "inline-flex h-8 items-center gap-1.5 rounded-r-md px-3 text-xs font-medium transition-colors",
+          "inline-flex min-h-[44px] items-center gap-1.5 rounded-r-md px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           view === "grid"
             ? "bg-accent text-accent-foreground"
@@ -229,7 +229,7 @@ export default function LibraryPage() {
   return (
     <div className="flex flex-col gap-4">
       {/* Page header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">

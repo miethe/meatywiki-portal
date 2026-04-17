@@ -14,6 +14,10 @@
  * monospaced accents for timestamps, generous whitespace. Matches the
  * "Standard Archival" shell identified in the Stitch audit §2.1.
  *
+ * P3-10: Page header flex changed to flex-wrap + gap so title + button
+ *        stack cleanly at 320px. Quick Add button touch target bumped to
+ *        min-h-[44px] on xs.
+ *
  * Stitch reference: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
  * WCAG 2.1 AA: preserved from scaffold; focusable interactive elements have
  * visible focus rings.
@@ -144,7 +148,11 @@ export function InboxClient({ initialData }: InboxClientProps) {
       {/* ------------------------------------------------------------------ */}
       {/* Page header                                                         */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex items-center justify-between">
+      {/*
+       * P3-10: flex-wrap + gap-y-3 so title and button stack at 320px.
+       * At sm+ they remain on one line (justify-between).
+       */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Inbox</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
@@ -152,14 +160,15 @@ export function InboxClient({ initialData }: InboxClientProps) {
           </p>
         </div>
 
-        {/* Quick Add trigger */}
+        {/* Quick Add trigger — min-h-[44px] for mobile touch target */}
         <button
           type="button"
           aria-label="Quick Add artifact"
           onClick={() => setQuickAddOpen(true)}
           className={cn(
-            "inline-flex h-9 items-center gap-2 rounded-md bg-primary px-4",
+            "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-4",
             "text-sm font-medium text-primary-foreground",
+            "sm:h-9 sm:min-h-0",
             "transition-colors hover:bg-primary/90",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           )}
@@ -187,10 +196,12 @@ export function InboxClient({ initialData }: InboxClientProps) {
       {/* Artifact list                                                       */}
       {/* ------------------------------------------------------------------ */}
       <section aria-label="Inbox artifacts" className="mt-4">
+        {/* sr-only h2 bridges h1 → h3 heading order (WCAG 1.3.1 heading-order) */}
+        <h2 className="sr-only">Artifact list</h2>
         {artifacts.length === 0 && !isLoading ? (
           <InboxEmpty />
         ) : (
-          <ul role="list" className="flex flex-col gap-2">
+          <ul role="list" aria-label="Inbox artifacts" className="flex flex-col gap-2">
             {artifacts.map((artifact) => (
               <li key={artifact.id}>
                 <ArtifactCard artifact={artifact} variant="list" />
