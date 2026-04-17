@@ -1,24 +1,38 @@
 "use client";
 
 /**
- * WorkflowStatusPanel — sidebar/panel showing active and recent workflow runs.
+ * WorkflowStatusPanel — Active Workflows panel showing running and recent jobs.
  *
- * P3-07: Fully wired with:
- *   - Live data via useWorkflowRuns (GET /api/workflows/runs, last 24 h)
- *   - SSE subscription per active run via RunSSEBridge
- *   - Collapsible Active / Recent sections
- *   - Inline expand → full StageTracker on row click
- *   - Loading skeleton, error state, empty state
+ * P3-07: Initial implementation — Active / Recent sections, SSE via RunSSEBridge,
+ *   collapsible sections, inline StageTracker expand, loading/error/empty states.
+ *
+ * P4-08: Enhanced Active Workflows Panel:
+ *   - Prominent "Active: N" count badge in header
+ *   - Recent window extended to 7 days (see useWorkflowRuns RECENT_HOURS)
+ *   - run_id short prefix displayed on each row
+ *   - Click-through navigation to /workflows/:runId run detail page
+ *   - Responsive two-column grid on >=md for the full variant
+ *   - Stage Tracker compact embedded in each row header
+ *
+ * Stage Tracker compact:
+ *   The existing StageTracker already accepts variant="compact" (P3-07 progress
+ *   bar style). P4-07 (parallel task) is delivering a timeline dot-style compact
+ *   variant. Once P4-07 lands, the compact display here will automatically upgrade
+ *   if P4-07 changes the "compact" variant output. If P4-07 instead introduces a
+ *   new variant value (e.g. "timeline"), swap the variant prop below.
+ *   TODO(P4-07): If stage-tracker.tsx introduces variant="timeline", update
+ *   WorkflowRunRow to use variant="timeline" instead of variant="compact".
  *
  * Variants:
- *   "full"    — /workflows page full panel with both sections
- *   "compact" — sidebar widget (active only, max 3 rows)
+ *   "full"    — /workflows page full panel with both sections + two-column grid
+ *   "compact" — sidebar widget (active only, max 3 rows, single column)
  *
  * Stitch reference: "Workflows Dashboard" (ID: 4f203d7cc78b4229b71c017c15c055cb).
  * Design spec §7 (workflow status surface), §3.2 (per-screen: row 10).
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { WorkflowRun } from "@/types/artifact";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
@@ -42,7 +56,7 @@ function templateLabel(templateId: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers: relative time
+// Helpers: relative time + short run ID
 // ---------------------------------------------------------------------------
 
 function relativeTime(iso: string): string {
@@ -52,7 +66,25 @@ function relativeTime(iso: string): string {
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m ago`;
   const h = Math.floor(m / 60);
-  return `${h}h ago`;
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  return `${d}d ago`;
+}
+
+/**
+ * Returns a short display prefix for a run ID.
+ * e.g. "wf-source-ingest-20260417-003" → "…003"
+ * Falls back to the last 6 chars for any format.
+ */
+function shortRunId(runId: string): string {
+  // Attempt to extract the trailing sequence segment
+  const parts = runId.split("-");
+  if (parts.length >= 2) {
+    const tail = parts[parts.length - 1];
+    // Show up to 6 chars from the tail
+    return `…${tail.slice(-6)}`;
+  }
+  return runId.slice(-6);
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +136,30 @@ function ChevronIcon({ open }: { open: boolean }) {
 }
 
 // ---------------------------------------------------------------------------
-// Single run row (with inline expand)
+// External link icon (for click-through to run detail)
+// ---------------------------------------------------------------------------
+
+function ArrowRightIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="size-3 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-muted-foreground"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M9 5l7 7-7 7"
+      />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Single run row (with inline expand + click-through to detail)
 // ---------------------------------------------------------------------------
 
 interface WorkflowRunRowProps {
@@ -118,7 +173,8 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
 
   const isActive = run.status === "pending" || run.status === "running";
   const label = templateLabel(run.template_id);
-  const startedAt = run.started_at ? relativeTime(run.started_at) : null;
+  // Prefer started_at; fall back to nothing
+  const timeRef = run.started_at ?? null;
 
   return (
     <div
@@ -129,15 +185,18 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
           : "border-border",
         className,
       )}
+      data-testid="workflow-run-row"
+      data-run-id={run.id}
+      data-status={run.status}
     >
-      {/* Row header — click to expand/collapse */}
+      {/* Row header — click to expand/collapse detail */}
       <button
         type="button"
         aria-expanded={expanded}
         aria-label={`${label} — ${run.status}. ${expanded ? "Collapse" : "Expand"} details.`}
         onClick={() => setExpanded((v) => !v)}
         className={cn(
-          "flex w-full items-center justify-between gap-2 p-3 text-left",
+          "flex w-full items-start gap-2 p-3 text-left",
           "bg-card transition-colors",
           isActive
             ? "hover:bg-blue-50/50 dark:hover:bg-blue-950/20"
@@ -145,30 +204,52 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         )}
       >
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        {/* Left column: label + metadata */}
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {/* Title row */}
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium truncate">{label}</span>
             <WorkflowStatusBadge status={run.status} />
           </div>
+
+          {/* Metadata row: run ID + time */}
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>By {run.initiator}</span>
-            {startedAt && <span>{startedAt}</span>}
+            <code
+              className="font-mono rounded bg-muted/60 px-1 py-px"
+              title={run.id}
+            >
+              {shortRunId(run.id)}
+            </code>
+            {timeRef && <span>{relativeTime(timeRef)}</span>}
+            <span>by {run.initiator}</span>
+          </div>
+
+          {/* Stage Tracker compact — always visible in row header */}
+          {/*
+           * TODO(P4-07): When stage-tracker.tsx ships the timeline dot variant,
+           * swap variant="compact" for variant="timeline" (or whichever value
+           * P4-07 defines) to get the filled/unfilled circle timeline display.
+           * The current "compact" renders a progress bar (P3-07 style).
+           */}
+          <div
+            className="mt-1 w-full"
+            data-testid="stage-tracker-slot"
+          >
+            <StageTracker
+              runId={run.id}
+              templateId={run.template_id}
+              status={run.status}
+              currentStage={run.current_stage}
+              variant="compact"
+              mode={isActive ? "sse" : "static"}
+            />
           </div>
         </div>
 
-        {/* Compact stage bar (always visible) */}
-        <div className="w-20 shrink-0">
-          <StageTracker
-            runId={run.id}
-            templateId={run.template_id}
-            status={run.status}
-            currentStage={run.current_stage}
-            variant="compact"
-            mode={isActive ? "sse" : "static"}
-          />
+        {/* Right column: expand chevron */}
+        <div className="flex shrink-0 flex-col items-center gap-1 pt-0.5">
+          <ChevronIcon open={expanded} />
         </div>
-
-        <ChevronIcon open={expanded} />
       </button>
 
       {/* Expandable detail area */}
@@ -189,17 +270,36 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
             variant="full"
             mode={isActive ? "sse" : "static"}
           />
-          <div className="mt-2.5 flex flex-col gap-0.5 text-[11px] text-muted-foreground">
-            <span>
-              <span className="font-medium text-foreground/70">Run ID:</span>{" "}
-              <code className="font-mono">{run.id}</code>
-            </span>
-            {run.completed_at && (
+
+          {/* Run metadata + click-through link */}
+          <div className="mt-2.5 flex items-end justify-between gap-2">
+            <div className="flex flex-col gap-0.5 text-[11px] text-muted-foreground">
               <span>
-                <span className="font-medium text-foreground/70">Completed:</span>{" "}
-                {relativeTime(run.completed_at)}
+                <span className="font-medium text-foreground/70">Run ID:</span>{" "}
+                <code className="font-mono">{run.id}</code>
               </span>
-            )}
+              {run.completed_at && (
+                <span>
+                  <span className="font-medium text-foreground/70">Completed:</span>{" "}
+                  {relativeTime(run.completed_at)}
+                </span>
+              )}
+            </div>
+
+            {/* Click-through to SSE stream / run detail */}
+            <Link
+              href={`/workflows/${encodeURIComponent(run.id)}`}
+              aria-label={`View full details for run ${run.id}`}
+              className={cn(
+                "group inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium",
+                "text-muted-foreground transition-colors",
+                "hover:bg-muted hover:text-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              View run
+              <ArrowRightIcon />
+            </Link>
           </div>
         </div>
       )}
@@ -216,9 +316,11 @@ interface SectionHeaderProps {
   count: number;
   open: boolean;
   onToggle: () => void;
+  /** When true, renders the count as a highlighted badge (used for active section). */
+  highlight?: boolean;
 }
 
-function SectionHeader({ title, count, open, onToggle }: SectionHeaderProps) {
+function SectionHeader({ title, count, open, onToggle, highlight = false }: SectionHeaderProps) {
   return (
     <button
       type="button"
@@ -232,8 +334,21 @@ function SectionHeader({ title, count, open, onToggle }: SectionHeaderProps) {
       )}
     >
       <span>{title}</span>
-      <div className="flex items-center gap-1">
-        <span className="tabular-nums">{count}</span>
+      <div className="flex items-center gap-1.5">
+        {highlight && count > 0 ? (
+          <span
+            className={cn(
+              "inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1",
+              "text-[10px] font-semibold tabular-nums",
+              "bg-blue-600 text-white dark:bg-blue-500",
+            )}
+            data-testid="active-count-badge"
+          >
+            {count > 99 ? "99+" : count}
+          </span>
+        ) : (
+          <span className="tabular-nums">{count}</span>
+        )}
         <ChevronIcon open={open} />
       </div>
     </button>
@@ -241,7 +356,31 @@ function SectionHeader({ title, count, open, onToggle }: SectionHeaderProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Panel variants
+// Active count badge — shown in the panel header (full variant)
+// ---------------------------------------------------------------------------
+
+function ActiveCountBadge({ count }: { count: number }) {
+  if (count === 0) return null;
+
+  return (
+    <span
+      aria-label={`${count} active workflow${count === 1 ? "" : "s"}`}
+      className={cn(
+        "inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5",
+        "text-[11px] font-semibold tabular-nums leading-none",
+        "bg-blue-600 text-white dark:bg-blue-500",
+        // Pulsing outline to indicate live activity
+        "ring-2 ring-blue-300/50 dark:ring-blue-700/60",
+      )}
+      data-testid="panel-active-count-badge"
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Panel variants — the inner controlled rendering
 // ---------------------------------------------------------------------------
 
 interface ControlledPanelProps {
@@ -272,20 +411,27 @@ function ControlledPanel({
 
   const displayedActiveRuns = variant === "compact" ? activeRuns.slice(0, 3) : activeRuns;
   const totalRuns = activeRuns.length + recentRuns.length;
+  const activeCount = activeRuns.length;
 
   return (
     <section
-      aria-label="Workflow status"
+      aria-label="Active workflows"
       className={cn("flex flex-col gap-3", className)}
     >
-      {/* Section title */}
-      <div className="flex items-center justify-between">
-        <h2 className={cn("font-semibold", variant === "full" ? "text-base" : "text-sm")}>
-          Workflows
-        </h2>
-        {!isLoading && totalRuns > 0 && (
+      {/* Panel header */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h2 className={cn("font-semibold", variant === "full" ? "text-base" : "text-sm")}>
+            {variant === "full" ? "Workflows" : "Active Workflows"}
+          </h2>
+          {/* Prominent active count badge — visible in both variants when active */}
+          <ActiveCountBadge count={activeCount} />
+        </div>
+
+        {/* Subtitle — only in full variant, only when not loading */}
+        {variant === "full" && !isLoading && totalRuns > 0 && (
           <span className="text-xs text-muted-foreground">
-            {activeRuns.length} active · {recentRuns.length} recent
+            {recentRuns.length > 0 && `${recentRuns.length} recent`}
           </span>
         )}
       </div>
@@ -300,7 +446,7 @@ function ControlledPanel({
         />
       ))}
 
-      {/* Loading state */}
+      {/* Loading state — only show skeleton before first data load */}
       {isLoading && totalRuns === 0 && <LoadingSkeleton />}
 
       {/* Error state */}
@@ -320,9 +466,14 @@ function ControlledPanel({
         </div>
       )}
 
-      {/* Empty state */}
-      {!isLoading && !error && totalRuns === 0 && (
-        <p className="text-sm text-muted-foreground">No active workflows.</p>
+      {/* Empty state: no active runs */}
+      {!isLoading && !error && activeRuns.length === 0 && (
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="empty-active"
+        >
+          No active workflows.
+        </p>
       )}
 
       {/* Active runs section */}
@@ -335,39 +486,80 @@ function ControlledPanel({
                 count={activeRuns.length}
                 open={activeOpen}
                 onToggle={() => setActiveOpen((v) => !v)}
+                highlight
               />
-              {activeOpen &&
-                displayedActiveRuns.map((run) => (
-                  <WorkflowRunRow key={run.id} run={run} defaultExpanded={false} />
-                ))}
+              {activeOpen && (
+                /*
+                 * Responsive grid: single column on mobile, two columns on >=md.
+                 * Two columns only makes sense when there are enough runs to fill
+                 * both columns; one-column on <=sm for readability.
+                 */
+                <div
+                  className={cn(
+                    "grid gap-2",
+                    "grid-cols-1 md:grid-cols-2",
+                  )}
+                  data-testid="active-runs-grid"
+                >
+                  {displayedActiveRuns.map((run) => (
+                    <WorkflowRunRow key={run.id} run={run} defaultExpanded={false} />
+                  ))}
+                </div>
+              )}
             </>
           ) : (
-            displayedActiveRuns.map((run) => (
-              <WorkflowRunRow key={run.id} run={run} />
-            ))
-          )}
-          {variant === "compact" && activeRuns.length > 3 && (
-            <p className="text-xs text-muted-foreground">
-              +{activeRuns.length - 3} more active
-            </p>
+            /* Compact variant — single column, max 3 */
+            <>
+              {displayedActiveRuns.map((run) => (
+                <WorkflowRunRow key={run.id} run={run} />
+              ))}
+              {activeRuns.length > 3 && (
+                <p className="text-xs text-muted-foreground">
+                  +{activeRuns.length - 3} more active
+                </p>
+              )}
+            </>
           )}
         </div>
       )}
 
       {/* Recent runs section — full variant only */}
-      {variant === "full" && recentRuns.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <SectionHeader
-            title="Recent (24 h)"
-            count={recentRuns.length}
-            open={recentOpen}
-            onToggle={() => setRecentOpen((v) => !v)}
-          />
-          {recentOpen &&
-            recentRuns.slice(0, 20).map((run) => (
-              <WorkflowRunRow key={run.id} run={run} />
-            ))}
-        </div>
+      {variant === "full" && (
+        <>
+          {recentRuns.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <SectionHeader
+                title="Recent (7 days)"
+                count={recentRuns.length}
+                open={recentOpen}
+                onToggle={() => setRecentOpen((v) => !v)}
+              />
+              {recentOpen && (
+                <div
+                  className={cn(
+                    "grid gap-2",
+                    "grid-cols-1 md:grid-cols-2",
+                  )}
+                  data-testid="recent-runs-grid"
+                >
+                  {recentRuns.slice(0, 20).map((run) => (
+                    <WorkflowRunRow key={run.id} run={run} />
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            /* Empty recent section — only show once loaded and no error */
+            !isLoading && !error && (
+              <p
+                className="text-sm text-muted-foreground"
+                data-testid="empty-recent"
+              >
+                No recent runs in the last 7 days.
+              </p>
+            )
+          )}
+        </>
       )}
     </section>
   );

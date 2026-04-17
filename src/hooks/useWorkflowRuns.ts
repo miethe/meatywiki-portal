@@ -1,10 +1,11 @@
 "use client";
 
 /**
- * useWorkflowRuns — client hook for the Workflow Status Surface (P3-07).
+ * useWorkflowRuns — client hook for the Workflow Status Surface.
  *
  * Responsibilities:
- *   1. Fetch active + recent (last 24 h) workflow runs via GET /api/workflows/runs.
+ *   1. Fetch active + recent (last 7 days) workflow runs via GET /api/workflows/runs.
+ *      P4-08: Extended window from 24 h to 7 days for the Recent section.
  *   2. Open one SSE stream per ACTIVE run via `useSSE` (src/lib/sse/client.ts).
  *      When an SSE event arrives, the in-memory run record is patched in-place:
  *        - stage_started / stage_progress → update current_stage
@@ -32,6 +33,16 @@ import { useCallback, useEffect, useReducer, useRef } from "react";
 import { listWorkflows, hoursAgo } from "@/lib/api/workflows";
 import type { WorkflowRun, WorkflowRunStatus } from "@/types/artifact";
 import type { SSEWorkflowEvent } from "@/lib/sse/types";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/**
+ * P4-08: Recent window extended to 7 days (168 hours).
+ * Active runs are always included regardless of age.
+ */
+const RECENT_HOURS = 24 * 7;
 
 // ---------------------------------------------------------------------------
 // State
@@ -138,7 +149,7 @@ const initialState: WorkflowRunsState = {
 export interface UseWorkflowRunsResult {
   /** Runs with status pending | running. */
   activeRuns: WorkflowRun[];
-  /** Runs that are complete / failed / abandoned within the last 24 h. */
+  /** Runs that are complete / failed / abandoned within the last 7 days. */
   recentRuns: WorkflowRun[];
   /** Total active run count (for the top-bar badge). */
   activeCount: number;
@@ -163,13 +174,13 @@ export function useWorkflowRuns(): UseWorkflowRunsResult {
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ------------------------------------------------------------------
-  // Fetch
+  // Fetch — use RECENT_HOURS (7 days) window (P4-08)
   // ------------------------------------------------------------------
 
   const fetchRuns = useCallback(async (): Promise<void> => {
     dispatch({ type: "FETCH_START" });
     try {
-      const envelope = await listWorkflows({ since: hoursAgo(24) });
+      const envelope = await listWorkflows({ since: hoursAgo(RECENT_HOURS) });
       dispatch({ type: "FETCH_SUCCESS", runs: envelope.data ?? [] });
     } catch (err) {
       dispatch({

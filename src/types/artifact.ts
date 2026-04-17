@@ -26,6 +26,18 @@ export interface ArtifactMetadataCard {
   freshness?: LensFreshness | null;
   /** verification_status from ArtifactMetadata row */
   verification_state?: LensVerificationState | null;
+  /**
+   * reusability_tier from ArtifactMetadata row — addendum v1.1.0 field.
+   * Free-form string; rendered only in the LensBadgeSet detail variant.
+   * Not surfaced in the current backend API schemas (portal v1); kept optional.
+   */
+  reusability_tier?: string | null;
+  /**
+   * sensitivity_profile from ArtifactMetadata row — addendum v1.1.0 field.
+   * Free-form string; rendered only in the LensBadgeSet detail variant.
+   * Not surfaced in the current backend API schemas (portal v1); kept optional.
+   */
+  sensitivity_profile?: string | null;
 }
 
 // ---------------------------------------------------------------------------

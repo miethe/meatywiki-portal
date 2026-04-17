@@ -38,7 +38,7 @@
 import { useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { LensBadgeSet } from "@/components/ui/lens-badge";
+import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { WorkspaceBadge } from "@/components/ui/workspace-badge";
 import { HandoffChain } from "@/components/artifact/HandoffChain";
@@ -541,14 +541,8 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={artifact.type} />
           <WorkspaceBadge workspace={artifact.workspace} />
-          {artifact.metadata && (
-            <LensBadgeSet
-              fidelity={artifact.metadata.fidelity}
-              freshness={artifact.metadata.freshness}
-              verification_state={artifact.metadata.verification_state}
-              variant="full"
-            />
-          )}
+          {/* LensBadgeSet uses detail variant to show all 5 dimensions */}
+          <LensBadgeSet artifact={artifact} variant="detail" />
         </div>
 
         <h1 className="text-2xl font-semibold tracking-tight">{artifact.title}</h1>

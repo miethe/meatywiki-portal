@@ -20,7 +20,7 @@ import type { ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import { TypeBadge } from "./type-badge";
 import { WorkspaceBadge } from "./workspace-badge";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
-import { LensBadgeSet } from "./lens-badge";
+import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 
 interface ArtifactCardProps {
   artifact: ArtifactCardType;
@@ -60,7 +60,6 @@ export function ArtifactCard({
     updated,
     workflow_status,
     preview,
-    metadata,
   } = artifact;
 
   const relativeTime = formatRelativeTime(updated);
@@ -109,12 +108,7 @@ export function ArtifactCard({
 
         {/* Footer row: lens badges + timestamp */}
         <div className="flex items-center justify-between gap-2 pt-0.5">
-          <LensBadgeSet
-            fidelity={metadata?.fidelity}
-            freshness={metadata?.freshness}
-            verification_state={metadata?.verification_state}
-            variant="compact"
-          />
+          <LensBadgeSet artifact={artifact} variant="compact" />
           {relativeTime && updated && (
             <time
               dateTime={updated}

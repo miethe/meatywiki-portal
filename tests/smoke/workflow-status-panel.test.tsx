@@ -5,10 +5,12 @@
  * - Active and recent sections render
  * - Compact mode caps visible active rows at 3 and shows the remainder count
  * - Error state exposes the retry button
+ *
+ * P4-08: Updated "Recent (24 h)" → "Recent (7 days)" to match the new 7-day window.
  */
 
 import React from "react";
-import { renderWithProviders, screen } from "../utils/render";
+import { renderWithProviders, screen, waitFor } from "../utils/render";
 import { userEvent } from "../utils/userEvent";
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel";
 import type { WorkflowRun } from "@/types/artifact";
@@ -68,11 +70,15 @@ describe("WorkflowStatusPanel", () => {
 
     expect(screen.getByRole("heading", { name: /workflows/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /active/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /recent \(24 h\)/i })).toBeInTheDocument();
+    // P4-08: section label changed from "Recent (24 h)" to "Recent (7 days)"
+    expect(screen.getByRole("button", { name: /recent \(7 days\)/i })).toBeInTheDocument();
 
     await user.click(screen.getAllByRole("button", { name: /source ingest/i })[0]);
 
-    expect(screen.getByText(/run id:/i)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/run id:/i)).toBeInTheDocument();
+    });
+    // Full run ID appears in the expanded detail section
     expect(screen.getByText("run-01")).toBeInTheDocument();
   });
 

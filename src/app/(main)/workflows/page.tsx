@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * /workflows — Workflow Status Surface (P3-07).
+ * /workflows — Active Workflows Panel (P3-07 initial, P4-08 enhanced).
  *
  * Full-variant WorkflowStatusPanel showing:
  *   - Active runs (pending | running) at top with SSE live updates
- *   - Recent runs (last 24 h, any terminal status) below
- *   - Collapsible sections, inline expand, loading/error/empty states
+ *   - Recent runs (last 7 days, any terminal status) below
+ *   - Collapsible sections, inline expand, click-through to run detail
+ *   - Loading/error/empty states
  *
  * The page owns useWorkflowRuns so it can also drive the WorkflowTopBarIndicator
  * from the same data — no double fetch.
@@ -53,7 +54,7 @@ export default function WorkflowsPage() {
               ? "Loading workflow runs…"
               : activeCount > 0
               ? `${activeCount} active run${activeCount === 1 ? "" : "s"} in progress`
-              : "No active runs — showing last 24 h history"}
+              : "No active runs — showing last 7 days history"}
           </p>
         </div>
 

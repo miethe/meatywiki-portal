@@ -1,27 +1,17 @@
 /**
- * Research Workspace Home — scaffold.
+ * Research workspace overview — redirects to /research/pages.
  *
- * P4-01 fills this with:
- *   - Featured artifact tiles with Lens Filter Bar
- *   - Active Workflows panel (top-right)
- *   - Lens Filter Bar (shared with Library)
+ * Keeps the /research root URL functional: a direct visit lands on the Pages
+ * sub-screen rather than an empty shell. Server-side redirect so there is no
+ * flash of an empty page.
+ *
+ * P4-01: Research workspace structure + navigation.
  *
  * Stitch reference: "Research Home" (ID: 0cf6fb7b27d9459e8b5bebfea66915c5)
- * Shell: Standard Archival
  */
 
+import { redirect } from "next/navigation";
+
 export default function ResearchPage() {
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Research</h1>
-        <p className="mt-0.5 text-sm text-muted-foreground">
-          Research workspace — implemented in P4-01
-        </p>
-      </div>
-      <div className="rounded-md border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Research Workspace — P4 scope
-      </div>
-    </div>
-  );
+  redirect("/research/pages");
 }
