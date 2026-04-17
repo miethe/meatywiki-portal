@@ -22,7 +22,8 @@ export const DEFAULT_API_URL = "http://127.0.0.1:8765";
  */
 export function getApiBase(): string {
   if (typeof window === "undefined") {
-    return process.env.MEATYWIKI_PORTAL_API_URL ?? DEFAULT_API_URL;
+    const host = process.env.MEATYWIKI_PORTAL_API_URL ?? DEFAULT_API_URL;
+    return `${host.replace(/\/+$/, "")}/api`;
   }
   return "/api";
 }

@@ -121,7 +121,7 @@ export async function listArtifacts(
   query.set("limit", String(limit));
 
   const qs = query.toString();
-  const path = `/api/artifacts${qs ? `?${qs}` : ""}`;
+  const path = `/artifacts${qs ? `?${qs}` : ""}`;
 
   return apiFetch<ServiceModeEnvelope<ArtifactCard>>(path, { method: "GET" });
 }
@@ -143,7 +143,7 @@ export async function listArtifacts(
  */
 export async function getArtifact(id: string): Promise<ArtifactDetail> {
   const envelope = await apiFetch<SingleEnvelope<ArtifactDetail>>(
-    `/api/artifacts/${encodeURIComponent(id)}`,
+    `/artifacts/${encodeURIComponent(id)}`,
     { method: "GET" },
   );
   return envelope.data;
