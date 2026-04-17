@@ -74,6 +74,28 @@ export interface ArtifactDetail extends ArtifactCard {
   content_hash?: string | null;
   /** Full frontmatter snapshot (JSON) */
   frontmatter_jsonb?: Record<string, unknown> | null;
+  /**
+   * Raw source content (markdown/text from vault file).
+   * Present when backend exposes raw_content on the detail endpoint.
+   * May be null if not yet populated by reconciler.
+   */
+  raw_content?: string | null;
+  /**
+   * Compiled wiki HTML or markdown output.
+   * Present when backend exposes compiled_content on the detail endpoint.
+   * May be null if the artifact has not been compiled yet.
+   */
+  compiled_content?: string | null;
+  /**
+   * Draft / synthesis content (synthesis artifacts, draft stage).
+   * May be null for most artifact types.
+   */
+  draft_content?: string | null;
+  /**
+   * Directed edges from this artifact to related artifacts.
+   * Present when backend includes artifact_edges in the detail response.
+   */
+  artifact_edges?: ArtifactEdge[] | null;
 }
 
 // ---------------------------------------------------------------------------

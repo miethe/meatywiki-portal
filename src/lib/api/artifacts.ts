@@ -1,12 +1,14 @@
 /**
- * Artifacts API — typed wrappers around GET /api/artifacts.
+ * Artifacts API — typed wrappers around GET /api/artifacts and GET /api/artifacts/:id.
  *
  * Primary owner: P3-05 (Library screen — extended with multi-select filters + sort).
  * Extended from P3-03 minimal version. Both screens share this module.
+ * getArtifact added in P3-06 (Artifact Detail screen).
  *
  * Used by:
  *   - Library screen (P3-05): workspace="library", multi-select type/status, sort
  *   - Inbox screen (P3-03): workspace="inbox", default sort by updated desc
+ *   - Artifact detail screen (P3-06): single artifact by ID
  *   - Server components (SSR initial fetch, cookie-forwarded auth)
  *   - Client components (load-more pagination via /api proxy)
  *
@@ -34,9 +36,11 @@
 import { apiFetch } from "./client";
 import type {
   ArtifactCard,
+  ArtifactDetail,
   ArtifactStatus,
   ArtifactWorkspace,
   ServiceModeEnvelope,
+  SingleEnvelope,
 } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
@@ -120,4 +124,27 @@ export async function listArtifacts(
   const path = `/api/artifacts${qs ? `?${qs}` : ""}`;
 
   return apiFetch<ServiceModeEnvelope<ArtifactCard>>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Get single artifact detail (P3-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch a single artifact by ID.
+ *
+ * Returns `SingleEnvelope<ArtifactDetail>` — callers unpack `data`.
+ *
+ * Throws `ApiError` with status 404 when the artifact is not found.
+ * Callers should catch and render appropriate error states.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}
+ * Response model: ArtifactDetail (extends ArtifactCard with richer fields).
+ */
+export async function getArtifact(id: string): Promise<ArtifactDetail> {
+  const envelope = await apiFetch<SingleEnvelope<ArtifactDetail>>(
+    `/api/artifacts/${encodeURIComponent(id)}`,
+    { method: "GET" },
+  );
+  return envelope.data;
 }
