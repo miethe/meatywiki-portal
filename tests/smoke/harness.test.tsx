@@ -26,7 +26,7 @@ function HealthBadge(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch("http://127.0.0.1:8787/health")
+    fetch("http://127.0.0.1:8765/health")
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json() as Promise<HealthStatus>;

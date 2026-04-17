@@ -14,16 +14,8 @@
  * All backend communication is HTTP only.
  */
 
-const DEFAULT_API_URL = "http://127.0.0.1:8787";
-
-function getApiBase(): string {
-  // Server-side: use the configured URL directly
-  if (typeof window === "undefined") {
-    return process.env.MEATYWIKI_PORTAL_API_URL ?? DEFAULT_API_URL;
-  }
-  // Client-side: use the Next.js rewrite proxy to avoid CORS in dev
-  return "/api";
-}
+export { getApiBase, DEFAULT_API_URL } from "@/lib/api/config";
+import { getApiBase } from "@/lib/api/config";
 
 export type ApiRequestInit = RequestInit & {
   /** Skip prepending the API base (for absolute URLs). */

@@ -9,11 +9,16 @@
  *
  * INVARIANT: The token is never stored in localStorage or component state
  * beyond the lifetime of this form. The route handler owns cookie placement.
+ *
+ * When NEXT_PUBLIC_PORTAL_DISABLE_AUTH=1, the form auto-submits on mount with
+ * a placeholder token ("disabled") to bypass the login UI in dev mode.
  */
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useState, useTransition, Suspense } from "react";
+import { useState, useTransition, useEffect, Suspense } from "react";
 import { cn } from "@/lib/utils";
+
+const DISABLE_AUTH = process.env.NEXT_PUBLIC_PORTAL_DISABLE_AUTH === "1";
 
 function LoginFormInner() {
   const router = useRouter();
@@ -24,11 +29,10 @@ function LoginFormInner() {
 
   const destination = searchParams.get("next") ?? "/";
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
+  async function submitToken(candidateToken: string) {
     setError(null);
 
-    if (!token.trim()) {
+    if (!candidateToken.trim()) {
       setError("Please enter an access token.");
       return;
     }
@@ -38,7 +42,7 @@ function LoginFormInner() {
         const response = await fetch("/api/auth/session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token: token.trim() }),
+          body: JSON.stringify({ token: candidateToken.trim() }),
         });
 
         if (response.ok) {
@@ -55,6 +59,57 @@ function LoginFormInner() {
         setError("Could not reach the server. Is the backend running?");
       }
     });
+  }
+
+  // Auto-submit when auth is disabled — skip the login UI entirely in dev mode.
+  useEffect(() => {
+    if (DISABLE_AUTH) {
+      void submitToken("disabled");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    await submitToken(token);
+  }
+
+  // In disable-auth mode, show a minimal banner while the auto-submit fires.
+  if (DISABLE_AUTH) {
+    return (
+      <div className="space-y-4">
+        <div
+          role="status"
+          className={cn(
+            "rounded-md border border-yellow-400 bg-yellow-50 px-4 py-3",
+            "text-sm text-yellow-800",
+          )}
+        >
+          Auth disabled — signing in automatically&hellip;
+        </div>
+        {error && (
+          <div>
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+            <button
+              type="button"
+              onClick={() => void submitToken("disabled")}
+              disabled={isPending}
+              className={cn(
+                "mt-2 inline-flex h-10 w-full items-center justify-center rounded-md",
+                "bg-primary px-4 py-2 text-sm font-medium text-primary-foreground",
+                "transition-colors hover:bg-primary/90",
+                "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+                "disabled:pointer-events-none disabled:opacity-50",
+              )}
+            >
+              {isPending ? "Signing in…" : "Continue (auth disabled)"}
+            </button>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (

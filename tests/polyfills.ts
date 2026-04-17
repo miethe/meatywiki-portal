@@ -76,3 +76,14 @@ Object.defineProperty(globalThis, "Headers", { writable: true, configurable: tru
 Object.defineProperty(globalThis, "FormData", { writable: true, configurable: true, value: FormData });
 Object.defineProperty(globalThis, "Request", { writable: true, configurable: true, value: Request });
 Object.defineProperty(globalThis, "Response", { writable: true, configurable: true, value: Response });
+
+// 7. AbortSignal.timeout — Node 17.3+ static method; jsdom does not include it.
+//    Required by src/lib/auth/validate.ts which uses AbortSignal.timeout(5000).
+if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout !== "function") {
+  // Polyfill using setTimeout + AbortController
+  AbortSignal.timeout = function timeout(ms: number): AbortSignal {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(new DOMException("TimeoutError", "TimeoutError")), ms);
+    return controller.signal;
+  };
+}

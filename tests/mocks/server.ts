@@ -13,7 +13,7 @@ import { handlers } from "./handlers";
  *   import { http, HttpResponse } from "msw";
  *
  *   server.use(
- *     http.get("http://127.0.0.1:8787/api/artifacts", () =>
+ *     http.get("http://127.0.0.1:8765/api/artifacts", () =>
  *       HttpResponse.json({ data: { items: [], cursor: null } }),
  *     ),
  *   );

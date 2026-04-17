@@ -2,7 +2,7 @@
  * Shared Playwright fixtures and helpers for P3-12 E2E tests.
  *
  * Backend dependency strategy:
- *   Tests check reachability of PORTAL_API_URL (default: http://127.0.0.1:8787)
+ *   Tests check reachability of PORTAL_API_URL (default: http://127.0.0.1:8765)
  *   before each journey. If the backend is unreachable they skip gracefully
  *   with `test.skip()` rather than failing, so CI pipelines that do not
  *   include the backend orchestration still go green.
@@ -21,7 +21,7 @@ import { test as base, expect, type Page } from "@playwright/test";
 // ---------------------------------------------------------------------------
 
 export const API_URL =
-  process.env.MEATYWIKI_PORTAL_API_URL ?? "http://127.0.0.1:8787";
+  process.env.MEATYWIKI_PORTAL_API_URL ?? "http://127.0.0.1:8765";
 
 export const TEST_TOKEN =
   process.env.MEATYWIKI_PORTAL_TOKEN ?? "test-token-e2e";

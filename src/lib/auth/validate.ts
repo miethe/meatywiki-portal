@@ -14,13 +14,13 @@
  *
  * If the backend returns 200 with { valid: true }, the frontend sets the
  * HttpOnly cookie and considers the user authenticated.
+ *
+ * When PORTAL_DISABLE_AUTH=1 (server-side env), validation is short-circuited:
+ * any non-empty token returns { valid: true } without a network call.
  */
 
-const DEFAULT_API_URL = "http://127.0.0.1:8787";
-
-function getApiBase(): string {
-  return process.env.MEATYWIKI_PORTAL_API_URL ?? DEFAULT_API_URL;
-}
+export { getApiBase } from "@/lib/api/config";
+import { getApiBase } from "@/lib/api/config";
 
 export interface ValidationResult {
   valid: boolean;
@@ -31,14 +31,24 @@ export interface ValidationResult {
 /**
  * Validates a candidate bearer token against the backend.
  *
- * Sends `POST <backend>/api/auth/session` with the token in the request body.
- * The backend returns 200 `{ valid: true }` on success, or 401 on rejection.
+ * When PORTAL_DISABLE_AUTH=1, skips the network call and returns
+ * { valid: true } for any non-empty token (still requires non-empty so the
+ * cookie has a meaningful value).
  *
- * Network or parse errors are treated as invalid tokens (fail-closed).
+ * Otherwise, sends `POST <backend>/api/auth/session` with the token in the
+ * request body. Network or parse errors are treated as invalid tokens
+ * (fail-closed).
  */
 export async function validateTokenWithBackend(
   token: string,
 ): Promise<ValidationResult> {
+  if (process.env.PORTAL_DISABLE_AUTH === "1") {
+    console.warn(
+      "[auth] PORTAL_DISABLE_AUTH=1 — skipping backend token validation. Do not use in production.",
+    );
+    return { valid: true };
+  }
+
   try {
     const response = await fetch(`${getApiBase()}/api/auth/session`, {
       method: "POST",

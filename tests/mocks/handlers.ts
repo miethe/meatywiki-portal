@@ -18,7 +18,7 @@ import { http, HttpResponse } from "msw";
  *   intake.py, sse.py.
  */
 
-const API_BASE = "http://127.0.0.1:8787";
+const API_BASE = "http://127.0.0.1:8765";
 
 // ---------------------------------------------------------------------------
 // Shared stub factories
