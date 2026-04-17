@@ -676,6 +676,12 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
               <p className="mb-3 text-sm font-medium text-muted-foreground">
                 Processing your submission…
               </p>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Run ID:{" "}
+                <code className="rounded bg-background px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                  {runId}
+                </code>
+              </p>
               <StageTracker
                 runId={runId}
                 templateId="source_ingest_v1"
@@ -717,6 +723,13 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                   Successfully ingested
                 </p>
               </div>
+
+              <p className="mb-3 text-xs text-emerald-800/80 dark:text-emerald-200/80">
+                Run ID:{" "}
+                <code className="rounded bg-background/80 px-1.5 py-0.5 font-mono text-[11px] text-foreground">
+                  {completedRun.runId}
+                </code>
+              </p>
 
               <StageTracker
                 runId={completedRun.runId}

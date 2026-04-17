@@ -1,5 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const PLAYWRIGHT_HOST = process.env.PLAYWRIGHT_HOST ?? "127.0.0.1";
+const PLAYWRIGHT_PORT = process.env.PLAYWRIGHT_PORT ?? "3100";
+const PLAYWRIGHT_BASE_URL =
+  process.env.PLAYWRIGHT_BASE_URL ??
+  `http://${PLAYWRIGHT_HOST}:${PLAYWRIGHT_PORT}`;
+
 /**
  * Playwright E2E test configuration.
  *
@@ -23,7 +29,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: "html",
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: PLAYWRIGHT_BASE_URL,
     trace: "on-first-retry",
     // Capture screenshot on failure for debugging
     screenshot: "only-on-failure",
@@ -41,8 +47,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:3000",
-    reuseExistingServer: !process.env.CI,
+    command: `pnpm exec next dev --hostname ${PLAYWRIGHT_HOST} --port ${PLAYWRIGHT_PORT}`,
+    url: PLAYWRIGHT_BASE_URL,
+    reuseExistingServer: false,
+    timeout: 120 * 1000,
   },
 });
