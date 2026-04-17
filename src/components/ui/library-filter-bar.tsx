@@ -1,26 +1,34 @@
 "use client";
 
 /**
- * LibraryFilterBar — type/status/sort controls for the Library screen.
+ * LibraryFilterBar — type/status/sort controls + Lens Filter Bar for the Library/Research screens.
  *
- * Design: compact horizontal bar, multi-select dropdowns for type and status,
- * single-select sort dropdown. All state is lifted to LibraryPage so filter
- * changes flow through the React Query key and trigger immediate refetch.
+ * Design: compact horizontal bar with multi-select chips for type and status, a sort
+ * dropdown, and an expandable Lens Filter section (P4-09). Lens filters (fidelity,
+ * freshness, verification) are hidden behind a "Lens" toggle button and expand below
+ * the primary filter row.
  *
- * The filter bar slot in the Library page scaffold notes that P4-09 will
- * replace this with the full Lens Filter Bar. This component is intentionally
- * lightweight to make that replacement clean.
+ * All state is lifted to the parent page so filter changes flow through the React
+ * Query key and trigger an immediate refetch.
  *
- * Accessibility: every interactive control has an accessible label; dropdowns
- * are keyboard-navigable via native <select> semantics.
+ * URL synchronisation is handled at the page level via useLensFilterUrlSync (see below)
+ * so that filter state survives reload and can be shared via URL.
+ *
+ * Accessibility: every interactive control has an accessible label; chip buttons use
+ * aria-pressed. The lens section uses aria-expanded on the toggle button.
  *
  * Note: Tags filter omitted — backend does not support tag query param in v1.
- * A slot comment is left below for future implementation.
  */
 
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ArtifactSortField, SortOrder } from "@/lib/api/artifacts";
-import type { ArtifactStatus } from "@/types/artifact";
+import type {
+  ArtifactStatus,
+  LensFidelity,
+  LensFreshness,
+  LensVerificationState,
+} from "@/types/artifact";
 import type { LibraryFilters } from "@/hooks/useLibraryArtifacts";
 
 // ---------------------------------------------------------------------------
@@ -48,6 +56,28 @@ const SORT_OPTIONS: { value: ArtifactSortField; label: string }[] = [
   { value: "updated", label: "Last updated" },
   { value: "created", label: "Date created" },
   { value: "title", label: "Title (A–Z)" },
+];
+
+// ---------------------------------------------------------------------------
+// Lens filter option sets (P4-09)
+// ---------------------------------------------------------------------------
+
+const LENS_FIDELITY_OPTIONS: { value: LensFidelity; label: string }[] = [
+  { value: "high", label: "High" },
+  { value: "medium", label: "Medium" },
+  { value: "low", label: "Low" },
+];
+
+const LENS_FRESHNESS_OPTIONS: { value: LensFreshness; label: string }[] = [
+  { value: "current", label: "Current" },
+  { value: "stale", label: "Stale" },
+  { value: "outdated", label: "Outdated" },
+];
+
+const LENS_VERIFICATION_OPTIONS: { value: LensVerificationState; label: string }[] = [
+  { value: "verified", label: "Verified" },
+  { value: "disputed", label: "Disputed" },
+  { value: "unverified", label: "Unverified" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -192,7 +222,7 @@ function ActiveFilterCount({ count }: { count: number }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main filter bar
+// Main filter bar (P4-09: extended with collapsible Lens Filter section)
 // ---------------------------------------------------------------------------
 
 interface LibraryFilterBarProps {
@@ -209,79 +239,280 @@ export function LibraryFilterBar({
   resultCount,
   className,
 }: LibraryFilterBarProps) {
-  const { types, statuses, sort, order } = filters;
+  const {
+    types,
+    statuses,
+    sort,
+    order,
+    lensFidelity = [],
+    lensFreshness = [],
+    lensVerification = [],
+  } = filters;
 
-  const activeFilterCount = types.length + statuses.length;
+  // Lens panel collapsed by default; open when any lens filter is active
+  const hasActiveLensFilters =
+    lensFidelity.length > 0 || lensFreshness.length > 0 || lensVerification.length > 0;
+  const [lensOpen, setLensOpen] = useState(hasActiveLensFilters);
+
+  const activeFilterCount =
+    types.length + statuses.length + lensFidelity.length + lensFreshness.length + lensVerification.length;
 
   function clearAll() {
-    onFiltersChange({ types: [], statuses: [] });
+    onFiltersChange({
+      types: [],
+      statuses: [],
+      lensFidelity: [],
+      lensFreshness: [],
+      lensVerification: [],
+    });
   }
 
   return (
     <div
       role="search"
       aria-label="Library filters"
-      className={cn(
-        "flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border bg-card/50 px-3 py-2",
-        className,
-      )}
+      className={cn("rounded-md border bg-card/50", className)}
     >
-      {/* Type filter */}
-      <MultiSelectChips
-        label="Type"
-        options={KNOWN_ARTIFACT_TYPES}
-        selected={types}
-        onChange={(next) => onFiltersChange({ types: next })}
-      />
+      {/* Primary filter row */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
+        {/* Type filter */}
+        <MultiSelectChips
+          label="Type"
+          options={KNOWN_ARTIFACT_TYPES}
+          selected={types}
+          onChange={(next) => onFiltersChange({ types: next })}
+        />
 
-      {/* Divider */}
-      <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
+        {/* Divider */}
+        <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
 
-      {/* Status filter */}
-      <MultiSelectChips
-        label="Status"
-        options={KNOWN_STATUSES}
-        selected={statuses}
-        onChange={(next) =>
-          onFiltersChange({ statuses: next as ArtifactStatus[] })
-        }
-      />
+        {/* Status filter */}
+        <MultiSelectChips
+          label="Status"
+          options={KNOWN_STATUSES}
+          selected={statuses}
+          onChange={(next) =>
+            onFiltersChange({ statuses: next as ArtifactStatus[] })
+          }
+        />
 
-      {/* Divider */}
-      <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
+        {/* Divider */}
+        <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
 
-      {/* Sort */}
-      <SortSelect
-        sort={sort}
-        order={order}
-        onChange={(s, o) => onFiltersChange({ sort: s, order: o })}
-      />
+        {/* Sort */}
+        <SortSelect
+          sort={sort}
+          order={order}
+          onChange={(s, o) => onFiltersChange({ sort: s, order: o })}
+        />
 
-      {/* TAG FILTER SLOT — not implemented in v1 (backend no tag query param).
-          Add <MultiSelectChips label="Tags" ... /> here when backend supports
-          ?tags=foo&tags=bar query params on GET /api/artifacts. */}
+        {/* TAG FILTER SLOT — not implemented in v1 (backend no tag query param).
+            Add <MultiSelectChips label="Tags" ... /> here when backend supports
+            ?tags=foo&tags=bar query params on GET /api/artifacts. */}
 
-      {/* Spacer + active filter count + clear all */}
-      <div className="ml-auto flex items-center gap-2">
-        {resultCount !== undefined && (
-          <span className="text-[11px] text-muted-foreground" aria-live="polite" aria-atomic="true">
-            {resultCount} {resultCount === 1 ? "artifact" : "artifacts"}
-          </span>
-        )}
-        <ActiveFilterCount count={activeFilterCount} />
-        {activeFilterCount > 0 && (
-          <button
-            type="button"
-            onClick={clearAll}
-            className={cn(
-              "text-[11px] text-muted-foreground underline-offset-2 hover:underline",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            )}
+        {/* Lens toggle button (P4-09) */}
+        <button
+          type="button"
+          aria-label={lensOpen ? "Collapse lens filters" : "Expand lens filters"}
+          aria-expanded={lensOpen}
+          aria-controls="lens-filter-panel"
+          onClick={() => setLensOpen((prev) => !prev)}
+          className={cn(
+            "ml-auto inline-flex h-6 min-h-[44px] items-center gap-1 rounded-sm px-2.5 text-[11px] font-medium transition-colors sm:ml-0 sm:min-h-0",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            lensOpen || hasActiveLensFilters
+              ? "bg-primary/10 text-primary"
+              : "bg-muted text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+          )}
+        >
+          <svg
+            aria-hidden="true"
+            className="size-3"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
           >
-            Clear filters
-          </button>
-        )}
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"
+            />
+          </svg>
+          Lens
+          {hasActiveLensFilters && (
+            <ActiveFilterCount
+              count={lensFidelity.length + lensFreshness.length + lensVerification.length}
+            />
+          )}
+        </button>
+
+        {/* Spacer + active filter count + clear all */}
+        <div className="flex items-center gap-2 sm:ml-auto">
+          {resultCount !== undefined && (
+            <span
+              className="text-[11px] text-muted-foreground"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {resultCount} {resultCount === 1 ? "artifact" : "artifacts"}
+            </span>
+          )}
+          {activeFilterCount > (types.length + statuses.length) && !hasActiveLensFilters && (
+            /* Only show overall count when lens filters are closed and active */
+            <ActiveFilterCount count={activeFilterCount} />
+          )}
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className={cn(
+                "text-[11px] text-muted-foreground underline-offset-2 hover:underline",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              )}
+            >
+              Clear filters
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Lens filter panel (P4-09) — collapsible */}
+      {lensOpen && (
+        <div
+          id="lens-filter-panel"
+          role="group"
+          aria-label="Lens filters"
+          className="flex flex-wrap items-start gap-x-4 gap-y-2 border-t px-3 py-2"
+        >
+          {/* Fidelity */}
+          <MultiSelectChips
+            label="Fidelity"
+            options={LENS_FIDELITY_OPTIONS}
+            selected={lensFidelity}
+            onChange={(next) =>
+              onFiltersChange({ lensFidelity: next as LensFidelity[] })
+            }
+          />
+
+          {/* Divider */}
+          <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
+
+          {/* Freshness */}
+          <MultiSelectChips
+            label="Freshness"
+            options={LENS_FRESHNESS_OPTIONS}
+            selected={lensFreshness}
+            onChange={(next) =>
+              onFiltersChange({ lensFreshness: next as LensFreshness[] })
+            }
+          />
+
+          {/* Divider */}
+          <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
+
+          {/* Verification */}
+          <MultiSelectChips
+            label="Verification"
+            options={LENS_VERIFICATION_OPTIONS}
+            selected={lensVerification}
+            onChange={(next) =>
+              onFiltersChange({ lensVerification: next as LensVerificationState[] })
+            }
+          />
+
+          {/* Clear lens filters only */}
+          {hasActiveLensFilters && (
+            <button
+              type="button"
+              onClick={() =>
+                onFiltersChange({ lensFidelity: [], lensFreshness: [], lensVerification: [] })
+              }
+              className={cn(
+                "ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              )}
+            >
+              Clear lens filters
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// URL sync hook for lens filters (P4-09)
+// ---------------------------------------------------------------------------
+
+/**
+ * useLensFilterUrlSync — bidirectional sync between LibraryFilters/ResearchFilters
+ * and URL query params.
+ *
+ * Usage: call from the page component that owns filter state. The hook returns
+ * a ``filtersFromUrl`` snapshot to initialise state and a ``syncToUrl``
+ * callback to push state changes to the URL.
+ *
+ * URL param names mirror backend API param names:
+ *   lens_fidelity, lens_freshness, lens_verification
+ *
+ * The hook is intentionally side-effect-free — it does not subscribe to router
+ * events. Pages should call syncToUrl whenever filters change.
+ */
+export function useLensFilterUrlSync() {
+  /**
+   * Read lens filter values from the current window.location.search.
+   * Returns null when running server-side (no window object).
+   */
+  function readFromUrl(): Pick<
+    LibraryFilters,
+    "lensFidelity" | "lensFreshness" | "lensVerification"
+  > | null {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    return {
+      lensFidelity: (params.getAll("lens_fidelity") as LensFidelity[]).filter(
+        (v): v is LensFidelity => ["high", "medium", "low"].includes(v),
+      ),
+      lensFreshness: (params.getAll("lens_freshness") as LensFreshness[]).filter(
+        (v): v is LensFreshness => ["current", "stale", "outdated"].includes(v),
+      ),
+      lensVerification: (
+        params.getAll("lens_verification") as LensVerificationState[]
+      ).filter((v): v is LensVerificationState =>
+        ["verified", "disputed", "unverified"].includes(v),
+      ),
+    };
+  }
+
+  /**
+   * Push the given lens filter values to the URL without triggering a
+   * navigation (uses history.replaceState).  Also preserves all non-lens
+   * query params already present in the URL.
+   */
+  function syncToUrl(
+    filters: Pick<LibraryFilters, "lensFidelity" | "lensFreshness" | "lensVerification">,
+  ): void {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+
+    // Replace lens params — delete then re-append
+    params.delete("lens_fidelity");
+    params.delete("lens_freshness");
+    params.delete("lens_verification");
+
+    for (const v of filters.lensFidelity) params.append("lens_fidelity", v);
+    for (const v of filters.lensFreshness) params.append("lens_freshness", v);
+    for (const v of filters.lensVerification) params.append("lens_verification", v);
+
+    const qs = params.toString();
+    const newUrl = qs
+      ? `${window.location.pathname}?${qs}`
+      : window.location.pathname;
+
+    window.history.replaceState(null, "", newUrl);
+  }
+
+  return { readFromUrl, syncToUrl };
 }

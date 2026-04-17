@@ -12,7 +12,13 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { listArtifacts } from "@/lib/api/artifacts";
-import type { ArtifactCard, ArtifactStatus } from "@/types/artifact";
+import type {
+  ArtifactCard,
+  ArtifactStatus,
+  LensFidelity,
+  LensFreshness,
+  LensVerificationState,
+} from "@/types/artifact";
 import type { ArtifactSortField, SortOrder } from "@/lib/api/artifacts";
 
 // Re-export LibraryFilters so the Research Pages screen can share the same
@@ -38,6 +44,12 @@ export interface ResearchFilters {
   statuses: ArtifactStatus[];
   sort: ArtifactSortField;
   order: SortOrder;
+  /** Lens fidelity filter — empty array means "all fidelity levels" (P4-09) */
+  lensFidelity: LensFidelity[];
+  /** Lens freshness filter — empty array means "all freshness classes" (P4-09) */
+  lensFreshness: LensFreshness[];
+  /** Lens verification filter — empty array means "all verification states" (P4-09) */
+  lensVerification: LensVerificationState[];
 }
 
 export const DEFAULT_RESEARCH_FILTERS: ResearchFilters = {
@@ -45,12 +57,15 @@ export const DEFAULT_RESEARCH_FILTERS: ResearchFilters = {
   statuses: [],
   sort: "updated",
   order: "desc",
+  lensFidelity: [],
+  lensFreshness: [],
+  lensVerification: [],
 };
 
 export function useResearchArtifacts(
   filters: ResearchFilters = DEFAULT_RESEARCH_FILTERS,
 ): UseResearchArtifactsResult {
-  const { types, statuses, sort, order } = filters;
+  const { types, statuses, sort, order, lensFidelity, lensFreshness, lensVerification } = filters;
 
   const {
     data,
@@ -61,7 +76,11 @@ export function useResearchArtifacts(
     isError,
     error,
   } = useInfiniteQuery({
-    queryKey: ["artifacts", "research", { types, statuses, sort, order }],
+    queryKey: [
+      "artifacts",
+      "research",
+      { types, statuses, sort, order, lensFidelity, lensFreshness, lensVerification },
+    ],
     queryFn: async ({ pageParam }) => {
       return listArtifacts({
         workspace: "research",
@@ -69,6 +88,9 @@ export function useResearchArtifacts(
         status: statuses.length > 0 ? statuses : undefined,
         sort,
         order,
+        lensFidelity: lensFidelity.length > 0 ? lensFidelity : undefined,
+        lensFreshness: lensFreshness.length > 0 ? lensFreshness : undefined,
+        lensVerification: lensVerification.length > 0 ? lensVerification : undefined,
         cursor: pageParam as string | null,
         limit: PAGE_SIZE,
       });

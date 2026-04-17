@@ -28,6 +28,24 @@ jest.mock("next/navigation", () => ({
   redirect: jest.fn(),
 }));
 
+// Mock useSSE and submitSynthesis — SynthesisBuilder (P4-02) uses both.
+// Without these mocks the SSE connection and API client would attempt real
+// network calls in jsdom, causing fetch failures in the smoke test context.
+jest.mock("@/hooks/useSSE", () => ({
+  useSSE: jest.fn(() => ({
+    events: [],
+    status: "idle",
+    error: null,
+    reconnect: jest.fn(),
+    close: jest.fn(),
+  })),
+}));
+
+jest.mock("@/lib/api/workflows", () => ({
+  ...jest.requireActual("@/lib/api/workflows"),
+  submitSynthesis: jest.fn(),
+}));
+
 // Mock next/link — renders as a plain <a> in jsdom
 jest.mock("next/link", () => {
   const MockLink = ({
@@ -206,18 +224,18 @@ describe("Research workspace layout (P4-01)", () => {
 // ---------------------------------------------------------------------------
 
 describe("Research placeholder pages (P4-01)", () => {
-  it("Synthesis placeholder renders heading and 'Coming in P4-02' message", () => {
+  it("Synthesis page renders heading (P4-02 real implementation)", () => {
     render(<SynthesisPage />);
     expect(
       screen.getByRole("heading", { name: /synthesis builder/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/coming in p4-02/i)).toBeInTheDocument();
   });
 
-  it("Synthesis placeholder has accessible status region", () => {
+  it("Synthesis page renders the Launch synthesis form (P4-02)", () => {
     render(<SynthesisPage />);
+    // The real SynthesisBuilder renders a submit button (not a placeholder)
     expect(
-      screen.getByRole("status", { name: /synthesis builder coming soon/i }),
+      screen.getByRole("button", { name: /launch synthesis/i }),
     ).toBeInTheDocument();
   });
 

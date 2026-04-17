@@ -1,5 +1,5 @@
 /**
- * Artifact Detail screen smoke tests (P3-06).
+ * Artifact Detail screen smoke tests (P3-06, updated P4-10).
  *
  * Validates that:
  * - The loading skeleton renders while the query is in-flight
@@ -7,7 +7,7 @@
  * - Tab switching works: Source / Knowledge / Draft / Workflow OS
  * - Source reader displays raw_content
  * - Draft reader displays empty state when draft_content is null
- * - Workflow OS tab renders Phase 4 placeholder
+ * - Workflow OS tab renders WorkflowOSTab (P4-10 — NOT the old placeholder)
  * - Action buttons are present and aria-disabled
  * - 404 error renders the NotFound state
  * - Generic server error renders the error state with retry button
@@ -15,6 +15,7 @@
  * Mocking strategy:
  *   Mock `getArtifact` at the module boundary — avoids jsdom fetch/MSW
  *   URL routing issues (relative URLs vs absolute interceptor URLs).
+ *   Mock `useArtifactWorkflowRuns` to avoid real fetch in WorkflowOSTab.
  */
 
 import React from "react";
@@ -35,6 +36,27 @@ jest.mock("@/lib/api/artifacts", () => ({
 
 import { getArtifact } from "@/lib/api/artifacts";
 const mockGetArtifact = getArtifact as jest.MockedFunction<typeof getArtifact>;
+
+// ---------------------------------------------------------------------------
+// Mock useArtifactWorkflowRuns (WorkflowOSTab dep — avoid real fetch)
+// ---------------------------------------------------------------------------
+
+jest.mock("@/hooks/useArtifactWorkflowRuns", () => ({
+  useArtifactWorkflowRuns: jest.fn(() => ({
+    runs: [],
+    isLoading: false,
+    error: null,
+    refetch: jest.fn(),
+  })),
+}));
+
+// ---------------------------------------------------------------------------
+// Mock next/navigation (required by WorkflowOSTab)
+// ---------------------------------------------------------------------------
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ push: jest.fn() }),
+}));
 
 // ---------------------------------------------------------------------------
 // Stub detail data
@@ -162,15 +184,18 @@ describe("ArtifactDetailClient", () => {
     });
   });
 
-  it("Workflow OS tab shows Phase 4 placeholder", async () => {
+  it("Workflow OS tab renders WorkflowOSTab content (P4-10)", async () => {
     renderDetail();
     await waitFor(() => {
       expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("tab", { name: /workflow os/i }));
     await waitFor(() => {
-      expect(screen.getByText(/Coming in Phase 4/i)).toBeInTheDocument();
+      // WorkflowOSTab renders the Lens Dimensions section heading.
+      expect(screen.getByText(/Lens Dimensions/i)).toBeInTheDocument();
     });
+    // Run History section should also be visible.
+    expect(screen.getByText(/Run History/i)).toBeInTheDocument();
   });
 
   it("action buttons are present and aria-disabled", async () => {

@@ -29,7 +29,7 @@ import { LayoutGrid, List, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
-import { LibraryFilterBar } from "@/components/ui/library-filter-bar";
+import { LibraryFilterBar, useLensFilterUrlSync } from "@/components/ui/library-filter-bar";
 import {
   useLibraryArtifacts,
   DEFAULT_LIBRARY_FILTERS,
@@ -201,14 +201,29 @@ export default function LibraryPage() {
     }
   }, []);
 
-  // Filter state
-  const [filters, setFilters] = useState<LibraryFilters>(DEFAULT_LIBRARY_FILTERS);
+  // URL sync for lens filters (P4-09)
+  const { readFromUrl, syncToUrl } = useLensFilterUrlSync();
+
+  // Filter state — initialise lens filters from URL on mount
+  const [filters, setFilters] = useState<LibraryFilters>(() => ({
+    ...DEFAULT_LIBRARY_FILTERS,
+    ...(readFromUrl() ?? {}),
+  }));
 
   const handleFiltersChange = useCallback(
     (next: Partial<LibraryFilters>) => {
-      setFilters((prev) => ({ ...prev, ...next }));
+      setFilters((prev) => {
+        const updated = { ...prev, ...next };
+        // Push lens filter changes to the URL so state survives reload
+        syncToUrl({
+          lensFidelity: updated.lensFidelity,
+          lensFreshness: updated.lensFreshness,
+          lensVerification: updated.lensVerification,
+        });
+        return updated;
+      });
     },
-    [],
+    [syncToUrl],
   );
 
   // Data fetching
@@ -224,7 +239,11 @@ export default function LibraryPage() {
   } = useLibraryArtifacts(filters);
 
   const hasActiveFilters =
-    filters.types.length > 0 || filters.statuses.length > 0;
+    filters.types.length > 0 ||
+    filters.statuses.length > 0 ||
+    filters.lensFidelity.length > 0 ||
+    filters.lensFreshness.length > 0 ||
+    filters.lensVerification.length > 0;
 
   return (
     <div className="flex flex-col gap-4">

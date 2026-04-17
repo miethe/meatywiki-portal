@@ -39,6 +39,9 @@ import type {
   ArtifactDetail,
   ArtifactStatus,
   ArtifactWorkspace,
+  LensFidelity,
+  LensFreshness,
+  LensVerificationState,
   ServiceModeEnvelope,
   SingleEnvelope,
 } from "@/types/artifact";
@@ -73,6 +76,21 @@ export interface ListArtifactsParams {
    * Will be removed when P3-03 is updated.
    */
   tags?: string;
+  /**
+   * Lens fidelity filter (P4-09). Repeatable; ORed within the param.
+   * Maps to ?lens_fidelity=high&lens_fidelity=medium on the backend.
+   */
+  lensFidelity?: LensFidelity[];
+  /**
+   * Lens freshness filter (P4-09). Repeatable; ORed within the param.
+   * Maps to ?lens_freshness=current&lens_freshness=stale on the backend.
+   */
+  lensFreshness?: LensFreshness[];
+  /**
+   * Lens verification filter (P4-09). Repeatable; ORed within the param.
+   * Maps to ?lens_verification=verified on the backend.
+   */
+  lensVerification?: LensVerificationState[];
 }
 
 // ---------------------------------------------------------------------------
@@ -92,8 +110,19 @@ export interface ListArtifactsParams {
 export async function listArtifacts(
   params: ListArtifactsParams = {},
 ): Promise<ServiceModeEnvelope<ArtifactCard>> {
-  const { workspace, status, type, sort, order, cursor, limit = 50, tags } =
-    params;
+  const {
+    workspace,
+    status,
+    type,
+    sort,
+    order,
+    cursor,
+    limit = 50,
+    tags,
+    lensFidelity,
+    lensFreshness,
+    lensVerification,
+  } = params;
 
   const query = new URLSearchParams();
   if (workspace) query.set("workspace", workspace);
@@ -119,6 +148,17 @@ export async function listArtifacts(
   if (cursor) query.set("cursor", cursor);
   if (tags) query.set("tags", tags); // legacy P3-03 compat
   query.set("limit", String(limit));
+
+  // Lens filters (P4-09) — each value appended as a separate query param
+  if (lensFidelity && lensFidelity.length > 0) {
+    for (const v of lensFidelity) query.append("lens_fidelity", v);
+  }
+  if (lensFreshness && lensFreshness.length > 0) {
+    for (const v of lensFreshness) query.append("lens_freshness", v);
+  }
+  if (lensVerification && lensVerification.length > 0) {
+    for (const v of lensVerification) query.append("lens_verification", v);
+  }
 
   const qs = query.toString();
   const path = `/artifacts${qs ? `?${qs}` : ""}`;

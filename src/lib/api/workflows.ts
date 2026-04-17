@@ -1,14 +1,13 @@
 /**
- * Workflows API — typed wrappers around GET /api/workflows/runs.
+ * Workflows API — typed wrappers around workflow endpoints.
  *
- * Backend endpoint: GET /api/workflows/runs
- *   - Implemented in meatywiki/portal/api/workflows.py (P2-03 / P2-04 scope).
- *   - The current backend only ships GET /api/workflows/templates; the runs
- *     list endpoint is anticipated per the design spec workflow_runs table
- *     (§4). This client is written to the expected contract so P3-07 is ready
- *     to consume it as soon as the backend route lands.
+ * Endpoints:
+ *   GET  /api/workflows/runs     — list runs (design spec §5 cursor pagination)
+ *   POST /api/workflows/synthesize — enqueue research_synthesis_v1 (P4-02)
  *
- * Query params supported (design spec §5 cursor pagination):
+ * Backend: meatywiki/portal/api/workflows.py (P2-03 / P2-04 / P4-02 scope).
+ *
+ * Query params supported (GET /runs):
  *   status — filter by WorkflowRunStatus (comma-separated allowed)
  *   since  — ISO-8601 timestamp; return runs with started_at >= since
  *   cursor — opaque pagination cursor (backend: keyset on started_at DESC, id DESC)
@@ -19,6 +18,50 @@
 
 import { apiFetch } from "./client";
 import type { WorkflowRun, WorkflowRunStatus, ServiceModeEnvelope } from "@/types/artifact";
+
+// ---------------------------------------------------------------------------
+// Synthesize — POST /api/workflows/synthesize (P4-02)
+// ---------------------------------------------------------------------------
+
+export interface SynthesizeParams {
+  /** Template ID — always "research_synthesis_v1" in v1. */
+  template_id?: string;
+  /** One or more artifact ULIDs to gather as synthesis inputs. */
+  sources: string[];
+  /** Optional glob / path scope for the compile stage. */
+  scope?: string;
+  /** Optional free-text focus hint forwarded to the engine. */
+  focus?: string;
+}
+
+export interface SynthesizeAcceptedResponse {
+  run_id: string;
+  status: "queued";
+  created_at: string;
+}
+
+/**
+ * POST /api/workflows/synthesize
+ *
+ * Enqueues a research_synthesis_v1 workflow run.
+ * Returns 202 Accepted with a run_id that can be subscribed to via SSE:
+ *   GET /api/workflows/{run_id}/stream
+ */
+export async function submitSynthesis(
+  params: SynthesizeParams,
+): Promise<SynthesizeAcceptedResponse> {
+  const body: Record<string, unknown> = {
+    template_id: params.template_id ?? "research_synthesis_v1",
+    sources: params.sources,
+  };
+  if (params.scope?.trim()) body.scope = params.scope.trim();
+  if (params.focus?.trim()) body.focus = params.focus.trim();
+
+  return apiFetch<SynthesizeAcceptedResponse>("/workflows/synthesize", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Query parameter shape

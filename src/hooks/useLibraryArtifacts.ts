@@ -19,7 +19,13 @@ import { useInfiniteQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { listArtifacts } from "@/lib/api/artifacts";
 import type { ArtifactSortField, SortOrder } from "@/lib/api/artifacts";
-import type { ArtifactCard, ArtifactStatus } from "@/types/artifact";
+import type {
+  ArtifactCard,
+  ArtifactStatus,
+  LensFidelity,
+  LensFreshness,
+  LensVerificationState,
+} from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
 // Filter shape (public API of this hook)
@@ -34,6 +40,12 @@ export interface LibraryFilters {
   sort: ArtifactSortField;
   /** Sort direction */
   order: SortOrder;
+  /** Lens fidelity filter — empty array means "all fidelity levels" (P4-09) */
+  lensFidelity: LensFidelity[];
+  /** Lens freshness filter — empty array means "all freshness classes" (P4-09) */
+  lensFreshness: LensFreshness[];
+  /** Lens verification filter — empty array means "all verification states" (P4-09) */
+  lensVerification: LensVerificationState[];
 }
 
 export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
@@ -41,6 +53,9 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   statuses: [],
   sort: "updated",
   order: "desc",
+  lensFidelity: [],
+  lensFreshness: [],
+  lensVerification: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -63,7 +78,7 @@ interface UseLibraryArtifactsResult {
 export function useLibraryArtifacts(
   filters: LibraryFilters = DEFAULT_LIBRARY_FILTERS,
 ): UseLibraryArtifactsResult {
-  const { types, statuses, sort, order } = filters;
+  const { types, statuses, sort, order, lensFidelity, lensFreshness, lensVerification } = filters;
 
   const {
     data,
@@ -75,7 +90,11 @@ export function useLibraryArtifacts(
     error,
   } = useInfiniteQuery({
     // Query key includes all filter params — any change busts cache immediately
-    queryKey: ["artifacts", "library", { types, statuses, sort, order }],
+    queryKey: [
+      "artifacts",
+      "library",
+      { types, statuses, sort, order, lensFidelity, lensFreshness, lensVerification },
+    ],
     queryFn: async ({ pageParam }) => {
       return listArtifacts({
         workspace: "library",
@@ -83,6 +102,9 @@ export function useLibraryArtifacts(
         status: statuses.length > 0 ? statuses : undefined,
         sort,
         order,
+        lensFidelity: lensFidelity.length > 0 ? lensFidelity : undefined,
+        lensFreshness: lensFreshness.length > 0 ? lensFreshness : undefined,
+        lensVerification: lensVerification.length > 0 ? lensVerification : undefined,
         cursor: pageParam as string | null,
         limit: PAGE_SIZE,
       });

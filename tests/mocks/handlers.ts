@@ -194,6 +194,20 @@ export const handlers = [
     );
   }),
 
+  // Synthesize (POST /api/workflows/synthesize) — P4-02
+  // Returns 202 Accepted with run_id + status + created_at.
+  // Tests that need a failure response should override via server.use().
+  http.post(`${API_BASE}/api/workflows/synthesize`, () => {
+    return HttpResponse.json(
+      {
+        run_id: "run-stub-synthesis-01",
+        status: "queued",
+        created_at: new Date().toISOString(),
+      },
+      { status: 202 },
+    );
+  }),
+
   // ------------------------------------------------------------------
   // Workflows — list (GET /api/workflows)
   // ------------------------------------------------------------------

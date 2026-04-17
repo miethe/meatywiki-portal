@@ -42,6 +42,7 @@ import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { WorkspaceBadge } from "@/components/ui/workspace-badge";
 import { HandoffChain } from "@/components/artifact/HandoffChain";
+import { WorkflowOSTab } from "@/components/workflow/workflow-os-tab";
 import { useArtifact } from "@/hooks/useArtifact";
 
 // ---------------------------------------------------------------------------
@@ -322,45 +323,7 @@ function DraftReader({ content }: { content: string | null | undefined }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Workflow OS tab — Phase 4 placeholder
-// ---------------------------------------------------------------------------
-
-function WorkflowOSPlaceholder() {
-  return (
-    <div
-      role="status"
-      aria-label="Workflow OS — coming in Phase 4"
-      className="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed py-16 text-center"
-    >
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-        <svg
-          aria-hidden="true"
-          className="size-6 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"
-          />
-        </svg>
-      </div>
-      <div>
-        <p className="text-sm font-semibold text-foreground">Workflow OS</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Stage tracker, handoff chain, and run history — coming in Phase 4.
-        </p>
-      </div>
-      <span className="inline-flex items-center rounded-full border border-border px-2.5 py-0.5 text-xs text-muted-foreground">
-        Phase 4 scope
-      </span>
-    </div>
-  );
-}
+// WorkflowOSPlaceholder removed — replaced by WorkflowOSTab (P4-10).
 
 // ---------------------------------------------------------------------------
 // Action buttons definition
@@ -598,11 +561,6 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
             )}
           >
             {tab}
-            {tab === "Workflow OS" && (
-              <span className="ml-1.5 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                P4
-              </span>
-            )}
           </button>
         ))}
       </div>
@@ -650,7 +608,10 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
             aria-labelledby={tabButtonId("Workflow OS")}
             hidden={activeTab !== "Workflow OS"}
           >
-            <WorkflowOSPlaceholder />
+            <WorkflowOSTab
+              artifact={artifact}
+              enabled={activeTab === "Workflow OS"}
+            />
           </div>
         </div>
 
