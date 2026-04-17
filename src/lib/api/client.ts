@@ -14,16 +14,8 @@
  * All backend communication is HTTP only.
  */
 
-const DEFAULT_API_URL = "http://127.0.0.1:8787";
-
-function getApiBase(): string {
-  // Server-side: use the configured URL directly
-  if (typeof window === "undefined") {
-    return process.env.MEATYWIKI_PORTAL_API_URL ?? DEFAULT_API_URL;
-  }
-  // Client-side: use the Next.js rewrite proxy to avoid CORS in dev
-  return "/api";
-}
+export { getApiBase, DEFAULT_API_URL } from "@/lib/api/config";
+import { getApiBase } from "@/lib/api/config";
 
 export type ApiRequestInit = RequestInit & {
   /** Skip prepending the API base (for absolute URLs). */
@@ -42,9 +34,14 @@ export class ApiError extends Error {
 }
 
 /**
- * Core fetch wrapper. Attaches the bearer token when running server-side
- * (token from env). Client-side auth uses the HttpOnly cookie set by
- * POST /api/auth/session (P3-01).
+ * Core fetch wrapper. Attaches the bearer token when running server-side.
+ *
+ * Token resolution order (server-side only):
+ *   1. HttpOnly `portal_session` cookie (set by POST /api/auth/session at login)
+ *   2. `MEATYWIKI_PORTAL_TOKEN` environment variable (CI / scripted access)
+ *
+ * Client-side requests rely on the browser automatically sending the HttpOnly
+ * cookie; no explicit Authorization header is added client-side.
  */
 export async function apiFetch<T = unknown>(
   path: string,
@@ -55,11 +52,31 @@ export async function apiFetch<T = unknown>(
 
   const headers = new Headers(fetchInit.headers);
 
-  // Server-side: inject bearer token from env
+  // Server-side: resolve bearer token from cookie then env fallback
   if (typeof window === "undefined") {
-    const token = process.env.MEATYWIKI_PORTAL_TOKEN;
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
+    // Dynamically import next/headers to avoid pulling it into client bundles.
+    // This import is safe here because apiFetch is only called on the server
+    // when window is undefined.
+    try {
+      const { cookies } = await import("next/headers");
+      const cookieStore = await cookies();
+      const sessionCookie = cookieStore.get("portal_session");
+      if (sessionCookie?.value) {
+        headers.set("Authorization", `Bearer ${sessionCookie.value}`);
+      } else {
+        // Fallback: env variable (useful in tests / CI)
+        const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+        if (envToken) {
+          headers.set("Authorization", `Bearer ${envToken}`);
+        }
+      }
+    } catch {
+      // next/headers is unavailable outside of a request context (e.g. during
+      // static generation with no incoming request). Fall back to env token.
+      const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+      if (envToken) {
+        headers.set("Authorization", `Bearer ${envToken}`);
+      }
     }
   }
 
