@@ -44,6 +44,8 @@ import { WorkspaceBadge } from "@/components/ui/workspace-badge";
 import { HandoffChain } from "@/components/artifact/HandoffChain";
 import { WorkflowOSTab } from "@/components/workflow/workflow-os-tab";
 import { useArtifact } from "@/hooks/useArtifact";
+import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
+import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
 
 // ---------------------------------------------------------------------------
 // Tab definition
@@ -506,6 +508,13 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           <WorkspaceBadge workspace={artifact.workspace} />
           {/* LensBadgeSet uses detail variant to show all 5 dimensions */}
           <LensBadgeSet artifact={artifact} variant="detail" />
+          {/* Freshness indicator from raw frontmatter fields (P4-04) */}
+          <ArtifactFreshnessBadge
+            freshness={artifact.frontmatter_jsonb?.["lens_freshness"] as string | null | undefined}
+            staleAfter={artifact.frontmatter_jsonb?.["stale_after"] as string | null | undefined}
+          />
+          {/* Contradiction flag from edges endpoint (P4-04) */}
+          <ContradictionFlag artifactId={artifact.id} />
         </div>
 
         <h1 className="text-2xl font-semibold tracking-tight">{artifact.title}</h1>

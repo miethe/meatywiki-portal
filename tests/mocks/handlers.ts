@@ -158,6 +158,16 @@ export const handlers = [
     return HttpResponse.json({ data: detail });
   }),
 
+  // Artifact edges (GET /api/artifacts/:id/edges) — P4-03 / P4-04
+  // Default: no edges. Override in specific tests via server.use().
+  http.get(`${API_BASE}/api/artifacts/:id/edges`, ({ params }) => {
+    return HttpResponse.json({
+      artifact_id: params['id'] as string,
+      incoming: [],
+      outgoing: [],
+    });
+  }),
+
   // Promote artifact (POST /api/artifacts/:id/promote)
   http.post(`${API_BASE}/api/artifacts/:id/promote`, ({ params }) => {
     return HttpResponse.json(
