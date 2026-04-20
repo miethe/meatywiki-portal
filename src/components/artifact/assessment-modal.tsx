@@ -365,7 +365,7 @@ export function AssessmentModal({
     onOpenChange(false);
   }, [onOpenChange]);
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErrorMessage(null);
 

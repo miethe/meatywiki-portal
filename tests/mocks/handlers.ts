@@ -186,6 +186,13 @@ export const handlers = [
     return HttpResponse.json({ data: { id: "review-stub-01" } }, { status: 201 });
   }),
 
+  // Quality gates (GET /api/artifacts/:id/quality-gates) — Portal v1.5 P1.5-1-05
+  // Default: no quality gate data (returns null). Override via server.use() when
+  // tests require gate rule results.
+  http.get(`${API_BASE}/api/artifacts/:id/quality-gates`, () => {
+    return HttpResponse.json(null);
+  }),
+
   // Lens PATCH (PATCH /api/artifacts/:id/lens) — Portal v1.5 P1.5-1-04
   // Returns updated ArtifactMetadataResponse wrapped in ServiceModeEnvelope.
   // Override in specific tests via server.use() for error/edge cases.

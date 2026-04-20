@@ -222,6 +222,50 @@ export async function getRoutingRecommendation(
 }
 
 // ---------------------------------------------------------------------------
+// Quality gates (Portal v1.5 P1.5-1-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single quality gate rule result as returned by
+ * GET /api/artifacts/{artifact_id}/quality-gates.
+ */
+export interface QualityGateRule {
+  name: string;
+  passed: boolean;
+  condition: string;
+}
+
+/**
+ * Response body for GET /api/artifacts/{artifact_id}/quality-gates.
+ *
+ * ``null`` is returned when no quality gate data exists for the artifact.
+ * The fetch function returns ``null`` in that case — callers render nothing.
+ */
+export interface QualityGatesResponse {
+  rules: QualityGateRule[];
+}
+
+/**
+ * Fetch quality gate results for an artifact's most recent compile workflow run.
+ *
+ * Returns ``QualityGatesResponse`` when gate data exists, or ``null`` when
+ * the backend returns a JSON ``null`` body (no quality gates recorded).
+ *
+ * Throws ``ApiError`` with status 404 if the artifact does not exist.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}/quality-gates
+ * Portal v1.5 Phase 1 (P1.5-1-05).
+ */
+export async function getQualityGates(
+  id: string,
+): Promise<QualityGatesResponse | null> {
+  return apiFetch<QualityGatesResponse | null>(
+    `/artifacts/${encodeURIComponent(id)}/quality-gates`,
+    { method: "GET" },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Lens PATCH (Portal v1.5 P1.5-1-04)
 // ---------------------------------------------------------------------------
 
