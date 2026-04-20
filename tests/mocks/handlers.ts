@@ -288,6 +288,95 @@ export const handlers = [
   }),
 
   // ------------------------------------------------------------------
+  // Workflow runs — list (GET /api/workflows/runs) — Screen B run history
+  // ------------------------------------------------------------------
+  http.get(`${API_BASE}/api/workflows/runs`, ({ request }) => {
+    const url = new URL(request.url);
+    const templateId = url.searchParams.get("template_id");
+
+    const runs: WorkflowRunStub[] = [
+      makeWorkflowRun({
+        id: "run-stub-01",
+        template_id: templateId ?? "research_synthesis_v1",
+        status: "complete",
+        created_at: "2026-04-18T09:00:00Z",
+      }),
+      makeWorkflowRun({
+        id: "run-stub-02",
+        template_id: templateId ?? "research_synthesis_v1",
+        status: "failed",
+        created_at: "2026-04-17T14:00:00Z",
+      }),
+    ];
+    return HttpResponse.json({ data: runs, cursor: null });
+  }),
+
+  // Workflow timeline (GET /api/workflows/:run_id/timeline) — Screen B
+  http.get(`${API_BASE}/api/workflows/:run_id/timeline`, ({ params }) => {
+    const runId = params["run_id"] as string;
+    const now = new Date();
+
+    const events = [
+      {
+        id: "evt-01",
+        run_id: runId,
+        stage: "scope",
+        event_type: "stage_started",
+        event_payload: { inputs: { scope: "wiki/**" } },
+        created_at: new Date(now.getTime() - 300_000).toISOString(),
+      },
+      {
+        id: "evt-02",
+        run_id: runId,
+        stage: "scope",
+        event_type: "stage_completed",
+        event_payload: { outputs: { matched_files: 42 } },
+        created_at: new Date(now.getTime() - 280_000).toISOString(),
+      },
+      {
+        id: "evt-03",
+        run_id: runId,
+        stage: "compile",
+        event_type: "stage_started",
+        event_payload: { inputs: { file_count: 42 } },
+        created_at: new Date(now.getTime() - 240_000).toISOString(),
+      },
+      {
+        id: "evt-04",
+        run_id: runId,
+        stage: "compile",
+        event_type: "stage_completed",
+        event_payload: {
+          outputs: { compiled: 40, skipped: 2 },
+          artifact_id: "01HXYZ0000000000000000010",
+        },
+        created_at: new Date(now.getTime() - 120_000).toISOString(),
+      },
+      {
+        id: "evt-05",
+        run_id: runId,
+        stage: "synthesise",
+        event_type: "stage_started",
+        event_payload: { inputs: { artifact_count: 40 } },
+        created_at: new Date(now.getTime() - 100_000).toISOString(),
+      },
+      {
+        id: "evt-06",
+        run_id: runId,
+        stage: "synthesise",
+        event_type: "workflow_completed",
+        event_payload: {
+          artifact_id: "01HXYZ0000000000000000020",
+          outputs: { synthesis: "complete" },
+        },
+        created_at: new Date(now.getTime() - 30_000).toISOString(),
+      },
+    ];
+
+    return HttpResponse.json({ data: events, cursor: null });
+  }),
+
+  // ------------------------------------------------------------------
   // SSE — workflow stream (GET /api/workflows/:run_id/stream)
   //
   // Returns a minimal SSE-formatted text/event-stream response with a
@@ -311,6 +400,84 @@ export const handlers = [
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         Connection: "keep-alive",
+      },
+    });
+  }),
+
+  // ------------------------------------------------------------------
+  // Workflow Templates — list (GET /api/workflow-templates)
+  // P1.5-2-03: InitiationWizard uses this to populate Step 2 dropdown.
+  // ------------------------------------------------------------------
+  http.get(`${API_BASE}/api/workflow-templates`, () => {
+    return HttpResponse.json({
+      data: [
+        {
+          id: "tpl-001",
+          slug: "research_synthesis_v1",
+          yaml_content: "label: Research Synthesis\nparams:\n  - name: focus\n    type: string\n    label: Focus\n    description: Topic focus hint for the synthesis.\n    required: false\n",
+          description: "Synthesise research artifacts into a compiled output.",
+          system: true,
+          created_at: "2026-04-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        },
+        {
+          id: "tpl-002",
+          slug: "compile_v1",
+          yaml_content: "label: Full Compile\nparams:\n  - name: scope\n    type: string\n    label: Scope\n    description: Glob path scope for the compile stage.\n    required: false\n",
+          description: "Compile staged artifacts into wiki pages.",
+          system: true,
+          created_at: "2026-04-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        },
+        {
+          id: "tpl-003",
+          slug: "lint_scope_v1",
+          yaml_content: "label: Lint Scope\nparams: []\n",
+          description: "Run lint checks across a scoped set of artifacts.",
+          system: true,
+          created_at: "2026-04-01T00:00:00Z",
+          updated_at: "2026-04-01T00:00:00Z",
+        },
+      ],
+      cursor: null,
+    });
+  }),
+
+  // Workflow Templates — single (GET /api/workflow-templates/:id)
+  http.get(`${API_BASE}/api/workflow-templates/:id`, ({ params }) => {
+    const id = params["id"] as string;
+    return HttpResponse.json({
+      data: {
+        id,
+        slug: "research_synthesis_v1",
+        yaml_content: "label: Research Synthesis\nparams:\n  - name: focus\n    type: string\n    label: Focus\n    required: false\n",
+        description: "Synthesise research artifacts.",
+        system: true,
+        created_at: "2026-04-01T00:00:00Z",
+        updated_at: "2026-04-01T00:00:00Z",
+      },
+    });
+  }),
+
+  // POST /api/workflows — create a new workflow run (P1.5-2-03)
+  http.post(`${API_BASE}/api/workflows`, () => {
+    return HttpResponse.json(
+      {
+        run_id: "wf-research-synthesis-20260420-001",
+        status: "queued",
+        created_at: new Date().toISOString(),
+      },
+      { status: 202 },
+    );
+  }),
+
+  // Routing recommendation (GET /api/artifacts/:id/routing-recommendation)
+  http.get(`${API_BASE}/api/artifacts/:id/routing-recommendation`, () => {
+    return HttpResponse.json({
+      data: {
+        template: "research_synthesis_v1",
+        confidence: 0.87,
+        rationale: "Artifact has sufficient source density for synthesis.",
       },
     });
   }),
