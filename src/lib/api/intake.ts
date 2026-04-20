@@ -1,18 +1,28 @@
 /**
- * Intake API — typed wrappers for POST /api/intake/note and /api/intake/url.
+ * Intake API — typed wrappers for POST /api/intake/note, /api/intake/url,
+ * and /api/intake/upload.
  *
  * Backend endpoints (portal/api/intake.py):
- *   POST /api/intake/note  → 202 { run_id, status: "queued", created_at }
- *   POST /api/intake/url   → 202 { run_id, status: "queued", created_at }
+ *   POST /api/intake/note   → 202 { run_id, status: "queued", created_at }
+ *   POST /api/intake/url    → 202 { run_id, status: "queued", created_at }
+ *   POST /api/intake/upload → 202 { run_id, status: "queued", created_at }
  *
- * Both endpoints return IntakeAcceptedResponse (202 Accepted). The caller
- * should subscribe to /api/workflows/:run_id/stream (SSE) to track progress.
+ * Offline behaviour (P4-02, FR-1.5-17):
+ *   When NEXT_PUBLIC_PORTAL_ENABLE_PWA=1 and navigator.onLine is false,
+ *   submissions are enqueued in IndexedDB via intakeFetch and return a
+ *   synthetic { queued: true, run_id: null, status: "offline_queued" }
+ *   response. Callers should use isQueuedResponse() to branch UI accordingly.
  *
  * Tag normalisation: tags are trimmed, lowercased, and deduplicated before
  * being sent to the backend (mirrors the backend's _parse_tags helper logic).
  */
 
-import { apiFetch } from "./client";
+import { intakeFetch } from "@/lib/pwa/intake-fetch";
+import type { IntakeResponse } from "@/lib/pwa/intake-fetch";
+
+// Re-export helpers so callers don't need to know about the pwa module.
+export { isQueuedResponse } from "@/lib/pwa/intake-fetch";
+export type { IntakeResponse, IntakeQueuedResponse } from "@/lib/pwa/intake-fetch";
 
 // ---------------------------------------------------------------------------
 // Response type
@@ -86,19 +96,23 @@ export function parseTagString(raw: string): string[] {
  *
  * Enqueues a plain-text note intake job.
  * Returns 202 Accepted with run_id for SSE stream subscription.
+ *
+ * When offline (and PWA enabled), returns IntakeQueuedResponse instead.
+ * Use isQueuedResponse() to distinguish.
  */
 export async function submitNote(
   params: SubmitNoteParams,
-): Promise<IntakeAcceptedResponse> {
+): Promise<IntakeResponse> {
   const body: Record<string, unknown> = { text: params.text };
 
   if (params.tags && params.tags.length > 0) {
     body.tags = normaliseTags(params.tags);
   }
 
-  return apiFetch<IntakeAcceptedResponse>("/intake/note", {
+  return intakeFetch<IntakeResponse>("/intake/note", {
     method: "POST",
     body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -111,10 +125,12 @@ export async function submitNote(
  *
  * Enqueues a URL intake job.
  * Returns 202 Accepted with run_id for SSE stream subscription.
+ *
+ * When offline (and PWA enabled), returns IntakeQueuedResponse instead.
  */
 export async function submitUrl(
   params: SubmitUrlParams,
-): Promise<IntakeAcceptedResponse> {
+): Promise<IntakeResponse> {
   const body: Record<string, unknown> = { url: params.url };
 
   if (params.title?.trim()) {
@@ -125,8 +141,36 @@ export async function submitUrl(
     body.tags = normaliseTags(params.tags);
   }
 
-  return apiFetch<IntakeAcceptedResponse>("/intake/url", {
+  return intakeFetch<IntakeResponse>("/intake/url", {
     method: "POST",
     body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// submitUpload
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/intake/upload
+ *
+ * Uploads a file (audio, document, image) as a Blob.
+ * Returns 202 Accepted with run_id.
+ *
+ * When offline (and PWA enabled), stores the Blob in IndexedDB and returns
+ * IntakeQueuedResponse. IndexedDB natively supports Blob storage.
+ *
+ * Note: files >25 MB should be rejected by the caller before calling this
+ * function (P4-03 audio capture UI handles this validation).
+ */
+export async function submitUpload(
+  blob: Blob,
+  contentType: string,
+): Promise<IntakeResponse> {
+  return intakeFetch<IntakeResponse>("/intake/upload", {
+    method: "POST",
+    body: blob,
+    headers: { "Content-Type": contentType },
   });
 }

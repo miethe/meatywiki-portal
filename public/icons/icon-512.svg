@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- MeatyWiki Portal app icon — 512x512 -->
+  <!-- Slate dark background matching portal theme (--background dark: hsl(222.2 84% 4.9%)) -->
+  <rect width="512" height="512" rx="64" fill="#0f172a"/>
+  <!-- Stylised "M" lettermark in primary colour (slate-50 equivalent) -->
+  <path
+    d="M 80 376 L 80 136 L 180 272 L 256 160 L 332 272 L 432 136 L 432 376"
+    fill="none"
+    stroke="#f8fafc"
+    stroke-width="36"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <!-- Small dot accent (sky-500 — portal freshness accent) -->
+  <circle cx="256" cy="408" r="22" fill="#0ea5e9"/>
+</svg>
