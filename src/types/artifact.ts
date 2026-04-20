@@ -19,6 +19,65 @@ export type LensFidelity = "high" | "medium" | "low";
 export type LensFreshness = "current" | "stale" | "outdated";
 export type LensVerificationState = "verified" | "disputed" | "unverified";
 
+// ---------------------------------------------------------------------------
+// Lens write-path types (Portal v1.5 — P1.5-1-04)
+// ---------------------------------------------------------------------------
+
+/** Verification status enum as accepted by PATCH /api/artifacts/:id/lens */
+export type LensVerificationStatus = "unverified" | "partial" | "verified";
+
+/** Fidelity enum as accepted by PATCH /api/artifacts/:id/lens */
+export type LensFidelityLevel = "speculative" | "contested" | "established";
+
+/**
+ * Per-dimension rationale entry from lens_rationale_jsonb.
+ * Shape: { rationale?: string, updated_at?: string, updated_by?: string }
+ */
+export interface LensRationaleEntry {
+  rationale?: string | null;
+  updated_at?: string | null;
+  updated_by?: string | null;
+}
+
+/** Full rationale map — keys are dimension names */
+export type LensRationaleMap = Record<string, LensRationaleEntry>;
+
+/**
+ * Request body for PATCH /api/artifacts/:id/lens.
+ * All fields are optional; omitted fields are left unchanged.
+ * Numeric dimensions: 0–10. Mirrors backend LensPatchRequest.
+ */
+export interface LensPatchRequest {
+  novelty?: number | null;
+  clarity?: number | null;
+  significance?: number | null;
+  originality?: number | null;
+  rigor?: number | null;
+  utility?: number | null;
+  verification_status?: LensVerificationStatus | null;
+  fidelity?: LensFidelityLevel | null;
+  rationale?: LensRationaleMap | null;
+}
+
+/**
+ * Response DTO for PATCH /api/artifacts/:id/lens.
+ * Mirrors backend ArtifactMetadataResponse.
+ * Returned inside ServiceModeEnvelope<ArtifactMetadataResponse>.
+ */
+export interface ArtifactMetadataResponse {
+  artifact_id: string;
+  fidelity_level?: string | null;
+  freshness_class?: string | null;
+  verification_status?: string | null;
+  novelty?: number | null;
+  clarity?: number | null;
+  significance?: number | null;
+  originality?: number | null;
+  rigor?: number | null;
+  utility?: number | null;
+  lens_rationale_jsonb: LensRationaleMap;
+}
+
 export interface ArtifactMetadataCard {
   /** lens_fidelity from ArtifactMetadata row */
   fidelity?: LensFidelity | null;

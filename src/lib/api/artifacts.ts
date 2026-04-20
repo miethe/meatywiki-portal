@@ -37,10 +37,12 @@ import { apiFetch } from "./client";
 import type {
   ArtifactCard,
   ArtifactDetail,
+  ArtifactMetadataResponse,
   ArtifactStatus,
   ArtifactWorkspace,
   LensFidelity,
   LensFreshness,
+  LensPatchRequest,
   LensVerificationState,
   ServiceModeEnvelope,
 } from "@/types/artifact";
@@ -183,5 +185,68 @@ export async function getArtifact(id: string): Promise<ArtifactDetail> {
   return apiFetch<ArtifactDetail>(
     `/artifacts/${encodeURIComponent(id)}`,
     { method: "GET" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Routing recommendation (P1.5-1-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Routing recommendation returned by GET /api/artifacts/:id/routing-recommendation.
+ *
+ * ``template`` and ``rationale`` are null when no rule matches.
+ */
+export interface RoutingRecommendation {
+  template: string | null;
+  rationale: string | null;
+}
+
+/**
+ * Fetch the rule-based routing recommendation for an artifact.
+ *
+ * Returns a ``RoutingRecommendation`` with non-null ``template`` and
+ * ``rationale`` when a rule matches, or both fields null when no rule fires.
+ *
+ * Throws ``ApiError`` with status 404 when the artifact is not in the overlay.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}/routing-recommendation
+ */
+export async function getRoutingRecommendation(
+  id: string,
+): Promise<RoutingRecommendation> {
+  return apiFetch<RoutingRecommendation>(
+    `/artifacts/${encodeURIComponent(id)}/routing-recommendation`,
+    { method: "GET" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lens PATCH (Portal v1.5 P1.5-1-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Update lens fields for an artifact.
+ *
+ * PATCH /api/artifacts/{artifact_id}/lens
+ *
+ * Sends only the fields provided in `body`; omitted fields are left unchanged
+ * in the backend (partial update semantics). Numeric dimensions are 0–10.
+ *
+ * Returns the updated ArtifactMetadataResponse wrapped in
+ * ServiceModeEnvelope<ArtifactMetadataResponse>.
+ *
+ * Throws `ApiError` with status 404 if the artifact does not exist, or
+ * 422 if validation fails (e.g. enum value out of range).
+ *
+ * Portal v1.5 Phase 1 (P1.5-1-03 backend, P1.5-1-04 frontend).
+ */
+export async function patchArtifactLens(
+  id: string,
+  body: LensPatchRequest,
+): Promise<ServiceModeEnvelope<ArtifactMetadataResponse>> {
+  return apiFetch<ServiceModeEnvelope<ArtifactMetadataResponse>>(
+    `/artifacts/${encodeURIComponent(id)}/lens`,
+    { method: "PATCH", body: JSON.stringify(body) },
   );
 }

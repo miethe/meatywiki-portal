@@ -186,6 +186,33 @@ export const handlers = [
     return HttpResponse.json({ data: { id: "review-stub-01" } }, { status: 201 });
   }),
 
+  // Lens PATCH (PATCH /api/artifacts/:id/lens) — Portal v1.5 P1.5-1-04
+  // Returns updated ArtifactMetadataResponse wrapped in ServiceModeEnvelope.
+  // Override in specific tests via server.use() for error/edge cases.
+  http.patch(`${API_BASE}/api/artifacts/:id/lens`, async ({ params, request }) => {
+    const body = (await request.json()) as Record<string, unknown>;
+    const artifactId = params["id"] as string;
+    return HttpResponse.json({
+      data: [
+        {
+          artifact_id: artifactId,
+          fidelity_level: body["fidelity"] ?? null,
+          freshness_class: null,
+          verification_status: body["verification_status"] ?? null,
+          novelty: body["novelty"] ?? null,
+          clarity: body["clarity"] ?? null,
+          significance: body["significance"] ?? null,
+          originality: body["originality"] ?? null,
+          rigor: body["rigor"] ?? null,
+          utility: body["utility"] ?? null,
+          lens_rationale_jsonb: (body["rationale"] as Record<string, unknown>) ?? {},
+        },
+      ],
+      cursor: null,
+      etag: `"stub-etag-${artifactId}"`,
+    });
+  }),
+
   // ------------------------------------------------------------------
   // Intake (POST /api/intake/note, POST /api/intake/url)
   // Returns 202 Accepted with run_id
