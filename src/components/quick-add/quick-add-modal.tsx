@@ -15,16 +15,26 @@
  *   - Close during ingestion: shows confirm dialog (workflow continues in background)
  *   - Form validates: note requires text; URL requires valid URL format
  *
+ * P4-02 additions:
+ *   - useOfflineQueue hook provides queuedCount + failedCount.
+ *   - "Queued (N)" badge shown in modal header when queuedCount > 0.
+ *   - "Retry failed (N)" inline action when failedCount > 0.
+ *   - submitNote / submitUrl route through intakeFetch; offline path returns
+ *     IntakeQueuedResponse → transitions to new "queued" phase.
+ *
  * Design spec §5 (POST /api/intake/{note,url}), §3.2 row 4.
  * SSE event types: SSEWorkflowEvent from @/lib/sse/types
  *   terminal completion event: WorkflowCompletedEvent { type: "workflow_completed", artifact_id? }
+ *
+ * Traces FR-1.5-17, FR-1.5-18 (P4-02).
  */
 
 import { useState, useCallback, useId } from "react";
 import { cn } from "@/lib/utils";
 import { StageTracker } from "@/components/workflow/stage-tracker";
 import { useSSE } from "@/hooks/useSSE";
-import { submitNote, submitUrl, parseTagString } from "@/lib/api/intake";
+import { submitNote, submitUrl, parseTagString, isQueuedResponse } from "@/lib/api/intake";
+import { useOfflineQueue } from "@/hooks/use-offline-queue";
 import type { WorkflowRunStatus } from "@/types/artifact";
 import type { SSEWorkflowEvent, WorkflowCompletedEvent } from "@/lib/sse/types";
 
@@ -39,6 +49,7 @@ type ModalPhase =
   | "form"          // initial form entry
   | "ingesting"     // POST accepted, SSE streaming
   | "complete"      // SSE workflow_completed received
+  | "queued"        // offline: stored in IndexedDB
   | "error";        // POST error or SSE workflow_failed
 
 interface CompletedRun {
@@ -166,6 +177,53 @@ function AbandonConfirmDialog({ onConfirm, onCancel }: AbandonConfirmProps) {
 }
 
 // ---------------------------------------------------------------------------
+// QueueBadge — small pill shown in header when items are pending
+// ---------------------------------------------------------------------------
+
+interface QueueBadgeProps {
+  queuedCount: number;
+  failedCount: number;
+  onRetryFailed: () => void;
+}
+
+function QueueBadge({ queuedCount, failedCount, onRetryFailed }: QueueBadgeProps) {
+  if (queuedCount === 0 && failedCount === 0) return null;
+
+  return (
+    <div className="flex items-center gap-2">
+      {queuedCount > 0 && (
+        <span
+          aria-label={`${queuedCount} item${queuedCount === 1 ? "" : "s"} queued for sync`}
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+            "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+            "ring-1 ring-inset ring-amber-400/30",
+          )}
+        >
+          Queued ({queuedCount})
+        </span>
+      )}
+      {failedCount > 0 && (
+        <button
+          type="button"
+          onClick={onRetryFailed}
+          aria-label={`${failedCount} item${failedCount === 1 ? "" : "s"} failed — click to retry`}
+          className={cn(
+            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+            "bg-destructive/10 text-destructive",
+            "ring-1 ring-inset ring-destructive/30",
+            "hover:bg-destructive/20 transition-colors",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          Retry failed ({failedCount})
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main modal
 // ---------------------------------------------------------------------------
 
@@ -195,6 +253,9 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
   const [currentStage, setCurrentStage]     = useState<number>(0);
   const [showAbandonConfirm, setShowAbandonConfirm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Offline queue badge state (P4-02)
+  const { queuedCount, failedCount, retryFailed } = useOfflineQueue();
 
   // SSE subscription — only active during ingestion phase
   const sseUrl = phase === "ingesting" && runId
@@ -328,7 +389,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
     setSubmitError(null);
 
     try {
-      let response: { run_id: string };
+      let response: Awaited<ReturnType<typeof submitNote>>;
 
       if (activeTab === "note") {
         const tags = parseTagString(noteTags);
@@ -343,6 +404,12 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
           title: urlTitle.trim() || undefined,
           tags: tags.length > 0 ? tags : undefined,
         });
+      }
+
+      // P4-02: handle offline queued response
+      if (isQueuedResponse(response)) {
+        setPhase("queued");
+        return;
       }
 
       setRunId(response.run_id);
@@ -409,16 +476,26 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
       >
         {/* Header */}
         <div className="flex items-center justify-between border-b px-5 py-4">
-          <h2
-            id="quick-add-title"
-            className="text-base font-semibold tracking-tight"
-          >
-            {phase === "ingesting"
-              ? "Ingesting…"
-              : phase === "complete"
-              ? "Added"
-              : "Quick Add"}
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2
+              id="quick-add-title"
+              className="text-base font-semibold tracking-tight"
+            >
+              {phase === "ingesting"
+                ? "Ingesting…"
+                : phase === "complete"
+                ? "Added"
+                : phase === "queued"
+                ? "Queued"
+                : "Quick Add"}
+            </h2>
+            {/* P4-02: offline queue badge */}
+            <QueueBadge
+              queuedCount={queuedCount}
+              failedCount={failedCount}
+              onRetryFailed={() => void retryFailed()}
+            />
+          </div>
           <button
             type="button"
             aria-label="Close Quick Add"
@@ -694,6 +771,54 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
             <p className="mt-3 text-xs text-muted-foreground">
               You can close this window — processing will continue in the background.
             </p>
+          </div>
+        )}
+
+        {/* --- QUEUED PHASE (offline) --- P4-02 */}
+        {phase === "queued" && (
+          <div className="p-5">
+            <div
+              aria-live="polite"
+              className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-4"
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <svg
+                  aria-hidden="true"
+                  className="size-5 text-amber-600 dark:text-amber-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
+                </svg>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                  Saved for later — you&apos;re offline
+                </p>
+              </div>
+              <p className="text-sm text-amber-800/80 dark:text-amber-200/80">
+                Your submission has been saved locally. It will be sent automatically
+                when your connection is restored.
+              </p>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleAddAnother}
+                className={cn(
+                  "inline-flex min-h-[44px] w-full items-center justify-center rounded-md px-4 text-sm font-medium sm:h-9 sm:min-h-0",
+                  "border border-input bg-background text-foreground",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                Add another
+              </button>
+            </div>
           </div>
         )}
 

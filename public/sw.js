@@ -1,5 +1,5 @@
 /**
- * MeatyWiki Portal — Service Worker (skeleton)
+ * MeatyWiki Portal — Service Worker
  *
  * Version: meatywiki-portal-v1 (bump this string to force cache busting on
  * next deploy, which triggers the install → activate cycle and deletes old
@@ -8,15 +8,16 @@
  * Strategy: cache-first for static assets (JS/CSS/images/fonts);
  * network-first for API routes (/api/*).
  *
- * P4-01: skeleton only.
- *   - install / activate / fetch lifecycle wired.
- *   - Offline queue message stub included for P4-02 (IndexedDB queue).
- *   - No queue logic implemented here yet — queue lives in the page context
- *     (OfflineQueueManager) and will communicate with the SW via postMessage
- *     for Background Sync registration.
- *
- * P4-02 TODO: implement 'SYNC_QUEUE' message handler and Background Sync
- *   registration ('intake-queue' tag) when that task lands.
+ * P4-01: skeleton wired (install / activate / fetch / message stubs).
+ * P4-02: Background Sync handler added.
+ *   Architecture decision: SW does NOT implement the drain loop itself.
+ *   The offline queue lives entirely in the page context (OfflineQueueManager,
+ *   IndexedDB). The SW's role on a 'sync' event is to wake active page clients
+ *   and ask them to drain via postMessage('DRAIN_QUEUE'). This avoids
+ *   duplicating IndexedDB schema/logic in SW scope and keeps the SW small
+ *   (<10 KB gzipped target). If no clients are open, the SW no-ops; the next
+ *   page open will drain on mount via the window.online check in
+ *   OfflineQueueSync.
  *
  * Target gzipped size: <10 KB (currently well under; no heavy deps).
  */
@@ -138,17 +139,17 @@ async function networkFirst(request) {
 }
 
 // ---------------------------------------------------------------------------
-// Message handler — stub for P4-02 offline queue sync
+// Message handler — P4-02
 // ---------------------------------------------------------------------------
 
 /**
- * Message events from the page context are dispatched here.
+ * Message events from the page context.
  *
- * P4-02 will add:
- *   case 'SYNC_QUEUE': register Background Sync tag 'intake-queue'
+ * SKIP_WAITING: allow a waiting SW to activate immediately (version update).
  *
- * DO NOT implement queue logic in the SW directly; the queue is owned by
- * OfflineQueueManager (IndexedDB, page context). The SW only triggers sync.
+ * Note: SYNC_QUEUE registration is now handled automatically by the page
+ * (OfflineQueueSync component) on the window 'online' event, so no explicit
+ * message from the page is required for Background Sync registration.
  */
 self.addEventListener("message", (event) => {
   const data = event.data;
@@ -161,10 +162,6 @@ self.addEventListener("message", (event) => {
       self.skipWaiting();
       break;
 
-    // TODO (P4-02): case 'SYNC_QUEUE': register Background Sync
-    //   self.registration.sync.register('intake-queue').catch(() => {});
-    //   break;
-
     default:
       // Unknown message types are silently ignored for forward compatibility.
       break;
@@ -172,16 +169,44 @@ self.addEventListener("message", (event) => {
 });
 
 // ---------------------------------------------------------------------------
-// Background Sync — stub for P4-02
+// Background Sync — P4-02
 // ---------------------------------------------------------------------------
 
 /**
- * P4-02 will implement this handler to dequeue and replay offline intake
- * requests from IndexedDB when connectivity is restored.
+ * Background Sync handler for tag 'sync-intake-queue'.
  *
- * self.addEventListener('sync', (event) => {
- *   if (event.tag === 'intake-queue') {
- *     event.waitUntil(replayOfflineQueue());
- *   }
- * });
+ * Design: drain logic lives in the page (OfflineQueueManager). The SW wakes
+ * active clients and asks them to drain via postMessage. If no clients are
+ * open, the sync is a no-op — the queue will drain when the tab reopens.
+ *
+ * Why client-side drain (not SW-side):
+ *   - OfflineQueueManager schema is defined once in the page bundle.
+ *   - Avoids duplicating IndexedDB access logic in SW scope.
+ *   - Keeps SW size under the 10 KB gzip budget.
+ *   - SW lacks direct access to the bearer token; the page handles auth via
+ *     HttpOnly cookies automatically on each fetch.
  */
+self.addEventListener("sync", (event) => {
+  if (event.tag === "sync-intake-queue") {
+    event.waitUntil(notifyClientsTodrain());
+  }
+});
+
+/**
+ * Post DRAIN_QUEUE to all active window clients so they run
+ * OfflineQueueManager.drain() in their page context.
+ */
+async function notifyClientsTodrain() {
+  const clientList = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+
+  if (clientList.length === 0) {
+    // No active clients — queue will drain on next page open.
+    console.info("[SW] sync-intake-queue: no active clients; skipping drain signal.");
+    return;
+  }
+
+  for (const client of clientList) {
+    client.postMessage({ type: "DRAIN_QUEUE" });
+  }
+  console.info("[SW] sync-intake-queue: DRAIN_QUEUE sent to", clientList.length, "client(s).");
+}

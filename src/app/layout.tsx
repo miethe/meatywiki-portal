@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
+import { OfflineQueueSync } from "@/components/pwa/offline-queue-sync";
 
 export const metadata: Metadata = {
   title: "MeatyWiki Portal",
@@ -58,6 +59,15 @@ export default function RootLayout({
          * Traces FR-1.5-15 (P4-01).
          */}
         <ServiceWorkerRegister />
+        {/*
+         * OfflineQueueSync — side-effect only; renders null.
+         * Listens for window 'online' events and drains the offline intake
+         * queue on reconnect. Uses Background Sync API when available;
+         * falls back to direct OfflineQueueManager.drain().
+         * Only active when NEXT_PUBLIC_PORTAL_ENABLE_PWA=1.
+         * Traces FR-1.5-17, FR-1.5-18 (P4-02).
+         */}
+        <OfflineQueueSync />
       </body>
     </html>
   );

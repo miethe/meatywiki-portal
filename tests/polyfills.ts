@@ -87,3 +87,11 @@ if (typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout !== "functi
     return controller.signal;
   };
 }
+
+// 8. structuredClone — required by fake-indexeddb v6 for serializing records.
+//    Node 17+ has it natively; jsdom test environment may lack it.
+if (typeof globalThis.structuredClone !== "function") {
+  globalThis.structuredClone = function structuredClone<T>(obj: T): T {
+    return JSON.parse(JSON.stringify(obj)) as T;
+  };
+}
