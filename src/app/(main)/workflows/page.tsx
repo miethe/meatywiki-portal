@@ -18,6 +18,7 @@
 
 import { useWorkflowRuns } from "@/hooks/useWorkflowRuns";
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel";
+import { InitiationWizardDialog } from "@/components/workflow/initiation-wizard";
 import { cn } from "@/lib/utils";
 
 function RefreshIcon() {
@@ -58,24 +59,29 @@ export default function WorkflowsPage() {
           </p>
         </div>
 
-        {/* Manual refresh */}
-        <button
-          type="button"
-          onClick={() => void refetch()}
-          disabled={isLoading}
-          aria-label="Refresh workflow list"
-          className={cn(
-            "inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-xs font-medium sm:h-8 sm:min-h-0",
-            "border border-input bg-background text-foreground",
-            "transition-colors hover:bg-accent hover:text-accent-foreground",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            "disabled:pointer-events-none disabled:opacity-50",
-            isLoading && "animate-pulse",
-          )}
-        >
-          <RefreshIcon />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
+        {/* Actions */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <InitiationWizardDialog />
+
+          {/* Manual refresh */}
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={isLoading}
+            aria-label="Refresh workflow list"
+            className={cn(
+              "inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-xs font-medium sm:h-8 sm:min-h-0",
+              "border border-input bg-background text-foreground",
+              "transition-colors hover:bg-accent hover:text-accent-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              "disabled:pointer-events-none disabled:opacity-50",
+              isLoading && "animate-pulse",
+            )}
+          >
+            <RefreshIcon />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
       </div>
 
       {/* Main panel */}
