@@ -7,9 +7,13 @@
  *   - GET /api/admin/health
  *   - Token rotation UI
  *
+ * P1.5-2-05: Added Workflow Templates section linking to /settings/workflow-templates.
+ *
  * Stitch reference: "System Settings & Configuration" (ID: 5fbbc5d4b18748c084f251638932b513)
  * Shell: Standard Archival
  */
+
+import Link from "next/link";
 
 export default function SettingsPage() {
   return (
@@ -91,6 +95,32 @@ export default function SettingsPage() {
             Health check view (<code className="text-xs">GET /api/admin/health</code>)
             — implemented in P4.
           </p>
+        </div>
+      </section>
+
+      {/* Workflow Templates section */}
+      <section aria-labelledby="settings-templates-heading">
+        <h2
+          id="settings-templates-heading"
+          className="mb-3 text-base font-semibold"
+        >
+          Workflow Templates
+        </h2>
+        <div className="rounded-md border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Manage templates</p>
+              <p className="text-xs text-muted-foreground">
+                View system templates and create, edit, or delete custom workflow templates.
+              </p>
+            </div>
+            <Link
+              href="/settings/workflow-templates"
+              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Manage
+            </Link>
+          </div>
         </div>
       </section>
     </div>

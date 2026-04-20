@@ -244,3 +244,64 @@ export async function createWorkflow(
     body: JSON.stringify(req),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Template CRUD (authoring UI — P1.5-2-05)
+// ---------------------------------------------------------------------------
+
+export interface CreateTemplateRequest {
+  slug: string;
+  description?: string | null;
+  yaml_content: string;
+}
+
+export interface UpdateTemplateRequest {
+  slug?: string;
+  description?: string | null;
+  yaml_content?: string;
+}
+
+/**
+ * POST /api/workflow-templates
+ *
+ * Creates a new custom workflow template. Returns the created template.
+ * Traces FR-1.5-09 / P1.5-2-05.
+ */
+export async function createWorkflowTemplate(
+  req: CreateTemplateRequest,
+): Promise<WorkflowTemplate> {
+  const dto = await apiFetch<WorkflowTemplateDTO>("/workflow-templates", {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+  return dtoToTemplate(dto);
+}
+
+/**
+ * PATCH /api/workflow-templates/:id
+ *
+ * Partially updates a custom template. Returns the updated template.
+ * System templates are read-only (backend enforces 403).
+ * Traces FR-1.5-09 / P1.5-2-05.
+ */
+export async function updateWorkflowTemplate(
+  id: string,
+  req: UpdateTemplateRequest,
+): Promise<WorkflowTemplate> {
+  const dto = await apiFetch<WorkflowTemplateDTO>(`/workflow-templates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(req),
+  });
+  return dtoToTemplate(dto);
+}
+
+/**
+ * DELETE /api/workflow-templates/:id
+ *
+ * Deletes a custom template. Returns 204 No Content.
+ * System templates are read-only (backend enforces 403).
+ * Traces FR-1.5-09 / P1.5-2-05.
+ */
+export async function deleteWorkflowTemplate(id: string): Promise<void> {
+  await apiFetch<void>(`/workflow-templates/${id}`, { method: "DELETE" });
+}
