@@ -85,11 +85,12 @@ export async function apiFetch<T = unknown>(
   const response = await fetch(url, { ...fetchInit, headers });
 
   if (!response.ok) {
-    let body: unknown;
+    const raw = await response.text();
+    let body: unknown = raw;
     try {
-      body = await response.json();
+      body = raw ? JSON.parse(raw) : raw;
     } catch {
-      body = await response.text();
+      // keep raw text
     }
     throw new ApiError(response.status, body);
   }

@@ -43,7 +43,6 @@ import type {
   LensFreshness,
   LensVerificationState,
   ServiceModeEnvelope,
-  SingleEnvelope,
 } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
@@ -173,18 +172,16 @@ export async function listArtifacts(
 /**
  * Fetch a single artifact by ID.
  *
- * Returns `SingleEnvelope<ArtifactDetail>` — callers unpack `data`.
- *
  * Throws `ApiError` with status 404 when the artifact is not found.
  * Callers should catch and render appropriate error states.
  *
  * Backend: GET /api/artifacts/{artifact_id}
- * Response model: ArtifactDetail (extends ArtifactCard with richer fields).
+ * Response model: ArtifactDetail returned directly (no envelope wrapping —
+ * detail endpoints on this API do not use SingleEnvelope).
  */
 export async function getArtifact(id: string): Promise<ArtifactDetail> {
-  const envelope = await apiFetch<SingleEnvelope<ArtifactDetail>>(
+  return apiFetch<ArtifactDetail>(
     `/artifacts/${encodeURIComponent(id)}`,
     { method: "GET" },
   );
-  return envelope.data;
 }

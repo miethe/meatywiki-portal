@@ -83,8 +83,10 @@ export function ArtifactCard({
         tabIndex={0}
       />
 
-      {/* Content — above the stretch link in stacking order */}
-      <div className={cn("relative flex min-w-0 flex-col gap-1.5", variant === "list" && "flex-1")}>
+      {/* Content — visually above the stretch link, but pointer-events pass through
+          so clicks land on the underlying <Link>.  Interactive children re-enable
+          their own pointer events via `pointer-events-auto`. */}
+      <div className={cn("pointer-events-none relative flex min-w-0 flex-col gap-1.5", variant === "list" && "flex-1")}>
         {/* Badge row */}
         <div className="flex flex-wrap items-center gap-1">
           <TypeBadge type={type} />
