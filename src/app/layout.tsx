@@ -1,8 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
-import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
-import { OfflineQueueSync } from "@/components/pwa/offline-queue-sync";
+import { PwaProviders } from "@/components/pwa/pwa-providers";
 
 export const metadata: Metadata = {
   title: "MeatyWiki Portal",
@@ -52,22 +51,14 @@ export default function RootLayout({
       <body>
         <QueryProvider>{children}</QueryProvider>
         {/*
-         * ServiceWorkerRegister — side-effect only; renders null.
-         * Only registers /sw.js when NEXT_PUBLIC_PORTAL_ENABLE_PWA=1.
-         * Placed outside QueryProvider intentionally: SW registration is
-         * independent of data-fetching concerns.
-         * Traces FR-1.5-15 (P4-01).
+         * PwaProviders — client-side wrapper that lazy-loads ServiceWorkerRegister
+         * and OfflineQueueSync via dynamic() with ssr:false (P4-04 perf tuning).
+         * Both inner components render null — they are pure side-effect shells.
+         * The dynamic() + ssr:false wrapper must live in a Client Component;
+         * it is not permitted directly in this Server Component layout.
+         * Traces FR-1.5-15, FR-1.5-17, FR-1.5-18.
          */}
-        <ServiceWorkerRegister />
-        {/*
-         * OfflineQueueSync — side-effect only; renders null.
-         * Listens for window 'online' events and drains the offline intake
-         * queue on reconnect. Uses Background Sync API when available;
-         * falls back to direct OfflineQueueManager.drain().
-         * Only active when NEXT_PUBLIC_PORTAL_ENABLE_PWA=1.
-         * Traces FR-1.5-17, FR-1.5-18 (P4-02).
-         */}
-        <OfflineQueueSync />
+        <PwaProviders />
       </body>
     </html>
   );
