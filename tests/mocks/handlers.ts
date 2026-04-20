@@ -57,6 +57,37 @@ function makeWorkflowRun(overrides: Partial<WorkflowRunStub> = {}): WorkflowRunS
 // Stub type shapes (mirror backend schemas — no import from Python)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Blog post stub (P1.5-3-03)
+// ---------------------------------------------------------------------------
+
+interface BlogPostStub {
+  artifact_id: string;
+  title: string;
+  content: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  slug: string | null;
+  summary: string | null;
+  run_id: string | null;
+}
+
+function makeBlogPost(overrides: Partial<BlogPostStub> = {}): BlogPostStub {
+  return {
+    artifact_id: "blog-stub-001",
+    title: "Stub blog post",
+    content: "# Stub\n\nContent here.",
+    status: "draft",
+    created_at: "2026-04-01T00:00:00Z",
+    updated_at: "2026-04-16T00:00:00Z",
+    slug: null,
+    summary: null,
+    run_id: null,
+    ...overrides,
+  };
+}
+
 interface ArtifactMetadataStub {
   fidelity: string | null;
   freshness: string | null;
@@ -480,5 +511,63 @@ export const handlers = [
         rationale: "Artifact has sufficient source density for synthesis.",
       },
     });
+  }),
+
+  // ------------------------------------------------------------------
+  // Blog posts (P1.5-3-03)
+  // ------------------------------------------------------------------
+
+  // List blog posts (GET /api/blog/posts)
+  http.get(`${API_BASE}/api/blog/posts`, () => {
+    const items: BlogPostStub[] = [
+      makeBlogPost({ artifact_id: "blog-001", title: "First blog post", status: "draft" }),
+      makeBlogPost({ artifact_id: "blog-002", title: "Second blog post", status: "published" }),
+    ];
+    return HttpResponse.json({ data: items, cursor: null });
+  }),
+
+  // Get single blog post (GET /api/blog/posts/:id)
+  http.get(`${API_BASE}/api/blog/posts/:id`, ({ params }) => {
+    const id = params["id"] as string;
+    return HttpResponse.json(makeBlogPost({ artifact_id: id }));
+  }),
+
+  // Create blog post (POST /api/blog/posts)
+  http.post(`${API_BASE}/api/blog/posts`, async ({ request }) => {
+    const body = (await request.json()) as { title: string; content?: string };
+    return HttpResponse.json(
+      makeBlogPost({
+        artifact_id: "blog-new-001",
+        title: body.title,
+        content: body.content ?? "",
+      }),
+      { status: 201 },
+    );
+  }),
+
+  // Update blog post (PATCH /api/blog/posts/:id)
+  http.patch(`${API_BASE}/api/blog/posts/:id`, async ({ params, request }) => {
+    const id = params["id"] as string;
+    const body = (await request.json()) as { title?: string; content?: string };
+    return HttpResponse.json(
+      makeBlogPost({
+        artifact_id: id,
+        title: body.title ?? "Updated post",
+        content: body.content ?? "",
+      }),
+      { status: 202 },
+    );
+  }),
+
+  // Publish blog post (POST /api/blog/posts/:id/publish)
+  http.post(`${API_BASE}/api/blog/posts/:id/publish`, ({ params }) => {
+    const id = params["id"] as string;
+    return HttpResponse.json(makeBlogPost({ artifact_id: id, status: "published" }));
+  }),
+
+  // Archive blog post (POST /api/blog/posts/:id/archive)
+  http.post(`${API_BASE}/api/blog/posts/:id/archive`, ({ params }) => {
+    const id = params["id"] as string;
+    return HttpResponse.json(makeBlogPost({ artifact_id: id, status: "archived" }));
   }),
 ];
