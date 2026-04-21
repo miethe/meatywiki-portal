@@ -171,6 +171,23 @@ export interface ArtifactCard {
    * Taxonomy-redesign P4-03 / P5-01.
    */
   workflow_id?: string | null;
+  /**
+   * Most recent non-terminal workflow run associated with this artifact, if any.
+   * Projected by GET /api/artifacts when a pending|running run exists.
+   *
+   * Used by ArtifactCard to conditionally render StageTrackerCompact per
+   * Stage Tracker manifest §2.1–2.2 (DP1-02 #1, DP1-06 #9 gap fill).
+   *
+   * Null/absent when no active run exists — card renders without tracker.
+   * Tracked as MISMATCH-03: backend does not yet project this field; wired
+   * ahead of backend change so cards hydrate automatically when it ships.
+   */
+  active_run?: {
+    id: string;
+    status: WorkflowRunStatus;
+    current_stage?: number | null;
+    template_id?: string | null;
+  } | null;
 }
 
 // ---------------------------------------------------------------------------

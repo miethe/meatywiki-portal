@@ -301,7 +301,11 @@ export default function LibraryPage() {
               {!isLoading &&
                 artifacts.map((artifact) => (
                   <li key={artifact.id}>
-                    <ArtifactCard artifact={artifact} variant={viewMode} />
+                    <ArtifactCard
+                      artifact={artifact}
+                      variant={viewMode}
+                      activeRun={artifact.active_run ?? undefined}
+                    />
                   </li>
                 ))}
 
