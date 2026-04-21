@@ -1,5 +1,3 @@
-"use client";
-
 /**
  * useSSEPool — React hook wrapping the SSEConnectionPool singleton.
  *
