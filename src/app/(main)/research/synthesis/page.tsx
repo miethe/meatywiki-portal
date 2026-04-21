@@ -1,31 +1,24 @@
 /**
- * Synthesis Builder screen — research_synthesis_v1 wired.
+ * Synthesis Builder landing — redirects to the 2-step wizard (Step 1).
  *
- * P4-02: Real implementation. Replaces the P4-01 placeholder stub.
+ * ADR-DPI-005 Option A: the wizard ships in v1.5 with a 2-step flow:
+ *   Step 1: /research/synthesis/select-scope  — artifact picker + scope rail
+ *   Step 2: /research/synthesis/configure     — type bento + param panel + scope rail
  *
- * Route: /research/synthesis
- * Parent layout: (main)/research/layout.tsx (research workspace shell)
+ * This page acts as a landing / entry point for the /research/synthesis route.
+ * It renders wizard entry UI (intro text + "Start synthesis" CTA) rather than
+ * a hard redirect so the URL is bookmarkable and the sub-nav tab stays active.
  *
- * Renders the SynthesisBuilder component which handles:
- *   - Source artifact selection (multi-line ULID picker)
- *   - Optional scope + focus parameter inputs
- *   - POST /api/workflows/synthesize on submit
- *   - SSE progress tracking via useSSE (stages: gathering → synthesizing → complete)
- *   - Link to new synthesis artifact on completion
- *   - Error state with inline retry
+ * The legacy SynthesisBuilder form (single-page, P4-02 original) remains at
+ * /research/synthesis/legacy for backward compatibility. It may be removed in v1.6.
  *
- * DP3-01 (design-pass Phase 3) — cosmetic + contract integration:
- *   - Stage Tracker: already integrated in SynthesisBuilder running phase; researchOrigin=true
- *     added (DP3-01) so the run progress strip shows amber research accent.
- *   - Lens Badge on backlinked artifact rows: deferred — no backlinked-artifact panel exists
- *     (structural gap, all §2.7 deltas are adr-proposal → Phase 4).
- *   - Handoff Chain on produced-synthesis preview: deferred to DP4-HC-02 (Phase 4 structural).
- *   - All §2.7 deltas are adr-proposal (structural) — deferred to Phase 4.
- *
- * Stitch reference: "Synthesis Builder" (P4-02 scope)
+ * Stitch reference: "Synthesis Builder" (P4-02 / DP4-02d scope)
+ * ADR: ADR-DPI-005
+ * Tasks: DP4-02d
  */
 
-import { SynthesisBuilder } from "@/components/research/synthesis-builder";
+import Link from "next/link";
+import { ArrowRight, Layers } from "lucide-react";
 
 export default function SynthesisPage() {
   return (
@@ -41,7 +34,58 @@ export default function SynthesisPage() {
         </p>
       </div>
 
-      <SynthesisBuilder />
+      {/* Wizard entry card */}
+      <div className="flex max-w-xl flex-col gap-4 rounded-lg border bg-card p-6">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
+            <Layers aria-hidden="true" className="size-5 text-primary" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground">
+              2-step wizard (v1.5)
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Select source artifacts, choose a synthesis type, and tune
+              depth, tone, and constraints before launching.
+            </p>
+          </div>
+        </div>
+
+        <ol className="flex flex-col gap-2 text-xs text-muted-foreground">
+          <li className="flex items-center gap-2">
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
+              1
+            </span>
+            Select source artifacts — filter, sort, and multi-select from your vault
+          </li>
+          <li className="flex items-center gap-2">
+            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
+              2
+            </span>
+            Configure — synthesis type, depth, tone, and constraints
+          </li>
+        </ol>
+
+        <Link
+          href="/research/synthesis/select-scope"
+          className="self-start inline-flex items-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          Start synthesis
+          <ArrowRight aria-hidden="true" className="size-4" />
+        </Link>
+      </div>
+
+      {/* Legacy fallback link */}
+      <p className="text-xs text-muted-foreground">
+        Looking for the simple form?{" "}
+        <Link
+          href="/research/synthesis/legacy"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Use the legacy single-step builder
+        </Link>
+        .
+      </p>
     </div>
   );
 }
