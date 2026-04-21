@@ -1,47 +1,47 @@
 "use client";
 
 /**
- * Research Pages screen — facet-filtered Library view (taxonomy-redesign P5-03).
+ * Projects screen — filtered Library view (taxonomy-redesign P5-05).
  *
- * Replaces the previous useResearchArtifacts (workspace=research) with
- * useLibraryArtifacts + facet="research" pre-set. This aligns Research as a
- * filtered view over the unified Library surface rather than a separate
- * workspace, consistent with the taxonomy-redesign spec.
+ * Renders the Library card + filter layout with `facet='projects'` pre-applied
+ * via `lockedFacet`. The facet is locked (not user-editable); all other filters
+ * (type, status, date range, lens) remain available.
  *
- * Changes from pre-P5-03:
- *   - Import: useResearchArtifacts → useLibraryArtifacts (from @/components/library)
- *   - filters.facet locked to "research"; lockedFacet="research" on LibraryFilterBar
- *   - hasActiveFilters omits separate facet check (facet is always locked)
- *   - Header: "Research-only view" badge callout so users distinguish from Library
- *   - Empty state text updated to reflect the research facet context
+ * Visual distinction: amber "Project planning" facet badge in the page header,
+ * mirroring the locked-facet indicator already rendered inside LibraryFilterBar.
  *
- * URL shape: /research/pages — unchanged (bookmarks preserved).
+ * Pattern mirrors the Research (P5-03) and Blog (P5-04) filtered views.
  *
- * P4-01: original Research workspace structure + navigation.
- * P5-03: refactor to facet-filtered Library view.
+ * URL: /projects — no sub-routes in v1. URL shape kept minimal (YAGNI).
  *
- * Stitch reference: "Research Home" (ID: 0cf6fb7b27d9459e8b5bebfea66915c5)
+ * Stitch reference: "Projects" workspace (taxonomy-redesign design-pass phase 5).
  */
 
 import { useState, useCallback, useEffect } from "react";
-import { LayoutGrid, List, AlertCircle, FlaskConical } from "lucide-react";
+import { LayoutGrid, List, AlertCircle, FolderKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ArtifactCard } from "@/components/ui/artifact-card";
-import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
 import {
+  ArtifactCard,
   LibraryFilterBar,
   useLensFilterUrlSync,
   useLibraryArtifacts,
   DEFAULT_LIBRARY_FILTERS,
-  type LibraryFilters,
 } from "@/components/library";
+import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
+import type { LibraryFilters } from "@/components/library";
+
+// ---------------------------------------------------------------------------
+// The locked facet for this screen
+// ---------------------------------------------------------------------------
+
+const PROJECTS_FACET = "projects" as const;
 
 // ---------------------------------------------------------------------------
 // View mode — persisted to localStorage (separate key from Library)
 // ---------------------------------------------------------------------------
 
 type ViewMode = "grid" | "list";
-const VIEW_MODE_KEY = "meatywiki-research-view";
+const VIEW_MODE_KEY = "meatywiki-projects-view";
 
 function getInitialViewMode(): ViewMode {
   if (typeof window === "undefined") return "grid";
@@ -49,29 +49,13 @@ function getInitialViewMode(): ViewMode {
     const stored = window.localStorage.getItem(VIEW_MODE_KEY);
     if (stored === "list" || stored === "grid") return stored;
   } catch {
-    // localStorage unavailable — fall back to default
+    // localStorage unavailable (private browsing, etc.) — fall back to default
   }
   return "grid";
 }
 
 // ---------------------------------------------------------------------------
-// Research-only view indicator — distinguishes from the Library screen
-// ---------------------------------------------------------------------------
-
-function ResearchViewBadge() {
-  return (
-    <span
-      aria-label="Filtered to research facet only"
-      className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
-    >
-      <FlaskConical aria-hidden="true" className="size-3.5" />
-      Research-only view
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// View toggle
+// View toggle — identical shape to Library/Blog screens
 // ---------------------------------------------------------------------------
 
 interface ViewToggleProps {
@@ -119,7 +103,7 @@ function ViewToggle({ view, onChange }: ViewToggleProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Empty state
+// Empty state — projects-specific copy
 // ---------------------------------------------------------------------------
 
 function EmptyState({ hasFilters }: { hasFilters: boolean }) {
@@ -128,30 +112,17 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
       role="status"
       className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-16 text-center"
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-        <svg
-          aria-hidden="true"
-          className="size-6 text-muted-foreground"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.5}
-            d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"
-          />
-        </svg>
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/30">
+        <FolderKanban aria-hidden="true" className="size-6 text-amber-600 dark:text-amber-400" />
       </div>
       <div>
         <p className="text-sm font-medium text-foreground">
-          {hasFilters ? "No matching research pages" : "No research pages yet"}
+          {hasFilters ? "No matching project artifacts" : "No project artifacts yet"}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {hasFilters
             ? "Try adjusting or clearing the active filters."
-            : "Compile research notes into the research workspace to see them here."}
+            : "Project artifacts compiled into the workspace will appear here."}
         </p>
       </div>
     </div>
@@ -170,9 +141,7 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
     >
       <AlertCircle aria-hidden="true" className="size-8 text-destructive" />
       <div>
-        <p className="text-sm font-medium text-foreground">
-          Failed to load research pages
-        </p>
+        <p className="text-sm font-medium text-foreground">Failed to load project artifacts</p>
         <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
       </div>
       <button
@@ -191,19 +160,27 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Research filters — LibraryFilters with facet locked to "research"
+// Projects facet badge — "Project planning" visual indicator in the header
 // ---------------------------------------------------------------------------
 
-const DEFAULT_RESEARCH_VIEW_FILTERS: LibraryFilters = {
-  ...DEFAULT_LIBRARY_FILTERS,
-  facet: "research",
-};
+function ProjectsFacetBadge() {
+  return (
+    <span
+      aria-label="Filtered to projects facet: Project planning"
+      className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
+    >
+      <FolderKanban aria-hidden="true" className="size-3.5" />
+      Project planning
+    </span>
+  );
+}
 
 // ---------------------------------------------------------------------------
-// Page component
+// Main page component
 // ---------------------------------------------------------------------------
 
-export default function ResearchPagesPage() {
+export default function ProjectsPage() {
+  // View mode — initialised after mount to avoid SSR/hydration mismatch
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [mounted, setMounted] = useState(false);
 
@@ -221,26 +198,21 @@ export default function ResearchPagesPage() {
     }
   }, []);
 
-  // URL sync for lens filters (P4-09)
+  // URL sync for lens filters — same hook as Library/Research/Blog screens
   const { readFromUrl, syncToUrl } = useLensFilterUrlSync();
 
-  // Filter state — facet locked to "research"; lens filters hydrated from URL
+  // Filter state — facet locked to "projects"; all other filters user-editable
   const [filters, setFilters] = useState<LibraryFilters>(() => ({
-    ...DEFAULT_RESEARCH_VIEW_FILTERS,
+    ...DEFAULT_LIBRARY_FILTERS,
+    facet: PROJECTS_FACET,
     ...(readFromUrl() ?? {}),
-    // Always re-apply the locked facet even if URL params tried to override it
-    facet: "research",
   }));
 
   const handleFiltersChange = useCallback(
     (next: Partial<LibraryFilters>) => {
       setFilters((prev) => {
-        const updated = {
-          ...prev,
-          ...next,
-          // Prevent the facet from being changed by filter bar interactions
-          facet: "research" as const,
-        };
+        // Enforce the locked facet — never let a partial update override it
+        const updated: LibraryFilters = { ...prev, ...next, facet: PROJECTS_FACET };
         syncToUrl({
           lensFidelity: updated.lensFidelity,
           lensFreshness: updated.lensFreshness,
@@ -252,6 +224,7 @@ export default function ResearchPagesPage() {
     [syncToUrl],
   );
 
+  // Data fetching — facet="projects" is baked into filters state
   const {
     artifacts,
     isLoading,
@@ -263,7 +236,6 @@ export default function ResearchPagesPage() {
     total,
   } = useLibraryArtifacts(filters);
 
-  // facet is always "research" (locked), so exclude it from "has active filters" check
   const hasActiveFilters =
     filters.types.length > 0 ||
     filters.statuses.length > 0 ||
@@ -276,14 +248,15 @@ export default function ResearchPagesPage() {
   return (
     <div className="flex flex-col gap-4">
       {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Research Pages</h1>
-            <ResearchViewBadge />
+            <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+            {/* Visual badge indicating "Project planning" facet — P5-05 requirement */}
+            <ProjectsFacetBadge />
           </div>
           <p className="text-sm text-muted-foreground">
-            Research notes and compiled artifacts
+            Project planning artifacts — filtered Library view
           </p>
         </div>
 
@@ -293,16 +266,16 @@ export default function ResearchPagesPage() {
         />
       </div>
 
-      {/* Filter bar — facet locked to "research" (chip row hidden, lock indicator shown) */}
+      {/* Filter bar — facet row hidden (lockedFacet="projects"), rest user-editable */}
       <LibraryFilterBar
         filters={filters}
         onFiltersChange={handleFiltersChange}
         resultCount={isLoading ? undefined : total}
-        lockedFacet="research"
+        lockedFacet={PROJECTS_FACET}
       />
 
       {/* Artifact list / grid */}
-      <section aria-label="Research artifacts" aria-busy={isLoading}>
+      <section aria-label="Project artifacts" aria-busy={isLoading}>
         {isError && error ? (
           <ErrorState
             error={error}
@@ -319,6 +292,7 @@ export default function ResearchPagesPage() {
                   : "grid-cols-1",
               )}
             >
+              {/* Skeleton on initial load */}
               {isLoading && (
                 <ArtifactCardSkeletonGrid
                   count={viewMode === "grid" ? 9 : 5}
@@ -326,6 +300,7 @@ export default function ResearchPagesPage() {
                 />
               )}
 
+              {/* Artifact cards */}
               {!isLoading &&
                 artifacts.map((artifact) => (
                   <li key={artifact.id}>
@@ -333,6 +308,7 @@ export default function ResearchPagesPage() {
                   </li>
                 ))}
 
+              {/* Skeleton appended during next-page fetch */}
               {isFetchingNextPage && (
                 <ArtifactCardSkeletonGrid
                   count={viewMode === "grid" ? 3 : 2}
@@ -341,17 +317,19 @@ export default function ResearchPagesPage() {
               )}
             </ul>
 
+            {/* Empty state */}
             {!isLoading && artifacts.length === 0 && (
               <EmptyState hasFilters={hasActiveFilters} />
             )}
 
+            {/* Load more */}
             {hasNextPage && !isLoading && (
               <div className="mt-4 flex justify-center">
                 <button
                   type="button"
                   onClick={() => fetchNextPage()}
                   disabled={isFetchingNextPage}
-                  aria-label="Load more research pages"
+                  aria-label="Load more project artifacts"
                   className={cn(
                     "inline-flex h-8 items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground",
                     "transition-colors hover:bg-accent hover:text-accent-foreground",
