@@ -22,7 +22,7 @@
  * Stitch reference: "Synthesis Builder" (P4-02 scope).
  */
 
-import { useState, useCallback, useId, type FormEvent } from "react";
+import { useState, useCallback, useId } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { StageTracker } from "@/components/workflow/stage-tracker";
@@ -212,7 +212,7 @@ export function SynthesisBuilder({
   // ------------------------------------------------------------------
 
   const handleSubmit = useCallback(
-    async (e: FormEvent<HTMLFormElement>) => {
+    async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setValidationError(null);
       setSubmitError(null);
