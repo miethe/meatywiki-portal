@@ -21,6 +21,10 @@
  * - WorkflowTopBarIndicator (P3-07) — active run count badge → /workflows
  * - Quick Add button (triggers QuickAddModal — P3-04 wires the actual submit)
  * - Logout button
+ *
+ * DP3-04 §2.10#3: WorkflowTopBarIndicator mount position verified correct —
+ *   right cluster between Quick Add and Sign Out, self-contained (polls 30 s).
+ *   Compact/Detail shell variants are adr-proposal; deferred to Phase 4.
  */
 
 import { useState, useTransition } from "react";
