@@ -3,13 +3,18 @@
 /**
  * WorkflowOSTab — content for the "Workflow OS" tab on the Artifact Detail page.
  *
- * P4-10 scope:
+ * P4-10 + DP3-02 scope:
  *   1. Lens Badge Set     — current frontmatter values (read-only, detail variant).
- *   2. Stage Tracker      — compact view of the most recent workflow run.
- *   3. Run History        — table of all runs associated with this artifact.
+ *                           Tab-level lens context anchor; renders regardless of run history.
+ *   2. Handoff Chain      — artifact lineage timeline (DP3-02 contract integration).
+ *                           Primary content; full variant per manifest §3.2.
+ *                           Data: artifact_edges fallback (TODO-P2-01: swap to
+ *                           GET /api/artifacts/:id/lineage once P2-01 ships).
+ *   3. Stage Tracker      — compact view of the most recent workflow run.
+ *   4. Run History        — table of all runs associated with this artifact.
  *      Columns: run_id | template_id | status | completed_at.
  *      Row click → navigates to /workflows/:run_id (SSE stream surface from P3-07).
- *   4. Quality Gate       — summary of lint findings (optional; best-effort).
+ *   5. Quality Gate       — summary of lint findings (optional; best-effort).
  *
  * Lazy-loading: data is fetched only when the tab is activated (enabled prop).
  *
@@ -29,6 +34,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { StageTracker } from "@/components/workflow/stage-tracker";
+import { HandoffChain } from "@/components/artifact/HandoffChain";
 import { useArtifactWorkflowRuns } from "@/hooks/useArtifactWorkflowRuns";
 import type { ArtifactDetail, WorkflowRun, WorkflowRunStatus } from "@/types/artifact";
 
@@ -350,6 +356,66 @@ function QualityGate({ artifact }: { artifact: ArtifactDetail }) {
 }
 
 // ---------------------------------------------------------------------------
+// 3a. Handoff Chain timeline — primary content of the OS tab (DP3-02)
+//
+// Per manifest §3.2 (portal-v1.5-handoff-chain-integration.md), the full
+// Handoff Chain timeline is the primary content of this tab, placed below
+// Lens Dimensions and above Run History.
+//
+// Data source: GET /api/artifacts/:id/lineage (P2-01 v1.5 timeline API).
+// That endpoint is NOT yet implemented — using artifact.artifact_edges
+// as a fallback (same data shape, edges only, no run interleaving).
+//
+// TODO-P2-01: When GET /api/artifacts/:id/lineage ships, replace the
+// `edges={artifact.artifact_edges}` prop with the API response's edge list
+// merged with the runs list (client-side interleave per manifest §3.2).
+// ---------------------------------------------------------------------------
+
+function HandoffChainSection({ artifact }: { artifact: ArtifactDetail }) {
+  const edges = artifact.artifact_edges;
+  const hasEdges = Array.isArray(edges) && edges.length > 0;
+
+  return (
+    <Section title="Lineage">
+      {hasEdges ? (
+        <HandoffChain
+          currentArtifactId={artifact.id}
+          edges={edges}
+          className="rounded-md border bg-muted/20 p-3"
+        />
+      ) : (
+        <div
+          role="status"
+          className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-8 text-center"
+        >
+          {/* Lineage icon */}
+          <svg
+            aria-hidden="true"
+            className="size-6 text-muted-foreground/40"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={1.25}
+              d="M13 10V3L4 14h7v7l9-11h-7z"
+            />
+          </svg>
+          <div>
+            <p className="text-sm text-muted-foreground">No workflow history yet</p>
+            <p className="mt-1 text-xs text-muted-foreground/60">
+              Edges and run history will appear here once a workflow touches this artifact.
+            </p>
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Loading skeleton
 // ---------------------------------------------------------------------------
 
@@ -423,22 +489,32 @@ export function WorkflowOSTab({ artifact, enabled }: WorkflowOSTabProps) {
 
   return (
     <div className="flex flex-col gap-6">
-      {/* 1. Lens Badge Set */}
+      {/* 1. Lens Badge Set — anchored at top, tab-level lens context anchor */}
+      {/* DP3-02: badge stays populated from frontmatter regardless of run   */}
+      {/* history; renders "no signal" state when all lens fields are null.  */}
       <LensSection artifact={artifact} />
 
       {/* Divider */}
       <hr className="border-border" />
 
-      {/* 2. Stage Tracker — latest run */}
+      {/* 2. Handoff Chain timeline — primary content (DP3-02 manifest §3.2) */}
+      {/* Data: artifact.artifact_edges fallback (TODO-P2-01: swap to        */}
+      {/* GET /api/artifacts/:id/lineage once P2-01 endpoint ships).         */}
+      <HandoffChainSection artifact={artifact} />
+
+      {/* Divider */}
+      <hr className="border-border" />
+
+      {/* 3. Stage Tracker — latest run */}
       <StageSection run={latestRun} />
 
       {/* Divider */}
       <hr className="border-border" />
 
-      {/* 3. Run History */}
+      {/* 4. Run History */}
       <RunHistory runs={runs} onRowClick={handleRowClick} />
 
-      {/* 4. Quality Gate (conditional — only rendered when lint data exists) */}
+      {/* 5. Quality Gate (conditional — only rendered when lint data exists) */}
       <QualityGate artifact={artifact} />
     </div>
   );

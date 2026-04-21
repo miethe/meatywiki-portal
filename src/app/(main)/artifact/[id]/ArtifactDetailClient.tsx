@@ -298,6 +298,8 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 
   const isHtml = content.trimStart().startsWith("<");
 
+  // DP3-02 #7: Draft prose wrapper uses same full typography ruleset as
+  // KnowledgeReader to avoid density drift between readers.
   if (isHtml) {
     return (
       <div
@@ -305,11 +307,19 @@ function DraftReader({ content }: { content: string | null | undefined }) {
           "rounded-md border bg-card p-6",
           "[&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-bold",
           "[&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold",
+          "[&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-base [&_h3]:font-semibold",
           "[&_p]:mb-3 [&_p]:text-sm [&_p]:leading-relaxed",
           "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-sm",
+          "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:text-sm",
           "[&_li]:mb-1",
           "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
+          "[&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:text-xs",
+          "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground",
           "[&_a]:text-primary [&_a]:underline-offset-2 [&_a]:hover:underline",
+          "[&_hr]:border-border",
+          "[&_table]:w-full [&_table]:text-sm",
+          "[&_th]:border-b [&_th]:pb-2 [&_th]:text-left [&_th]:font-semibold",
+          "[&_td]:border-b [&_td]:border-border/50 [&_td]:py-1.5",
         )}
         dangerouslySetInnerHTML={{ __html: content }}
       />
@@ -502,12 +512,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* Artifact header                                                     */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex flex-col gap-2">
-        {/* Badge row */}
+        {/* Lens Badge Set — FULL variant, above the title per manifest §3.4 */}
+        {/* DP3-02: badge row is tab-agnostic and does not re-mount on tab switch */}
+        <LensBadgeSet artifact={artifact} variant="detail" />
+
+        {/* Type / workspace / indicator badge row */}
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={artifact.type} />
           <WorkspaceBadge workspace={artifact.workspace} />
-          {/* LensBadgeSet uses detail variant to show all 5 dimensions */}
-          <LensBadgeSet artifact={artifact} variant="detail" />
           {/* Freshness indicator from raw frontmatter fields (P4-04) */}
           <ArtifactFreshnessBadge
             freshness={artifact.frontmatter_jsonb?.["lens_freshness"] as string | null | undefined}
@@ -546,11 +558,13 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
 
       {/* ------------------------------------------------------------------ */}
       {/* Tab bar                                                             */}
+      {/* DP3-02 #10: horizontal scroll on mobile; no line-wrap (tabs stay   */}
+      {/* single-row at all breakpoints to preserve scan order invariant).   */}
       {/* ------------------------------------------------------------------ */}
       <div
         role="tablist"
         aria-label="Artifact readers"
-        className="flex overflow-x-auto border-b"
+        className="flex overflow-x-auto border-b scrollbar-none [-webkit-overflow-scrolling:touch]"
       >
         {TABS.map((tab) => (
           <button
@@ -708,11 +722,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
             </dl>
           </div>
 
-          {/* Handoff chain card (only when edges exist) */}
+          {/* Lineage / Handoff Chain sidebar section (DP3-02 manifest §3.1) */}
+          {/* Shown only when edges are present; hidden entirely when empty   */}
+          {/* per manifest rule. Full lineage timeline (runs joined) deferred */}
+          {/* to TODO-P2-01 (GET /api/artifacts/:id/lineage not yet shipped). */}
           {artifact.artifact_edges && artifact.artifact_edges.length > 0 && (
             <div className="rounded-md border p-3">
               <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Handoff Chain
+                Lineage
               </h3>
               <HandoffChain
                 currentArtifactId={artifact.id}
