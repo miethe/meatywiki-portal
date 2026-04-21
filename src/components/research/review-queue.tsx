@@ -20,7 +20,10 @@
  *   - Artifact ID + confidence score metadata strip per row.
  *   - Filter/sort controls above the list (priority + updated-at).
  *   - Two-column layout deferred to v1.6 (ADR-DPI-002).
- *   - Per-row Stage Tracker handled by ADR-DPI-001 (DP4-02a) — not this file.
+ *   - Per-row Stage Tracker (DP4-02a / ADR-DPI-001 gap fill — DP1-13 #9):
+ *     StageTracker compact mounted in secondary column right of priority badge
+ *     when artifact has an active (pending|running) workflow run. Null-safe:
+ *     no tracker rendered when activeRun absent or terminal.
  *   - Right-rail context panel deferred to v1.6 (ADR-DPI-002 / DP4-02b).
  *
  * Stitch reference: "Review Queue" fefd2074… (partial — v1.5 scope)
@@ -38,6 +41,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
+import { StageTracker } from "@/components/workflow/stage-tracker";
 import { TypeBadge } from "@/components/ui/type-badge";
 import {
   useReviewQueue,
@@ -396,8 +400,15 @@ interface ReviewQueueRowProps {
 }
 
 function ReviewQueueRow({ item }: ReviewQueueRowProps) {
-  const { artifact, gateType, reviewedAt, priority, confidenceScore } = item;
+  const { artifact, gateType, reviewedAt, priority, confidenceScore, activeRun } = item;
   const relativeTime = formatRelativeTime(reviewedAt);
+
+  // Stage Tracker contract (DP4-02a / ADR-DPI-001 — DP1-13 #9):
+  // Render compact tracker in the row only when an active (pending|running) run
+  // is present. Terminal or absent runs → no tracker, no placeholder.
+  const showStageTracker =
+    activeRun != null &&
+    (activeRun.status === "pending" || activeRun.status === "running");
 
   return (
     <li
@@ -430,6 +441,25 @@ function ReviewQueueRow({ item }: ReviewQueueRowProps) {
           artifactId={artifact.id}
           confidenceScore={confidenceScore}
         />
+
+        {/*
+         * Stage Tracker compact (DP4-02a / ADR-DPI-001 — DP1-13 #9).
+         * Rendered in the row secondary column (below metadata strip) only when
+         * the artifact has an active pending|running workflow run.
+         * Stage Tracker manifest §2.10: "Review Queue row secondary column".
+         * Returns nothing when no active run — no layout break, no placeholder.
+         */}
+        {showStageTracker && activeRun && (
+          <StageTracker
+            runId={activeRun.id}
+            templateId={activeRun.template_id}
+            status={activeRun.status}
+            currentStage={activeRun.current_stage}
+            variant="compact"
+            mode="sse"
+            className="mt-0.5"
+          />
+        )}
 
         {/* Lens badges + timestamp footer */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
