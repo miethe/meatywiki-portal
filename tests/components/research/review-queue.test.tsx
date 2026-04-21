@@ -86,6 +86,8 @@ function makeReviewItem(
     artifact: makeArtifact(),
     gateType: "freshness",
     reviewedAt: "2026-04-17T10:00:00Z",
+    priority: "ROUTINE",
+    confidenceScore: 0.5,
     ...overrides,
   };
 }
@@ -104,6 +106,15 @@ function defaultHookReturn(
     isError: overrides.isError ?? false,
     error: overrides.error ?? null,
     refetch: jest.fn(),
+    filters: {
+      sort: "priority" as const,
+      order: "asc" as const,
+      priorityFilter: "ALL" as const,
+      gateFilter: "ALL" as const,
+    },
+    setSort: jest.fn(),
+    setPriorityFilter: jest.fn(),
+    setGateFilter: jest.fn(),
   };
 }
 
@@ -229,6 +240,15 @@ describe("ReviewQueue — error state", () => {
       isError: true,
       error: new Error("Timeout"),
       refetch: mockRefetch,
+      filters: {
+        sort: "priority" as const,
+        order: "asc" as const,
+        priorityFilter: "ALL" as const,
+        gateFilter: "ALL" as const,
+      },
+      setSort: jest.fn(),
+      setPriorityFilter: jest.fn(),
+      setGateFilter: jest.fn(),
     });
     renderWithProviders(<ReviewQueue />);
 
@@ -330,7 +350,6 @@ describe("ReviewQueue — gate type badges", () => {
     expect(
       screen.getByLabelText(/triggered by: freshness gate/i),
     ).toBeInTheDocument();
-    expect(screen.getByText("Freshness")).toBeInTheDocument();
   });
 
   it("renders 'Contradiction' gate badge for contradiction gate type", () => {
@@ -338,7 +357,11 @@ describe("ReviewQueue — gate type badges", () => {
     mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
     renderWithProviders(<ReviewQueue />);
 
-    expect(screen.getByText("Contradiction")).toBeInTheDocument();
+    // Use aria-label to target the gate badge specifically (filter dropdown
+    // also shows "Contradiction" in its options after DP4-02e).
+    expect(
+      screen.getByLabelText(/triggered by: contradiction gate/i),
+    ).toBeInTheDocument();
   });
 
   it("renders unknown gate type string as-is for forward compatibility", () => {
@@ -346,7 +369,11 @@ describe("ReviewQueue — gate type badges", () => {
     mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
     renderWithProviders(<ReviewQueue />);
 
-    expect(screen.getByText("Coverage")).toBeInTheDocument();
+    // Use aria-label to target the gate badge specifically (filter dropdown
+    // also shows "Coverage" in its options after DP4-02e).
+    expect(
+      screen.getByLabelText(/triggered by: coverage gate/i),
+    ).toBeInTheDocument();
   });
 });
 
