@@ -12,6 +12,12 @@
  *              Six fixed stages; circles filled/outlined; tooltip on hover/focus.
  *              Used on artifact cards and next to each run in Active Workflows panel.
  *
+ * Workspace-aware styling (P5-06):
+ *   When researchOrigin=true the compact/full variants tint the container with
+ *   an amber border-left accent; the timeline variant tints the wrapper row.
+ *   This mirrors the LensBadgeSet treatment so the two components feel coherent.
+ *   Safe default: researchOrigin=false/undefined → original styling unchanged.
+ *
  * Design spec §7 (Workflow Stage Tracker compact); addendum §3.4.
  * Stitch reference: §3.1 StageTracker compact + full variants.
  *
@@ -49,6 +55,15 @@ interface StageTrackerProps {
   events?: SSEWorkflowEvent[] | null;
   /** "sse" — will subscribe when P3-08 wires hooks; "static" — static replay */
   mode?: "sse" | "static";
+  /**
+   * Whether the tracked artifact originates from a research workflow.
+   * When true, applies an amber left-accent border to the compact/full variants
+   * and an amber tint wrapper to the timeline variant (P5-06 workspace-aware
+   * styling). Mirrors LensBadgeSet treatment for visual coherence.
+   *
+   * Safe default: false/undefined → normal styling unchanged.
+   */
+  researchOrigin?: boolean | null;
   className?: string;
 }
 
@@ -78,11 +93,13 @@ function CompactTracker({
   stages,
   currentStage,
   status,
+  researchOrigin,
   className,
 }: {
   stages: string[];
   currentStage: number;
   status: WorkflowRunStatus;
+  researchOrigin?: boolean | null;
   className?: string;
 }) {
   const progress =
@@ -96,10 +113,17 @@ function CompactTracker({
         ? `Failed at ${stages[currentStage] ?? "stage"}`
         : `${stages[currentStage] ?? "Running"} (${currentStage + 1}/${stages.length})`;
 
+  const isResearch = researchOrigin === true;
+
   return (
     <div
-      aria-label={`Workflow progress: ${label}`}
-      className={cn("flex flex-col gap-0.5", className)}
+      aria-label={`Workflow progress: ${label}${isResearch ? " (research)" : ""}`}
+      className={cn(
+        "flex flex-col gap-0.5",
+        // Workspace-aware accent: amber left border tint for research-origin runs.
+        isResearch && "border-l-2 border-amber-400 dark:border-amber-500 pl-1.5",
+        className,
+      )}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-[11px] text-muted-foreground truncate">
@@ -141,15 +165,26 @@ function FullTracker({
   stages,
   currentStage,
   status,
+  researchOrigin,
   className,
 }: {
   stages: string[];
   currentStage: number;
   status: WorkflowRunStatus;
+  researchOrigin?: boolean | null;
   className?: string;
 }) {
+  const isResearch = researchOrigin === true;
+
   return (
-    <ol aria-label="Workflow stages" className={cn("flex flex-col gap-2", className)}>
+    <ol
+      aria-label={`Workflow stages${isResearch ? " (research)" : ""}`}
+      className={cn(
+        "flex flex-col gap-2",
+        isResearch && "border-l-2 border-amber-400 dark:border-amber-500 pl-2",
+        className,
+      )}
+    >
       {stages.map((stage, idx) => {
         const isDone = status === "complete" || idx < currentStage;
         const isActive = idx === currentStage && status === "running";
@@ -216,6 +251,7 @@ function TimelineStageNode({
       <div className="group relative flex items-center">
         {/* Circle */}
         <span
+          role="img"
           title={tooltipText}
           tabIndex={0}
           aria-label={tooltipText}
@@ -273,17 +309,22 @@ function TimelineStageNode({
  */
 function TimelineTracker({
   stageInfos,
+  researchOrigin,
   className,
 }: {
   stageInfos: StageInfo[];
+  researchOrigin?: boolean | null;
   className?: string;
 }) {
+  const isResearch = researchOrigin === true;
+
   return (
     <ol
       role="list"
-      aria-label="Workflow stage timeline"
+      aria-label={`Workflow stage timeline${isResearch ? " (research)" : ""}`}
       className={cn(
         "flex items-center w-full min-h-[40px] max-h-[60px] px-1",
+        isResearch && "rounded ring-1 ring-amber-400/60 bg-amber-50/40 dark:ring-amber-500/50 dark:bg-amber-950/20",
         className,
       )}
     >
@@ -327,6 +368,7 @@ export function StageTracker({
   variant = "compact",
   events,
   mode: _mode = "static", // eslint-disable-line @typescript-eslint/no-unused-vars
+  researchOrigin,
   className,
 }: StageTrackerProps) {
   // Clamp currentStage to valid range
@@ -352,7 +394,13 @@ export function StageTracker({
   );
 
   if (variant === "timeline") {
-    return <TimelineTracker stageInfos={stageInfos} className={className} />;
+    return (
+      <TimelineTracker
+        stageInfos={stageInfos}
+        researchOrigin={researchOrigin}
+        className={className}
+      />
+    );
   }
 
   if (variant === "compact") {
@@ -361,6 +409,7 @@ export function StageTracker({
         stages={templateStages}
         currentStage={safeStageForTemplate}
         status={status}
+        researchOrigin={researchOrigin}
         className={className}
       />
     );
@@ -371,6 +420,7 @@ export function StageTracker({
       stages={templateStages}
       currentStage={safeStageForTemplate}
       status={status}
+      researchOrigin={researchOrigin}
       className={className}
     />
   );

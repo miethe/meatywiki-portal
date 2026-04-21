@@ -37,6 +37,7 @@ import { apiFetch } from "./client";
 import type {
   ArtifactCard,
   ArtifactDetail,
+  ArtifactFacet,
   ArtifactMetadataResponse,
   ArtifactStatus,
   ArtifactWorkspace,
@@ -56,6 +57,28 @@ export type SortOrder = "asc" | "desc";
 
 export interface ListArtifactsParams {
   workspace?: ArtifactWorkspace | string;
+  /**
+   * Portal surface facet filter — taxonomy-redesign P4-05 / P5-01.
+   *
+   * Serialised as ?facet=<value>. Facet is a query concept (OQ-6); the backend
+   * maps it to SQL predicates:
+   *   library / blog / projects → WHERE workspace = <value>
+   *   research                  → WHERE research_origin = true
+   *
+   * ANDed with ?workspace= when both are supplied; prefer facet for
+   * surface-level queries.
+   */
+  facet?: ArtifactFacet;
+  /**
+   * Filter by research_origin boolean. When true, returns only artifacts
+   * produced by a research workflow. Serialised as ?research_origin=true|false.
+   *
+   * NOTE: The backend GET /api/artifacts route does not yet expose a
+   * `research_origin` boolean query param — use `facet=research` instead,
+   * which maps to WHERE research_origin = true. This field is reserved for
+   * a future direct boolean filter. Tracked as mismatch MISMATCH-03.
+   */
+  researchOrigin?: boolean;
   /**
    * Multi-select type filter. Serialised as repeated ?type= params.
    * Accepts a single string (P3-03 compatibility) or an array (P3-05).
@@ -113,6 +136,7 @@ export async function listArtifacts(
 ): Promise<ServiceModeEnvelope<ArtifactCard>> {
   const {
     workspace,
+    facet,
     status,
     type,
     sort,
@@ -127,6 +151,10 @@ export async function listArtifacts(
 
   const query = new URLSearchParams();
   if (workspace) query.set("workspace", workspace);
+  // Facet filter — taxonomy-redesign P4-05 / P5-01.
+  // Use facet=research instead of researchOrigin=true (see MISMATCH-03 note).
+  if (facet) query.set("facet", facet);
+  // researchOrigin is reserved; not yet a real backend param — not serialised.
 
   // Multi-value type filter
   if (type) {

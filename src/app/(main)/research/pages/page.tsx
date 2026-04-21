@@ -1,29 +1,40 @@
 "use client";
 
 /**
- * Research Pages screen — research notes and drafts list.
+ * Research Pages screen — facet-filtered Library view (taxonomy-redesign P5-03).
  *
- * Fetches artifacts with workspace=research via useResearchArtifacts.
- * Mirrors the Library screen pattern (P3-05): view toggle, filter bar,
- * ArtifactCard grid, cursor-based Load More pagination.
+ * Replaces the previous useResearchArtifacts (workspace=research) with
+ * useLibraryArtifacts + facet="research" pre-set. This aligns Research as a
+ * filtered view over the unified Library surface rather than a separate
+ * workspace, consistent with the taxonomy-redesign spec.
  *
- * P4-01: scaffold. P4-02..P4-05 will enrich with synthesis shortcuts,
- * backlink counts, and queue promotion actions.
+ * Changes from pre-P5-03:
+ *   - Import: useResearchArtifacts → useLibraryArtifacts (from @/components/library)
+ *   - filters.facet locked to "research"; lockedFacet="research" on LibraryFilterBar
+ *   - hasActiveFilters omits separate facet check (facet is always locked)
+ *   - Header: "Research-only view" badge callout so users distinguish from Library
+ *   - Empty state text updated to reflect the research facet context
+ *
+ * URL shape: /research/pages — unchanged (bookmarks preserved).
+ *
+ * P4-01: original Research workspace structure + navigation.
+ * P5-03: refactor to facet-filtered Library view.
  *
  * Stitch reference: "Research Home" (ID: 0cf6fb7b27d9459e8b5bebfea66915c5)
  */
 
 import { useState, useCallback, useEffect } from "react";
-import { LayoutGrid, List, AlertCircle } from "lucide-react";
+import { LayoutGrid, List, AlertCircle, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
-import { LibraryFilterBar, useLensFilterUrlSync } from "@/components/ui/library-filter-bar";
 import {
-  useResearchArtifacts,
-  DEFAULT_RESEARCH_FILTERS,
-  type ResearchFilters,
-} from "@/hooks/useResearchArtifacts";
+  LibraryFilterBar,
+  useLensFilterUrlSync,
+  useLibraryArtifacts,
+  DEFAULT_LIBRARY_FILTERS,
+  type LibraryFilters,
+} from "@/components/library";
 
 // ---------------------------------------------------------------------------
 // View mode — persisted to localStorage (separate key from Library)
@@ -41,6 +52,22 @@ function getInitialViewMode(): ViewMode {
     // localStorage unavailable — fall back to default
   }
   return "grid";
+}
+
+// ---------------------------------------------------------------------------
+// Research-only view indicator — distinguishes from the Library screen
+// ---------------------------------------------------------------------------
+
+function ResearchViewBadge() {
+  return (
+    <span
+      aria-label="Filtered to research facet only"
+      className="inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary"
+    >
+      <FlaskConical aria-hidden="true" className="size-3.5" />
+      Research-only view
+    </span>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +179,7 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
         type="button"
         onClick={onRetry}
         className={cn(
-          "inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive",
+          "inline-flex min-h-[44px] items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive sm:h-8 sm:min-h-0",
           "transition-colors hover:bg-destructive/10",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         )}
@@ -162,6 +189,15 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Research filters — LibraryFilters with facet locked to "research"
+// ---------------------------------------------------------------------------
+
+const DEFAULT_RESEARCH_VIEW_FILTERS: LibraryFilters = {
+  ...DEFAULT_LIBRARY_FILTERS,
+  facet: "research",
+};
 
 // ---------------------------------------------------------------------------
 // Page component
@@ -188,16 +224,23 @@ export default function ResearchPagesPage() {
   // URL sync for lens filters (P4-09)
   const { readFromUrl, syncToUrl } = useLensFilterUrlSync();
 
-  // Filter state — initialise lens filters from URL on mount
-  const [filters, setFilters] = useState<ResearchFilters>(() => ({
-    ...DEFAULT_RESEARCH_FILTERS,
+  // Filter state — facet locked to "research"; lens filters hydrated from URL
+  const [filters, setFilters] = useState<LibraryFilters>(() => ({
+    ...DEFAULT_RESEARCH_VIEW_FILTERS,
     ...(readFromUrl() ?? {}),
+    // Always re-apply the locked facet even if URL params tried to override it
+    facet: "research",
   }));
 
   const handleFiltersChange = useCallback(
-    (next: Partial<ResearchFilters>) => {
+    (next: Partial<LibraryFilters>) => {
       setFilters((prev) => {
-        const updated = { ...prev, ...next };
+        const updated = {
+          ...prev,
+          ...next,
+          // Prevent the facet from being changed by filter bar interactions
+          facet: "research" as const,
+        };
         syncToUrl({
           lensFidelity: updated.lensFidelity,
           lensFreshness: updated.lensFreshness,
@@ -218,11 +261,14 @@ export default function ResearchPagesPage() {
     isError,
     error,
     total,
-  } = useResearchArtifacts(filters);
+  } = useLibraryArtifacts(filters);
 
+  // facet is always "research" (locked), so exclude it from "has active filters" check
   const hasActiveFilters =
     filters.types.length > 0 ||
     filters.statuses.length > 0 ||
+    !!filters.dateFrom ||
+    !!filters.dateTo ||
     filters.lensFidelity.length > 0 ||
     filters.lensFreshness.length > 0 ||
     filters.lensVerification.length > 0;
@@ -231,11 +277,12 @@ export default function ResearchPagesPage() {
     <div className="flex flex-col gap-4">
       {/* Page header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Research Pages
-          </h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Research Pages</h1>
+            <ResearchViewBadge />
+          </div>
+          <p className="text-sm text-muted-foreground">
             Research notes and compiled artifacts
           </p>
         </div>
@@ -246,11 +293,12 @@ export default function ResearchPagesPage() {
         />
       </div>
 
-      {/* Filter bar */}
+      {/* Filter bar — facet locked to "research" (chip row hidden, lock indicator shown) */}
       <LibraryFilterBar
         filters={filters}
         onFiltersChange={handleFiltersChange}
         resultCount={isLoading ? undefined : total}
+        lockedFacet="research"
       />
 
       {/* Artifact list / grid */}
@@ -305,7 +353,7 @@ export default function ResearchPagesPage() {
                   disabled={isFetchingNextPage}
                   aria-label="Load more research pages"
                   className={cn(
-                    "inline-flex h-8 items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground",
+                    "inline-flex min-h-[44px] items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground sm:h-8 sm:min-h-0",
                     "transition-colors hover:bg-accent hover:text-accent-foreground",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                     "disabled:pointer-events-none disabled:opacity-50",

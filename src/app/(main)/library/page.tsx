@@ -1,21 +1,18 @@
 "use client";
 
 /**
- * Library screen — knowledge artifact browser.
+ * Library screen — primary knowledge surface (taxonomy-redesign P5-02).
  *
- * Implements P3-05 scope:
- *   - GET /api/artifacts?workspace=library via useLibraryArtifacts (TanStack Query)
- *   - Grid / list view toggle persisted to localStorage (safe default: grid)
- *   - Filter bar: multi-select type + status chips, sort dropdown
- *   - ArtifactCard grid with LensBadgeSet (read-only)
- *   - Cursor-based "Load more" pagination (infinite query)
- *   - Loading skeleton, empty state, error state (WCAG-compliant)
- *   - Click artifact → /artifact/[id] via stretch link in ArtifactCard
+ * P3-05 foundation extended with:
+ *   - Title updated to "Knowledge Library" (primary surface per design spec)
+ *   - Facet filter in filter bar (library/research/blog/projects)
+ *   - Date range filter (dateFrom/dateTo — reserved, no backend param yet)
+ *   - FacetBadge on ArtifactCard for blog/projects workspace artifacts
+ *   - research_origin styling hook on ArtifactCard for P5-06 extension
  *
- * Performance: p95 < 400ms client render for 100 artifacts achieved via:
- *   - React.memo on ArtifactCard prevents re-renders on unrelated state changes
- *   - useMemo in hook flattens pages only on data change
- *   - No heavy libraries; filter state is lifted, not Context
+ * Design: artifact card list with title, type badge, facet badge (blog/projects),
+ * preview text, created/updated dates, action buttons. Filter bar: type, facet,
+ * date range, search. Sorting: newest, alphabetical, relevance. Cursor pagination.
  *
  * Stitch reference: "Library" screen (ID: 5e22feb4105d40d79251c135df4a4b5a)
  * Shell: Standard Archival
@@ -167,7 +164,7 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
         type="button"
         onClick={onRetry}
         className={cn(
-          "inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive",
+          "inline-flex min-h-[44px] items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive sm:h-8 sm:min-h-0",
           "transition-colors hover:bg-destructive/10",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         )}
@@ -241,6 +238,9 @@ export default function LibraryPage() {
   const hasActiveFilters =
     filters.types.length > 0 ||
     filters.statuses.length > 0 ||
+    !!filters.facet ||
+    !!filters.dateFrom ||
+    !!filters.dateTo ||
     filters.lensFidelity.length > 0 ||
     filters.lensFreshness.length > 0 ||
     filters.lensVerification.length > 0;
@@ -250,9 +250,9 @@ export default function LibraryPage() {
       {/* Page header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Library</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Knowledge Library</h1>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Compiled knowledge artifacts
+            All compiled knowledge artifacts across workspaces
           </p>
         </div>
 
@@ -328,7 +328,7 @@ export default function LibraryPage() {
                   disabled={isFetchingNextPage}
                   aria-label="Load more artifacts"
                   className={cn(
-                    "inline-flex h-8 items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground",
+                    "inline-flex min-h-[44px] items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground sm:h-8 sm:min-h-0",
                     "transition-colors hover:bg-accent hover:text-accent-foreground",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                     "disabled:pointer-events-none disabled:opacity-50",

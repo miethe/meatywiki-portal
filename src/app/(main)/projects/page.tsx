@@ -1,25 +1,24 @@
 "use client";
 
 /**
- * Blog Posts screen — filtered Library view scoped to facet='blog'.
+ * Projects screen — filtered Library view (taxonomy-redesign P5-05).
  *
- * Taxonomy-redesign P5-04: Refactors the Blog screen to use the shared Library
- * card layout, filter bar, and pagination hook. The `facet` filter is locked to
- * "blog" via `lockedFacet="blog"` on LibraryFilterBar and the initial filter
- * state — users cannot change it. The existing blog sub-nav (Posts | Outline
- * Builder) is preserved via the surrounding BlogLayout.
+ * Renders the Library card + filter layout with `facet='projects'` pre-applied
+ * via `lockedFacet`. The facet is locked (not user-editable); all other filters
+ * (type, status, date range, lens) remain available.
  *
- * Visual distinction: an orange "Blog writing" facet callout appears below the
- * page header, consistent with FacetBadge blog colours (orange-100/orange-800).
+ * Visual distinction: amber "Project planning" facet badge in the page header,
+ * mirroring the locked-facet indicator already rendered inside LibraryFilterBar.
  *
- * Lens filter URL sync is preserved from the Library screen pattern.
+ * Pattern mirrors the Research (P5-03) and Blog (P5-04) filtered views.
  *
- * Stitch reference: blog-workspace.html (ID: 201421e9905c4255ad32da8c2304b69c)
+ * URL: /projects — no sub-routes in v1. URL shape kept minimal (YAGNI).
+ *
+ * Stitch reference: "Projects" workspace (taxonomy-redesign design-pass phase 5).
  */
 
 import { useState, useCallback, useEffect } from "react";
-import Link from "next/link";
-import { LayoutGrid, List, Plus, PenLine, AlertCircle } from "lucide-react";
+import { LayoutGrid, List, AlertCircle, FolderKanban } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   ArtifactCard,
@@ -27,16 +26,22 @@ import {
   useLensFilterUrlSync,
   useLibraryArtifacts,
   DEFAULT_LIBRARY_FILTERS,
-  type LibraryFilters,
 } from "@/components/library";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
+import type { LibraryFilters } from "@/components/library";
 
 // ---------------------------------------------------------------------------
-// View mode — persisted to localStorage
+// The locked facet for this screen
+// ---------------------------------------------------------------------------
+
+const PROJECTS_FACET = "projects" as const;
+
+// ---------------------------------------------------------------------------
+// View mode — persisted to localStorage (separate key from Library)
 // ---------------------------------------------------------------------------
 
 type ViewMode = "grid" | "list";
-const VIEW_MODE_KEY = "meatywiki-blog-view";
+const VIEW_MODE_KEY = "meatywiki-projects-view";
 
 function getInitialViewMode(): ViewMode {
   if (typeof window === "undefined") return "grid";
@@ -44,13 +49,13 @@ function getInitialViewMode(): ViewMode {
     const stored = window.localStorage.getItem(VIEW_MODE_KEY);
     if (stored === "list" || stored === "grid") return stored;
   } catch {
-    // localStorage unavailable (private browsing, etc.)
+    // localStorage unavailable (private browsing, etc.) — fall back to default
   }
   return "grid";
 }
 
 // ---------------------------------------------------------------------------
-// View toggle
+// View toggle — identical shape to Library/Blog screens
 // ---------------------------------------------------------------------------
 
 interface ViewToggleProps {
@@ -98,37 +103,7 @@ function ViewToggle({ view, onChange }: ViewToggleProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Blog facet callout — visual header indicator (P5-04)
-// ---------------------------------------------------------------------------
-
-function BlogFacetCallout() {
-  return (
-    <div
-      aria-label="Blog writing facet — filtered view"
-      className="flex items-center gap-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 dark:border-orange-900/50 dark:bg-orange-950/30"
-    >
-      <PenLine
-        aria-hidden="true"
-        className="size-4 shrink-0 text-orange-600 dark:text-orange-400"
-      />
-      <p className="text-xs font-medium text-orange-800 dark:text-orange-300">
-        Blog writing
-      </p>
-      <span
-        aria-hidden="true"
-        className="ml-1 rounded-sm bg-orange-100 px-1.5 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
-      >
-        Filtered view
-      </span>
-      <p className="ml-auto hidden text-[11px] text-orange-600/80 sm:block dark:text-orange-400/70">
-        Showing artifacts in the Blog facet only
-      </p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Empty state
+// Empty state — projects-specific copy
 // ---------------------------------------------------------------------------
 
 function EmptyState({ hasFilters }: { hasFilters: boolean }) {
@@ -137,32 +112,19 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
       role="status"
       className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-16 text-center"
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-        <PenLine aria-hidden="true" className="size-6 text-muted-foreground" />
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/30">
+        <FolderKanban aria-hidden="true" className="size-6 text-amber-600 dark:text-amber-400" />
       </div>
       <div>
         <p className="text-sm font-medium text-foreground">
-          {hasFilters ? "No matching blog artifacts" : "No blog artifacts yet"}
+          {hasFilters ? "No matching project artifacts" : "No project artifacts yet"}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {hasFilters
             ? "Try adjusting or clearing the active filters."
-            : "Compile some blog notes to start building your writing workspace."}
+            : "Project artifacts compiled into the workspace will appear here."}
         </p>
       </div>
-      {!hasFilters && (
-        <Link
-          href="/blog/posts/new"
-          className={cn(
-            "inline-flex h-8 items-center gap-1.5 rounded-md border px-3 text-xs font-medium",
-            "transition-colors hover:bg-accent hover:text-accent-foreground",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-          )}
-        >
-          <Plus aria-hidden="true" className="size-3.5" />
-          New post
-        </Link>
-      )}
     </div>
   );
 }
@@ -179,9 +141,7 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
     >
       <AlertCircle aria-hidden="true" className="size-8 text-destructive" />
       <div>
-        <p className="text-sm font-medium text-foreground">
-          Failed to load blog artifacts
-        </p>
+        <p className="text-sm font-medium text-foreground">Failed to load project artifacts</p>
         <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
       </div>
       <button
@@ -200,11 +160,26 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Page
+// Projects facet badge — "Project planning" visual indicator in the header
 // ---------------------------------------------------------------------------
 
-/** Blog Posts page — Library filtered to facet='blog' (P5-04). */
-export default function BlogPostsPage() {
+function ProjectsFacetBadge() {
+  return (
+    <span
+      aria-label="Filtered to projects facet: Project planning"
+      className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
+    >
+      <FolderKanban aria-hidden="true" className="size-3.5" />
+      Project planning
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
+
+export default function ProjectsPage() {
   // View mode — initialised after mount to avoid SSR/hydration mismatch
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [mounted, setMounted] = useState(false);
@@ -219,29 +194,25 @@ export default function BlogPostsPage() {
     try {
       window.localStorage.setItem(VIEW_MODE_KEY, next);
     } catch {
-      // ignore localStorage errors
+      // Ignore localStorage errors
     }
   }, []);
 
-  // URL sync for lens filters
+  // URL sync for lens filters — same hook as Library/Research/Blog screens
   const { readFromUrl, syncToUrl } = useLensFilterUrlSync();
 
-  // Filter state — facet locked to "blog"; initialise lens filters from URL
+  // Filter state — facet locked to "projects"; all other filters user-editable
   const [filters, setFilters] = useState<LibraryFilters>(() => ({
     ...DEFAULT_LIBRARY_FILTERS,
-    facet: "blog",
+    facet: PROJECTS_FACET,
     ...(readFromUrl() ?? {}),
   }));
 
   const handleFiltersChange = useCallback(
     (next: Partial<LibraryFilters>) => {
       setFilters((prev) => {
-        const updated = {
-          ...prev,
-          ...next,
-          // Keep facet locked — never allow overriding the blog facet
-          facet: "blog" as const,
-        };
+        // Enforce the locked facet — never let a partial update override it
+        const updated: LibraryFilters = { ...prev, ...next, facet: PROJECTS_FACET };
         syncToUrl({
           lensFidelity: updated.lensFidelity,
           lensFreshness: updated.lensFreshness,
@@ -253,7 +224,7 @@ export default function BlogPostsPage() {
     [syncToUrl],
   );
 
-  // Data fetching
+  // Data fetching — facet="projects" is baked into filters state
   const {
     artifacts,
     isLoading,
@@ -277,44 +248,34 @@ export default function BlogPostsPage() {
   return (
     <div className="flex flex-col gap-4">
       {/* Page header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Blog Posts</h1>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            {isLoading ? "Loading…" : `${total} artifact${total !== 1 ? "s" : ""}`}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+            {/* Visual badge indicating "Project planning" facet — P5-05 requirement */}
+            <ProjectsFacetBadge />
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Project planning artifacts — filtered Library view
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <ViewToggle view={mounted ? viewMode : "grid"} onChange={handleViewChange} />
-          <Link
-            href="/blog/posts/new"
-            aria-label="Create new blog post"
-            className={cn(
-              "inline-flex min-h-[44px] items-center gap-1.5 rounded-md border px-3 text-sm font-medium sm:h-8 sm:min-h-0",
-              "transition-colors hover:bg-accent hover:text-accent-foreground",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            )}
-          >
-            <Plus aria-hidden="true" className="size-4" />
-            <span className="hidden sm:inline">New post</span>
-          </Link>
-        </div>
+        <ViewToggle
+          view={mounted ? viewMode : "grid"}
+          onChange={handleViewChange}
+        />
       </div>
 
-      {/* Blog facet callout — visual distinction from Library (P5-04) */}
-      <BlogFacetCallout />
-
-      {/* Filter bar — facet row hidden via lockedFacet="blog" */}
+      {/* Filter bar — facet row hidden (lockedFacet="projects"), rest user-editable */}
       <LibraryFilterBar
         filters={filters}
         onFiltersChange={handleFiltersChange}
         resultCount={isLoading ? undefined : total}
-        lockedFacet="blog"
+        lockedFacet={PROJECTS_FACET}
       />
 
       {/* Artifact list / grid */}
-      <section aria-label="Blog artifacts" aria-busy={isLoading}>
+      <section aria-label="Project artifacts" aria-busy={isLoading}>
         {isError && error ? (
           <ErrorState
             error={error}
@@ -331,6 +292,7 @@ export default function BlogPostsPage() {
                   : "grid-cols-1",
               )}
             >
+              {/* Skeleton on initial load */}
               {isLoading && (
                 <ArtifactCardSkeletonGrid
                   count={viewMode === "grid" ? 9 : 5}
@@ -338,6 +300,7 @@ export default function BlogPostsPage() {
                 />
               )}
 
+              {/* Artifact cards */}
               {!isLoading &&
                 artifacts.map((artifact) => (
                   <li key={artifact.id}>
@@ -345,6 +308,7 @@ export default function BlogPostsPage() {
                   </li>
                 ))}
 
+              {/* Skeleton appended during next-page fetch */}
               {isFetchingNextPage && (
                 <ArtifactCardSkeletonGrid
                   count={viewMode === "grid" ? 3 : 2}
@@ -353,17 +317,19 @@ export default function BlogPostsPage() {
               )}
             </ul>
 
+            {/* Empty state */}
             {!isLoading && artifacts.length === 0 && (
               <EmptyState hasFilters={hasActiveFilters} />
             )}
 
+            {/* Load more */}
             {hasNextPage && !isLoading && (
               <div className="mt-4 flex justify-center">
                 <button
                   type="button"
                   onClick={() => fetchNextPage()}
                   disabled={isFetchingNextPage}
-                  aria-label="Load more blog artifacts"
+                  aria-label="Load more project artifacts"
                   className={cn(
                     "inline-flex min-h-[44px] items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground sm:h-8 sm:min-h-0",
                     "transition-colors hover:bg-accent hover:text-accent-foreground",
