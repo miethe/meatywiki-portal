@@ -63,6 +63,14 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
           className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex"
           aria-label="Sidebar navigation"
         >
+          {/* Brand chip — desktop sidebar header (ADR-DPI-006 Option B).
+              Mirrors the mobile drawer header at line ~89 for visual parity.
+              Stitch baseline: 6803245… desktop standard shell. */}
+          <div className="flex h-14 shrink-0 items-center border-b px-3">
+            <span className="text-sm font-semibold tracking-tight">
+              MeatyWiki
+            </span>
+          </div>
           <ShellNav />
         </aside>
 

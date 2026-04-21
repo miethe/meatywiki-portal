@@ -163,13 +163,6 @@ export function ShellNav({ onNavClick }: ShellNavProps = {}) {
       className="flex flex-col gap-1 p-3"
       aria-label="Primary navigation"
     >
-      {/* Brand — only shown inside mobile drawer (desktop sidebar has its own header) */}
-      <div className="mb-3 hidden items-center gap-2 px-2 py-1 md:flex">
-        <span className="text-base font-semibold tracking-tight">
-          MeatyWiki
-        </span>
-      </div>
-
       {NAV_SECTIONS.map((section) => (
         <div key={section.title ?? "primary"} className="mb-2">
           {section.title && (
