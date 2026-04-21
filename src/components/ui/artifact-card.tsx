@@ -10,18 +10,43 @@
  * Props shape matches ArtifactCard DTO from portal.api.schemas; downstream
  * tasks (P3-03, P3-05) wire real data by passing the API response directly.
  *
+ * Taxonomy-redesign P5-02 additions:
+ *   - FacetBadge shown when workspace is blog or projects
+ *   - research_origin styling hook: data-research-origin="true" attribute +
+ *     ring-1 ring-teal-400/50 class when research_origin=true. P5-06 can
+ *     extend this by targeting [data-research-origin="true"] in CSS or by
+ *     checking artifact.research_origin in LensBadgeSet.
+ *   - created date shown in footer alongside updated date
+ *
  * Stitch reference: §3.1 artifact card hierarchy.
  * WCAG 2.1 AA: interactive card has role="article" + focusable inner link.
+ *
+ * Shared export: also re-exported from src/components/library/artifact-card.tsx
+ * for P5-03/P5-04/P5-05 filtered-view screens.
  */
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import { TypeBadge } from "./type-badge";
-import { WorkspaceBadge } from "./workspace-badge";
+import { FacetBadge } from "./facet-badge";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
+import type { ArtifactFacet } from "@/types/artifact";
+
+/** Workspaces that get a facet badge in the Library view */
+const FACET_BADGE_WORKSPACES = new Set<string>(["blog", "projects"]);
+
+/**
+ * Map workspace to ArtifactFacet for badge rendering.
+ * Workspaces that don't need a badge return null.
+ */
+function workspaceToFacet(workspace: string): ArtifactFacet | null {
+  if (workspace === "blog") return "blog";
+  if (workspace === "projects") return "projects";
+  return null;
+}
 
 interface ArtifactCardProps {
   artifact: ArtifactCardType;
@@ -58,12 +83,17 @@ export function ArtifactCard({
     title,
     type,
     workspace,
+    created,
     updated,
     workflow_status,
     preview,
+    research_origin,
   } = artifact;
 
-  const relativeTime = formatRelativeTime(updated);
+  const updatedTime = formatRelativeTime(updated);
+  const createdTime = formatRelativeTime(created);
+  const facet = workspaceToFacet(workspace);
+  const isResearchOrigin = research_origin === true;
 
   return (
     <article
@@ -71,9 +101,15 @@ export function ArtifactCard({
         "group relative rounded-md border bg-card transition-shadow hover:shadow-sm",
         variant === "list" && "flex items-start gap-3 p-3",
         variant === "grid" && "flex flex-col gap-2 p-4",
+        // P5-06 research_origin styling hook: subtle ring to distinguish
+        // research-workflow artifacts. P5-06 can extend by targeting
+        // [data-research-origin="true"] in CSS or augmenting LensBadgeSet.
+        isResearchOrigin && "ring-1 ring-teal-400/50",
         className,
       )}
       aria-label={title}
+      // P5-06 data attribute hook for Lens Badge workspace-aware styling
+      data-research-origin={isResearchOrigin ? "true" : undefined}
     >
       {/* Stretch link covers entire card for click; title provides label */}
       <Link
@@ -87,10 +123,12 @@ export function ArtifactCard({
           so clicks land on the underlying <Link>.  Interactive children re-enable
           their own pointer events via `pointer-events-auto`. */}
       <div className={cn("pointer-events-none relative flex min-w-0 flex-col gap-1.5", variant === "list" && "flex-1")}>
-        {/* Badge row */}
+        {/* Badge row: type + facet (blog/projects only) + workflow status */}
         <div className="flex flex-wrap items-center gap-1">
           <TypeBadge type={type} />
-          <WorkspaceBadge workspace={workspace} />
+          {FACET_BADGE_WORKSPACES.has(workspace) && facet && (
+            <FacetBadge facet={facet} />
+          )}
           {workflow_status && <WorkflowStatusBadge status={workflow_status} />}
         </div>
 
@@ -109,7 +147,7 @@ export function ArtifactCard({
           <p className="line-clamp-2 text-xs text-muted-foreground">{preview}</p>
         )}
 
-        {/* Footer row: lens badges + timestamp */}
+        {/* Footer row: lens badges + timestamps */}
         <div className="flex items-center justify-between gap-2 pt-0.5">
           <div className="flex flex-wrap items-center gap-1">
             <LensBadgeSet artifact={artifact} variant="compact" />
@@ -118,14 +156,27 @@ export function ArtifactCard({
               freshness={artifact.metadata?.freshness}
             />
           </div>
-          {relativeTime && updated && (
-            <time
-              dateTime={updated}
-              className="shrink-0 text-[11px] text-muted-foreground"
-            >
-              {relativeTime}
-            </time>
-          )}
+          <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+            {/* Show created date in grid variant (more space); updated in both */}
+            {variant === "grid" && created && createdTime && (
+              <time dateTime={created} title={`Created: ${new Date(created).toLocaleDateString()}`}>
+                {createdTime}
+              </time>
+            )}
+            {updated && updatedTime && (
+              <>
+                {variant === "grid" && created && createdTime && (
+                  <span aria-hidden="true">·</span>
+                )}
+                <time
+                  dateTime={updated}
+                  title={`Updated: ${new Date(updated).toLocaleDateString()}`}
+                >
+                  {updatedTime}
+                </time>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </article>

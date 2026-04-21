@@ -1,12 +1,18 @@
 "use client";
 
 /**
- * LibraryFilterBar — type/status/sort controls + Lens Filter Bar for the Library/Research screens.
+ * LibraryFilterBar — type/status/facet/date/sort controls + Lens Filter Bar.
  *
  * Design: compact horizontal bar with multi-select chips for type and status, a sort
- * dropdown, and an expandable Lens Filter section (P4-09). Lens filters (fidelity,
- * freshness, verification) are hidden behind a "Lens" toggle button and expand below
- * the primary filter row.
+ * dropdown, a facet filter row, date range inputs, and an expandable Lens Filter
+ * section (P4-09). Lens filters (fidelity, freshness, verification) are hidden behind
+ * a "Lens" toggle button and expand below the primary filter row.
+ *
+ * Taxonomy-redesign P5-02 additions:
+ *   - Facet filter chips: Library / Research / Blog / Projects
+ *   - Date range: dateFrom / dateTo inputs
+ *   - lockedFacet prop: when set, the facet filter row is hidden and the facet is
+ *     pre-applied. Used by filtered-view screens (P5-03/04/05).
  *
  * All state is lifted to the parent page so filter changes flow through the React
  * Query key and trigger an immediate refetch.
@@ -24,6 +30,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { ArtifactSortField, SortOrder } from "@/lib/api/artifacts";
 import type {
+  ArtifactFacet,
   ArtifactStatus,
   LensFidelity,
   LensFreshness,
@@ -56,6 +63,14 @@ const SORT_OPTIONS: { value: ArtifactSortField; label: string }[] = [
   { value: "updated", label: "Last updated" },
   { value: "created", label: "Date created" },
   { value: "title", label: "Title (A–Z)" },
+];
+
+/** Facet filter options (taxonomy-redesign P5-02) */
+const FACET_OPTIONS: { value: ArtifactFacet; label: string }[] = [
+  { value: "library", label: "Library" },
+  { value: "research", label: "Research" },
+  { value: "blog", label: "Blog" },
+  { value: "projects", label: "Projects" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -206,6 +221,92 @@ function SortSelect({ sort, order, onChange }: SortSelectProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Date range inputs (taxonomy-redesign P5-02)
+// ---------------------------------------------------------------------------
+
+interface DateRangeInputsProps {
+  dateFrom?: string;
+  dateTo?: string;
+  onChange: (dateFrom: string | undefined, dateTo: string | undefined) => void;
+}
+
+function DateRangeInputs({ dateFrom, dateTo, onChange }: DateRangeInputsProps) {
+  return (
+    <div
+      role="group"
+      aria-label="Date range filter"
+      className="flex flex-wrap items-center gap-1.5"
+    >
+      <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Date
+      </span>
+      <div className="flex items-center gap-1">
+        <label htmlFor="filter-date-from" className="sr-only">
+          From date
+        </label>
+        <input
+          id="filter-date-from"
+          type="date"
+          value={dateFrom ?? ""}
+          max={dateTo ?? undefined}
+          onChange={(e) =>
+            onChange(e.target.value || undefined, dateTo)
+          }
+          aria-label="Filter from date"
+          className={cn(
+            "min-h-[44px] rounded-sm border border-input bg-background px-2 text-[11px] text-foreground sm:h-6 sm:min-h-0",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          )}
+        />
+        <span aria-hidden="true" className="text-[11px] text-muted-foreground">
+          –
+        </span>
+        <label htmlFor="filter-date-to" className="sr-only">
+          To date
+        </label>
+        <input
+          id="filter-date-to"
+          type="date"
+          value={dateTo ?? ""}
+          min={dateFrom ?? undefined}
+          onChange={(e) =>
+            onChange(dateFrom, e.target.value || undefined)
+          }
+          aria-label="Filter to date"
+          className={cn(
+            "min-h-[44px] rounded-sm border border-input bg-background px-2 text-[11px] text-foreground sm:h-6 sm:min-h-0",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          )}
+        />
+      </div>
+      {(dateFrom || dateTo) && (
+        <button
+          type="button"
+          aria-label="Clear date range filter"
+          onClick={() => onChange(undefined, undefined)}
+          className="inline-flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-5"
+        >
+          <svg
+            aria-hidden="true"
+            className="size-3"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2.5}
+              d="M6 18 18 6M6 6l12 12"
+            />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Active filter summary badge
 // ---------------------------------------------------------------------------
 
@@ -223,6 +324,7 @@ function ActiveFilterCount({ count }: { count: number }) {
 
 // ---------------------------------------------------------------------------
 // Main filter bar (P4-09: extended with collapsible Lens Filter section)
+// Taxonomy-redesign P5-02: facet filter + date range + lockedFacet support
 // ---------------------------------------------------------------------------
 
 interface LibraryFilterBarProps {
@@ -230,6 +332,12 @@ interface LibraryFilterBarProps {
   onFiltersChange: (next: Partial<LibraryFilters>) => void;
   /** Total artifacts loaded (for result count display) */
   resultCount?: number;
+  /**
+   * When set, hides the facet filter row and pre-applies this facet.
+   * Used by filtered-view screens (P5-03/04/05) so the facet is locked
+   * and not user-editable. The label prop is shown as a locked indicator.
+   */
+  lockedFacet?: ArtifactFacet;
   className?: string;
 }
 
@@ -237,6 +345,7 @@ export function LibraryFilterBar({
   filters,
   onFiltersChange,
   resultCount,
+  lockedFacet,
   className,
 }: LibraryFilterBarProps) {
   const {
@@ -244,6 +353,9 @@ export function LibraryFilterBar({
     statuses,
     sort,
     order,
+    facet,
+    dateFrom,
+    dateTo,
     lensFidelity = [],
     lensFreshness = [],
     lensVerification = [],
@@ -254,13 +366,24 @@ export function LibraryFilterBar({
     lensFidelity.length > 0 || lensFreshness.length > 0 || lensVerification.length > 0;
   const [lensOpen, setLensOpen] = useState(hasActiveLensFilters);
 
+  const activeDateCount = (dateFrom ? 1 : 0) + (dateTo ? 1 : 0);
+  const activeFacetCount = !lockedFacet && facet ? 1 : 0;
   const activeFilterCount =
-    types.length + statuses.length + lensFidelity.length + lensFreshness.length + lensVerification.length;
+    types.length +
+    statuses.length +
+    activeFacetCount +
+    activeDateCount +
+    lensFidelity.length +
+    lensFreshness.length +
+    lensVerification.length;
 
   function clearAll() {
     onFiltersChange({
       types: [],
       statuses: [],
+      facet: lockedFacet, // keep locked facet if set
+      dateFrom: undefined,
+      dateTo: undefined,
       lensFidelity: [],
       lensFreshness: [],
       lensVerification: [],
@@ -295,6 +418,47 @@ export function LibraryFilterBar({
             onFiltersChange({ statuses: next as ArtifactStatus[] })
           }
         />
+
+        {/* Divider */}
+        <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
+
+        {/* Facet filter — hidden when lockedFacet is set (filtered-view screens) */}
+        {!lockedFacet && (
+          <MultiSelectChips
+            label="Facet"
+            options={FACET_OPTIONS}
+            selected={facet ? [facet] : []}
+            onChange={(next) => {
+              // Single-select for facet: take last selected value
+              const last = next[next.length - 1] as ArtifactFacet | undefined;
+              onFiltersChange({ facet: last });
+            }}
+          />
+        )}
+
+        {/* Locked facet indicator — shown when facet is pre-applied */}
+        {lockedFacet && (
+          <span
+            aria-label={`Filtered to ${lockedFacet} facet`}
+            className="inline-flex h-6 items-center gap-1 rounded-sm bg-primary/10 px-2 text-[11px] font-medium text-primary"
+          >
+            <svg
+              aria-hidden="true"
+              className="size-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+              />
+            </svg>
+            {FACET_OPTIONS.find((o) => o.value === lockedFacet)?.label ?? lockedFacet}
+          </span>
+        )}
 
         {/* Divider */}
         <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
@@ -358,10 +522,6 @@ export function LibraryFilterBar({
               {resultCount} {resultCount === 1 ? "artifact" : "artifacts"}
             </span>
           )}
-          {activeFilterCount > (types.length + statuses.length) && !hasActiveLensFilters && (
-            /* Only show overall count when lens filters are closed and active */
-            <ActiveFilterCount count={activeFilterCount} />
-          )}
           {activeFilterCount > 0 && (
             <button
               type="button"
@@ -375,6 +535,17 @@ export function LibraryFilterBar({
             </button>
           )}
         </div>
+      </div>
+
+      {/* Date range row — always visible when not hidden by lockedFacet context */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t px-3 py-2">
+        <DateRangeInputs
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={(from, to) =>
+            onFiltersChange({ dateFrom: from, dateTo: to })
+          }
+        />
       </div>
 
       {/* Lens filter panel (P4-09) — collapsible */}

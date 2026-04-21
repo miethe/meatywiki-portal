@@ -21,6 +21,7 @@ import { listArtifacts } from "@/lib/api/artifacts";
 import type { ArtifactSortField, SortOrder } from "@/lib/api/artifacts";
 import type {
   ArtifactCard,
+  ArtifactFacet,
   ArtifactStatus,
   LensFidelity,
   LensFreshness,
@@ -40,6 +41,22 @@ export interface LibraryFilters {
   sort: ArtifactSortField;
   /** Sort direction */
   order: SortOrder;
+  /**
+   * Portal surface facet filter (taxonomy-redesign P5-02).
+   * Maps to ?facet= query param. Undefined means "no facet filter" (all workspaces).
+   * Filtered-view screens (P5-03/04/05) pre-set this to research/blog/projects.
+   */
+  facet?: ArtifactFacet;
+  /**
+   * Date range filter: ISO 8601 date string (YYYY-MM-DD) for lower bound.
+   * Serialised as ?date_from= — backend support is reserved (MISMATCH-04).
+   */
+  dateFrom?: string;
+  /**
+   * Date range filter: ISO 8601 date string (YYYY-MM-DD) for upper bound.
+   * Serialised as ?date_to= — backend support is reserved (MISMATCH-04).
+   */
+  dateTo?: string;
   /** Lens fidelity filter — empty array means "all fidelity levels" (P4-09) */
   lensFidelity: LensFidelity[];
   /** Lens freshness filter — empty array means "all freshness classes" (P4-09) */
@@ -53,6 +70,9 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   statuses: [],
   sort: "updated",
   order: "desc",
+  facet: undefined,
+  dateFrom: undefined,
+  dateTo: undefined,
   lensFidelity: [],
   lensFreshness: [],
   lensVerification: [],
@@ -78,7 +98,18 @@ interface UseLibraryArtifactsResult {
 export function useLibraryArtifacts(
   filters: LibraryFilters = DEFAULT_LIBRARY_FILTERS,
 ): UseLibraryArtifactsResult {
-  const { types, statuses, sort, order, lensFidelity, lensFreshness, lensVerification } = filters;
+  const {
+    types,
+    statuses,
+    sort,
+    order,
+    facet,
+    dateFrom,
+    dateTo,
+    lensFidelity,
+    lensFreshness,
+    lensVerification,
+  } = filters;
 
   const {
     data,
@@ -93,11 +124,15 @@ export function useLibraryArtifacts(
     queryKey: [
       "artifacts",
       "library",
-      { types, statuses, sort, order, lensFidelity, lensFreshness, lensVerification },
+      { types, statuses, sort, order, facet, dateFrom, dateTo, lensFidelity, lensFreshness, lensVerification },
     ],
     queryFn: async ({ pageParam }) => {
       return listArtifacts({
-        workspace: "library",
+        // When a facet is set, omit workspace — the backend resolves the facet
+        // to a workspace/research_origin predicate (OQ-6 resolution).
+        // Without a facet, fall back to workspace=library to scope the list.
+        workspace: facet ? undefined : "library",
+        facet,
         type: types.length > 0 ? types : undefined,
         status: statuses.length > 0 ? statuses : undefined,
         sort,
@@ -107,6 +142,7 @@ export function useLibraryArtifacts(
         lensVerification: lensVerification.length > 0 ? lensVerification : undefined,
         cursor: pageParam as string | null,
         limit: PAGE_SIZE,
+        // dateFrom/dateTo reserved — not yet a real backend param (MISMATCH-04)
       });
     },
     initialPageParam: null as string | null,
