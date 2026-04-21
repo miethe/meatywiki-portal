@@ -31,6 +31,20 @@
  *     detail per Handoff Chain manifest row 9 (N-defer).
  *   - All other §2.6 deltas are adr-proposal (structural) — deferred to Phase 4.
  *
+ * DP4-02c (design-pass Phase 4) — Research Home rich bento per ADR-DPI-004:
+ *   - FeaturedTopicsGrid: Featured Topic Cards grid (DP1-06 #1). Skeletons
+ *     shown until GET /api/research/featured-topics ships in v1.6.
+ *   - EvidencePulsePanel: New Evidence + Contradictions feeds (DP1-06 #2).
+ *     Skeletons shown until GET /api/research/evidence-pulse/{new,contradictions}
+ *     ships in v1.6.
+ *   - CrossEntitySynthesisTabs: tabbed synthesis feed (DP1-06 #4). Skeletons
+ *     shown until GET /api/research/cross-entity-synthesis ships in v1.6.
+ *   - TopicScopeDropdown: topic-scoped filter replacing generic lens filter on
+ *     this surface (DP1-06 #6). Disabled until GET /api/topics ships in v1.6.
+ *   - Bento panels are inserted above the existing filter/list/pagination section,
+ *     kept as a secondary affordance beneath the bento per ADR-DPI-004 §3.
+ *   - Missing backend endpoints documented here and in the DP4-02c commit body.
+ *
  * Stitch reference: "Research Home" (ID: 0cf6fb7b27d9459e8b5bebfea66915c5)
  */
 
@@ -48,6 +62,10 @@ import {
   DEFAULT_LIBRARY_FILTERS,
   type LibraryFilters,
 } from "@/components/library";
+import { FeaturedTopicsGrid } from "@/components/research/FeaturedTopicsGrid";
+import { EvidencePulsePanel } from "@/components/research/EvidencePulsePanel";
+import { CrossEntitySynthesisTabs } from "@/components/research/CrossEntitySynthesisTabs";
+import { TopicScopeDropdown } from "@/components/research/TopicScopeDropdown";
 
 // ---------------------------------------------------------------------------
 // View mode — persisted to localStorage (separate key from Library)
@@ -220,6 +238,11 @@ export default function ResearchPagesPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [mounted, setMounted] = useState(false);
 
+  // Topic scope state for bento panels (DP4-02c, ADR-DPI-004 DP1-06 #6).
+  // TopicScopeDropdown is disabled until GET /api/topics ships in v1.6; this
+  // state will be wired through to bento hooks when the endpoint is available.
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+
   useEffect(() => {
     setViewMode(getInitialViewMode());
     setMounted(true);
@@ -309,8 +332,64 @@ export default function ResearchPagesPage() {
       {/* Two-column layout: main content + context rail (lg+)                 */}
       {/* ADR-DPI-002 Option A.1 — rail slots into Standard shell right column.  */}
       <div className="flex gap-6">
-        {/* Main column: filter bar + artifact grid + workflows panel */}
-        <div className="flex min-w-0 flex-1 flex-col gap-4">
+        {/* Main column: bento panels + filter bar + artifact grid + workflows panel */}
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
+
+          {/*
+           * DP4-02c bento header row: Topic scope dropdown aligned right.
+           * The dropdown is a companion to the bento panels — it scopes all
+           * three panels. Kept outside the LibraryFilterBar so it's visually
+           * anchored to the bento rather than the artifact list.
+           */}
+          <div className="flex items-end justify-between gap-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Research Home
+              </h2>
+              <p className="text-[11px] text-muted-foreground">
+                Featured topics, evidence activity, and synthesis highlights
+              </p>
+            </div>
+            <div className="shrink-0">
+              <TopicScopeDropdown
+                selectedTopicId={selectedTopicId}
+                onChange={setSelectedTopicId}
+                className="min-w-[160px]"
+              />
+            </div>
+          </div>
+
+          {/*
+           * Featured Topics grid (DP1-06 #1, ADR-DPI-004 §6).
+           * Backend: GET /api/research/featured-topics — missing (v1.6).
+           * Renders skeleton cards + notice until endpoint ships.
+           */}
+          <FeaturedTopicsGrid />
+
+          {/*
+           * Evidence Pulse panel (DP1-06 #2, ADR-DPI-004 §6).
+           * Backend: GET /api/research/evidence-pulse/new
+           *          GET /api/research/evidence-pulse/contradictions
+           * Both missing (v1.6). Renders skeleton rows + notices.
+           */}
+          <EvidencePulsePanel topicId={selectedTopicId} />
+
+          {/*
+           * Cross-Entity Synthesis tabbed feed (DP1-06 #4, ADR-DPI-004 §6).
+           * Backend: GET /api/research/cross-entity-synthesis — missing (v1.6).
+           * Renders skeleton rows + notice until endpoint ships.
+           */}
+          <CrossEntitySynthesisTabs topicId={selectedTopicId} />
+
+          {/* Divider between bento and artifact list secondary affordance */}
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+              All Research Pages
+            </span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+
           {/* Filter bar — facet locked to "research" (chip row hidden, lock indicator shown) */}
           <LibraryFilterBar
             filters={filters}
