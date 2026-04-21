@@ -14,6 +14,14 @@
  *   - Link to new synthesis artifact on completion
  *   - Error state with inline retry
  *
+ * DP3-01 (design-pass Phase 3) — cosmetic + contract integration:
+ *   - Stage Tracker: already integrated in SynthesisBuilder running phase; researchOrigin=true
+ *     added (DP3-01) so the run progress strip shows amber research accent.
+ *   - Lens Badge on backlinked artifact rows: deferred — no backlinked-artifact panel exists
+ *     (structural gap, all §2.7 deltas are adr-proposal → Phase 4).
+ *   - Handoff Chain on produced-synthesis preview: deferred to DP4-HC-02 (Phase 4 structural).
+ *   - All §2.7 deltas are adr-proposal (structural) — deferred to Phase 4.
+ *
  * Stitch reference: "Synthesis Builder" (P4-02 scope)
  */
 

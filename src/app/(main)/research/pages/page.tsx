@@ -20,6 +20,15 @@
  * P4-01: original Research workspace structure + navigation.
  * P5-03: refactor to facet-filtered Library view.
  *
+ * DP3-01 (design-pass Phase 3) — cosmetic + contract integration:
+ *   - Lens Badge compact: already integrated via ArtifactCard header row (P4-06 /
+ *     DP3-03); researchOrigin prop wired from artifact.research_origin.
+ *   - Stage Tracker compact in Active Workflows panel: deferred to DP4-05
+ *     (Phase 4 structural — panel itself does not yet exist).
+ *   - Handoff Chain: accept-code-canonical (delta #10) — deferred to artifact
+ *     detail per Handoff Chain manifest row 9 (N-defer).
+ *   - All other §2.6 deltas are adr-proposal (structural) — deferred to Phase 4.
+ *
  * Stitch reference: "Research Home" (ID: 0cf6fb7b27d9459e8b5bebfea66915c5)
  */
 

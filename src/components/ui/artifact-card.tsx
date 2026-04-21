@@ -27,13 +27,26 @@
 
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import type { ArtifactCard as ArtifactCardType } from "@/types/artifact";
+import type { ArtifactCard as ArtifactCardType, WorkflowRunStatus } from "@/types/artifact";
 import { TypeBadge } from "./type-badge";
 import { FacetBadge } from "./facet-badge";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
+import { StageTracker } from "@/components/workflow/stage-tracker";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import type { ArtifactFacet } from "@/types/artifact";
+
+/**
+ * Minimal active-run shape for Stage Tracker integration (DP3-03).
+ * Intentionally narrow — only what the card needs to render StageTrackerCompact.
+ * Full WorkflowRun type (from @/types/artifact) is a superset of this.
+ */
+export interface ActiveRunShape {
+  id: string;
+  status: WorkflowRunStatus;
+  current_stage?: number | null;
+  template_id?: string | null;
+}
 
 /** Workspaces that get a facet badge in the Library view */
 const FACET_BADGE_WORKSPACES = new Set<string>(["blog", "projects"]);
@@ -52,6 +65,13 @@ interface ArtifactCardProps {
   artifact: ArtifactCardType;
   /** Variant: "list" for Inbox (full-width row), "grid" for Library grid */
   variant?: "list" | "grid";
+  /**
+   * Active workflow run for this artifact, if any.
+   * When present and status is pending|running, renders StageTrackerCompact
+   * below the title row (DP3-03, Stage Tracker manifest §2.1–2.2).
+   * Null/undefined → component not rendered; no placeholder, no layout break.
+   */
+  activeRun?: ActiveRunShape | null;
   className?: string;
 }
 
@@ -76,6 +96,7 @@ function formatRelativeTime(iso?: string | null): string {
 export function ArtifactCard({
   artifact,
   variant = "list",
+  activeRun,
   className,
 }: ArtifactCardProps) {
   const {
@@ -89,6 +110,12 @@ export function ArtifactCard({
     preview,
     research_origin,
   } = artifact;
+
+  // Stage Tracker contract (DP3-03): render compact tracker only for active runs.
+  // Terminal statuses (complete, failed, abandoned, paused) collapse to null.
+  const showStageTracker =
+    activeRun != null &&
+    (activeRun.status === "pending" || activeRun.status === "running");
 
   const updatedTime = formatRelativeTime(updated);
   const createdTime = formatRelativeTime(created);
@@ -125,13 +152,27 @@ export function ArtifactCard({
           so clicks land on the underlying <Link>.  Interactive children re-enable
           their own pointer events via `pointer-events-auto`. */}
       <div className={cn("pointer-events-none relative flex min-w-0 flex-col gap-1.5", variant === "list" && "flex-1")}>
-        {/* Badge row: type + facet (blog/projects only) + workflow status */}
-        <div className="flex flex-wrap items-center gap-1">
-          <TypeBadge type={type} />
-          {FACET_BADGE_WORKSPACES.has(workspace) && facet && (
-            <FacetBadge facet={facet} />
-          )}
-          {workflow_status && <WorkflowStatusBadge status={workflow_status} />}
+        {/*
+         * Card header row: badges left, Lens Badge top-right (DP3-03 / Lens Badge
+         * manifest §2 rows 4 & 6 — "top-right of card header, right of title").
+         * LensBadgeSet renders null when all lens fields absent (layout-stable).
+         */}
+        <div className="flex items-start justify-between gap-2">
+          {/* Left cluster: type + facet + workflow status */}
+          <div className="flex flex-wrap items-center gap-1">
+            <TypeBadge type={type} />
+            {FACET_BADGE_WORKSPACES.has(workspace) && facet && (
+              <FacetBadge facet={facet} />
+            )}
+            {workflow_status && <WorkflowStatusBadge status={workflow_status} />}
+          </div>
+          {/* Right: Lens Badge compact (null-safe — renders nothing when all null) */}
+          <LensBadgeSet
+            artifact={artifact}
+            variant="compact"
+            researchOrigin={research_origin}
+            className="shrink-0"
+          />
         </div>
 
         {/* Title */}
@@ -144,15 +185,33 @@ export function ArtifactCard({
           {title}
         </h3>
 
+        {/*
+         * Stage Tracker compact (DP3-03): rendered below title row only when
+         * artifact has an active (pending|running) workflow run.
+         * density="card" per Stage Tracker manifest §2.1–2.2.
+         * Returns null and occupies no space when showStageTracker=false.
+         */}
+        {showStageTracker && activeRun && (
+          <StageTracker
+            runId={activeRun.id}
+            templateId={activeRun.template_id}
+            status={activeRun.status}
+            currentStage={activeRun.current_stage}
+            variant="compact"
+            mode="sse"
+            researchOrigin={research_origin}
+            className="mt-0.5"
+          />
+        )}
+
         {/* Preview text */}
         {preview && (
           <p className="line-clamp-2 text-xs text-muted-foreground">{preview}</p>
         )}
 
-        {/* Footer row: lens badges + timestamps */}
+        {/* Footer row: freshness badge + timestamps */}
         <div className="flex items-center justify-between gap-2 pt-0.5">
           <div className="flex flex-wrap items-center gap-1">
-            <LensBadgeSet artifact={artifact} variant="compact" />
             {/* Freshness indicator from metadata (P4-04): compact, cards-only */}
             <ArtifactFreshnessBadge
               freshness={artifact.metadata?.freshness}
