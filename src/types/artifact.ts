@@ -100,7 +100,7 @@ export interface ArtifactMetadataCard {
 }
 
 // ---------------------------------------------------------------------------
-// Artifact status / workspace
+// Artifact status / workspace / facet
 // ---------------------------------------------------------------------------
 
 export type ArtifactStatus = "draft" | "active" | "archived" | "stale";
@@ -110,6 +110,17 @@ export type ArtifactWorkspace =
   | "research"
   | "blog"
   | "projects";
+
+/**
+ * Portal surface facet values accepted by ?facet= query param.
+ *
+ * Facet is a query concept, not a stored column (OQ-6 resolution):
+ *   library / blog / projects → WHERE workspace = <value>
+ *   research                  → WHERE research_origin = true
+ *
+ * Taxonomy-redesign P4-05 / P5-01.
+ */
+export type ArtifactFacet = "library" | "research" | "blog" | "projects";
 
 // ---------------------------------------------------------------------------
 // ArtifactCard — list-view projection (GET /api/artifacts)
@@ -133,6 +144,33 @@ export interface ArtifactCard {
   preview?: string | null;
   /** Active workflow run for this artifact, if any */
   workflow_status?: WorkflowRunStatus | null;
+  /**
+   * Whether this artifact was produced by or flagged for the Portal Research
+   * workflow. Maps to artifacts.research_origin (BOOLEAN NOT NULL DEFAULT false)
+   * in the Postgres overlay — migration 007_taxonomy_redesign.
+   *
+   * Used by Lens Badges (P5-06) and Research screen pre-filter (P5-03).
+   * Taxonomy-redesign P4-03 / P5-01.
+   *
+   * NOTE: The backend ArtifactCard DTO in core.py does not yet expose this field
+   * (the column exists on the ORM model but from_orm_artifact does not map it).
+   * Tracked as mismatch MISMATCH-01 — field will be undefined until backend
+   * schema is updated to include it in ArtifactCard serialisation.
+   */
+  research_origin?: boolean | null;
+  /**
+   * ID of the research workflow run that produced this artifact, if any.
+   * Maps to artifacts.research_workflow_id (TEXT, nullable) in the Postgres overlay.
+   *
+   * Backend column name is `research_workflow_id`; exposed here as `workflow_id`
+   * for conciseness per P5-01 task spec. The backend DTO must alias
+   * research_workflow_id → workflow_id when this field is added to ArtifactCard.
+   * Tracked as mismatch MISMATCH-02.
+   *
+   * Null for the vast majority of artifacts (non-research-workflow products).
+   * Taxonomy-redesign P4-03 / P5-01.
+   */
+  workflow_id?: string | null;
 }
 
 // ---------------------------------------------------------------------------
