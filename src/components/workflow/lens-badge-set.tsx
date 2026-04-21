@@ -14,16 +14,23 @@
  *   detail  — all five dimensions: adds reusability_tier + sensitivity_profile
  *             when present. Used in Artifact Detail header.
  *
+ * Workspace-aware styling (P5-06):
+ *   When researchOrigin=true the badge container receives an amber accent ring
+ *   and a subtle amber background tint to visually distinguish research-workflow
+ *   artifacts from regular Library items. Normal (non-research) styling is
+ *   unchanged. Safe default: researchOrigin=false/undefined → no accent.
+ *
  * Design invariants (design spec §3.3):
  *   - Missing fields: render nothing for that badge (no placeholder, no crash).
  *   - All fields null/undefined: renders nothing (no DOM node at all) so the
  *     caller's layout is never disrupted by an empty container.
  *   - Read-only in v1; write path deferred to Portal v1.5 (DF-007).
- *   - WCAG 2.1 AA: badges carry aria-label (colour + text label, not colour-only).
+ *   - WCAG 2.1 AA: badges carry aria-label (colour + text label, not colour-only);
+ *     research accent uses colour + aria-label supplement (never colour-only).
  *
  * Stitch reference: §3.1 LensBadgeSet; addendum §3.1.
  * PRD: FR-29, A17.
- * Phase: P4-06.
+ * Phase: P4-06 (base), P5-06 (workspace-aware styling).
  */
 
 import { cn } from "@/lib/utils";
@@ -81,6 +88,15 @@ export interface LensBadgeSetProps {
    * Defaults to "compact".
    */
   variant?: "compact" | "detail";
+  /**
+   * Whether the artifact originates from a research workflow.
+   * When true, applies an amber accent ring + background tint to the badge
+   * container to visually distinguish research items from library items.
+   *
+   * Maps to ArtifactCard.research_origin (P5-06 workspace-aware styling).
+   * Safe default: false/undefined → normal styling unchanged.
+   */
+  researchOrigin?: boolean | null;
   className?: string;
 }
 
@@ -99,6 +115,7 @@ export interface LensBadgeSetProps {
 export function LensBadgeSet({
   artifact,
   variant = "compact",
+  researchOrigin,
   className,
 }: LensBadgeSetProps) {
   const metadata = artifact.metadata;
@@ -120,12 +137,16 @@ export function LensBadgeSet({
 
   if (!hasAny) return null;
 
+  const isResearch = researchOrigin === true;
+
   return (
     <div
-      aria-label="Lens badges"
+      aria-label={isResearch ? "Lens badges (research origin)" : "Lens badges"}
       className={cn(
         "flex flex-wrap items-center",
         variant === "compact" ? "gap-1" : "gap-1.5",
+        // Workspace-aware accent: amber ring + tint for research-origin items.
+        isResearch && "rounded px-1 py-0.5 ring-1 ring-amber-400/60 bg-amber-50/50 dark:ring-amber-500/50 dark:bg-amber-950/30",
         className,
       )}
     >
