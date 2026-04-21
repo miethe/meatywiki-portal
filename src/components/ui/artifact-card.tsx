@@ -107,7 +107,9 @@ export function ArtifactCard({
         isResearchOrigin && "ring-1 ring-teal-400/50",
         className,
       )}
-      aria-label={title}
+      aria-label={
+        isResearchOrigin ? `${title} (research origin)` : title
+      }
       // P5-06 data attribute hook for Lens Badge workspace-aware styling
       data-research-origin={isResearchOrigin ? "true" : undefined}
     >

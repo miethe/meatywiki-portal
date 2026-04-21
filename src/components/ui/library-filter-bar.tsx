@@ -240,7 +240,7 @@ function DateRangeInputs({ dateFrom, dateTo, onChange }: DateRangeInputsProps) {
       <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         Date
       </span>
-      <div className="flex items-center gap-1">
+      <div className="flex flex-wrap items-center gap-1">
         <label htmlFor="filter-date-from" className="sr-only">
           From date
         </label>
@@ -527,7 +527,7 @@ export function LibraryFilterBar({
               type="button"
               onClick={clearAll}
               className={cn(
-                "text-[11px] text-muted-foreground underline-offset-2 hover:underline",
+                "min-h-[44px] text-[11px] text-muted-foreground underline-offset-2 hover:underline sm:min-h-0",
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               )}
             >

@@ -179,7 +179,7 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
         type="button"
         onClick={onRetry}
         className={cn(
-          "inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive",
+          "inline-flex min-h-[44px] items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive sm:h-8 sm:min-h-0",
           "transition-colors hover:bg-destructive/10",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         )}
@@ -353,7 +353,7 @@ export default function ResearchPagesPage() {
                   disabled={isFetchingNextPage}
                   aria-label="Load more research pages"
                   className={cn(
-                    "inline-flex h-8 items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground",
+                    "inline-flex min-h-[44px] items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground sm:h-8 sm:min-h-0",
                     "transition-colors hover:bg-accent hover:text-accent-foreground",
                     "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                     "disabled:pointer-events-none disabled:opacity-50",

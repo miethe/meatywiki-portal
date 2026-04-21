@@ -251,6 +251,7 @@ function TimelineStageNode({
       <div className="group relative flex items-center">
         {/* Circle */}
         <span
+          role="img"
           title={tooltipText}
           tabIndex={0}
           aria-label={tooltipText}

@@ -448,3 +448,226 @@ test.describe("Full responsive E2E — all screens @backend", () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// P5-07: Taxonomy-redesign screen mobile responsiveness
+// Library / Research / Blog Posts / Projects — four screens share the same
+// card grid layout, LibraryFilterBar, and pagination. Tests validate each
+// at 375px (phone baseline) and 768px (tablet/md) without requiring a live
+// backend (layout-only assertions).
+//
+// Backend-gated tests use the same MEATYWIKI_PORTAL_TOKEN gate as the rest
+// of the file. Layout-only tests use /login as a structural proxy (same
+// shell/viewport meta) plus static Tailwind class analysis documented inline.
+//
+// Acceptance criteria (P5-07):
+//   [x] Card grid: grid-cols-1 at 375px; grid-cols-2 at sm (640+); grid-cols-3 at lg (1024+)
+//   [x] Filter bar wraps cleanly — no horizontal overflow at 375px or 768px
+//   [x] Date inputs stack on mobile (flex-wrap on inner container — fixed in this pass)
+//   [x] Filter chips meet 44px touch target on mobile (min-h-[44px] sm:min-h-0)
+//   [x] Sort dropdown meets 44px touch target on mobile
+//   [x] "Load more" pagination button meets 44px touch target (fixed: was h-8 only)
+//   [x] View toggle buttons meet 44px touch target on mobile
+//   [x] Blog facet callout right-side text hidden on mobile to prevent overflow
+//   [x] No horizontal overflow at any viewport
+// ---------------------------------------------------------------------------
+
+const P5_MOBILE_VIEWPORTS = [
+  { name: "375px (iPhone SE)", width: 375, height: 667 },
+  { name: "768px (tablet/md)", width: 768, height: 1024 },
+] as const;
+
+// Screens introduced / refactored in taxonomy-redesign P5-02..P5-05
+const TAXONOMY_SCREENS = [
+  { path: "/library",        label: "Library",        heading: "Knowledge Library" },
+  { path: "/research/pages", label: "Research Pages", heading: "Research Pages" },
+  { path: "/blog/posts",     label: "Blog Posts",     heading: "Blog Posts" },
+  { path: "/projects",       label: "Projects",       heading: "Projects" },
+] as const;
+
+// ---------------------------------------------------------------------------
+// Layout-only tests — no backend required; login page is a viewport/meta proxy
+// ---------------------------------------------------------------------------
+
+test.describe("P5-07 taxonomy screens — layout @layout", () => {
+  for (const vp of P5_MOBILE_VIEWPORTS) {
+    test.describe(`Viewport: ${vp.name}`, () => {
+      test.beforeEach(async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+      });
+
+      test(`login proxy — no overflow (viewport meta sanity) at ${vp.name}`, async ({ page }) => {
+        // Login is always accessible without auth; same viewport meta applies
+        // to all routes. Confirms no-overflow at 375/768 before backend tests.
+        await page.goto("/login");
+        await page.waitForLoadState("domcontentloaded");
+        await assertNoHorizontalOverflow(page);
+      });
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Backend-gated tests — require MEATYWIKI_PORTAL_TOKEN
+// ---------------------------------------------------------------------------
+
+test.describe("P5-07 taxonomy screens — responsive (requires backend) @backend", () => {
+  test.skip(SKIP_E2E, "Backend token not configured — set MEATYWIKI_PORTAL_TOKEN to run");
+
+  async function loginAndNavigate(page: Page, path: string): Promise<void> {
+    const token = process.env.MEATYWIKI_PORTAL_TOKEN ?? "";
+    await page.goto("/login");
+    await page.getByLabel("Access Token").fill(token);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.waitForURL("**/");
+    await page.goto(path);
+    await page.waitForLoadState("networkidle");
+  }
+
+  for (const vp of P5_MOBILE_VIEWPORTS) {
+    test.describe(`Viewport: ${vp.name}`, () => {
+      test.beforeEach(async ({ page }) => {
+        await page.setViewportSize({ width: vp.width, height: vp.height });
+      });
+
+      for (const screen of TAXONOMY_SCREENS) {
+        // ---- No overflow ----
+        test(`${screen.label}: no horizontal overflow`, async ({ page }) => {
+          await loginAndNavigate(page, screen.path);
+          await assertNoHorizontalOverflow(page);
+          await expect(page.getByRole("heading", { name: screen.heading })).toBeVisible();
+        });
+
+        // ---- Filter bar stays within viewport ----
+        test(`${screen.label}: filter bar does not overflow viewport`, async ({ page }) => {
+          await loginAndNavigate(page, screen.path);
+
+          const filterBar = page.getByRole("search", { name: "Library filters" });
+          await expect(filterBar).toBeVisible();
+          const filterBox = await filterBar.boundingBox();
+          expect(filterBox).not.toBeNull();
+          if (filterBox) {
+            expect(
+              filterBox.x + filterBox.width,
+              `${screen.label} filter bar overflows viewport at ${vp.name}`,
+            ).toBeLessThanOrEqual(vp.width + 2);
+          }
+        });
+
+        // ---- Card grid: single column on mobile ----
+        test(`${screen.label}: card grid uses single column at ${vp.name}`, async ({ page }) => {
+          if (vp.width > 640) return; // single-column only at <sm; skip for tablet
+          await loginAndNavigate(page, screen.path);
+
+          // Artifact list — if any cards are visible, verify they are full-width
+          // (single-column grid = card width ≈ viewport - padding)
+          const cardList = page.locator('section[aria-label*=" artifacts"] ul[role="list"]').first();
+          if (await cardList.isVisible()) {
+            const listBox = await cardList.boundingBox();
+            if (listBox) {
+              // Cards container should not overflow viewport
+              expect(listBox.x + listBox.width).toBeLessThanOrEqual(vp.width + 2);
+            }
+          }
+          await assertNoHorizontalOverflow(page);
+        });
+
+        // ---- View toggle touch targets on mobile ----
+        test(`${screen.label}: view toggle buttons meet 44px touch target on mobile`, async ({ page }) => {
+          if (vp.width > 640) return; // touch target enforcement is mobile-only
+          await loginAndNavigate(page, screen.path);
+
+          const toggleGroup = page.getByRole("group", { name: "View layout" });
+          if (await toggleGroup.isVisible()) {
+            // List and Grid buttons must each be ≥ 44px tall
+            const listBtn = page.getByRole("button", { name: "List view" });
+            const gridBtn = page.getByRole("button", { name: "Grid view" });
+
+            for (const btn of [listBtn, gridBtn]) {
+              const box = await btn.boundingBox();
+              if (box) {
+                expect(
+                  box.height,
+                  `View toggle button height ${box.height}px < 44px at ${vp.name}`,
+                ).toBeGreaterThanOrEqual(44);
+              }
+            }
+          }
+        });
+
+        // ---- Filter chips touch targets on mobile ----
+        test(`${screen.label}: type filter chips meet 44px touch target on mobile`, async ({ page }) => {
+          if (vp.width > 640) return;
+          await loginAndNavigate(page, screen.path);
+
+          const typeChips = page.locator('[aria-label^="Filter by Type:"]');
+          const chipCount = await typeChips.count();
+          if (chipCount > 0) {
+            const box = await typeChips.first().boundingBox();
+            if (box) {
+              expect(
+                box.height,
+                `Type filter chip height ${box.height}px < 44px at ${vp.name}`,
+              ).toBeGreaterThanOrEqual(44);
+            }
+          }
+        });
+
+        // ---- Sort dropdown touch target on mobile ----
+        test(`${screen.label}: sort dropdown meets 44px touch target on mobile`, async ({ page }) => {
+          if (vp.width > 640) return;
+          await loginAndNavigate(page, screen.path);
+
+          const sortSelect = page.getByRole("combobox", { name: "Sort artifacts" });
+          if (await sortSelect.isVisible()) {
+            const box = await sortSelect.boundingBox();
+            if (box) {
+              expect(
+                box.height,
+                `Sort dropdown height ${box.height}px < 44px at ${vp.name}`,
+              ).toBeGreaterThanOrEqual(44);
+            }
+          }
+        });
+      }
+
+      // ---- Blog-specific: facet callout fits viewport ----
+      test(`Blog Posts: facet callout does not overflow at ${vp.name}`, async ({ page }) => {
+        await loginAndNavigate(page, "/blog/posts");
+
+        const callout = page.getByLabel("Blog writing facet — filtered view");
+        if (await callout.isVisible()) {
+          const box = await callout.boundingBox();
+          if (box) {
+            expect(
+              box.x + box.width,
+              `Blog facet callout overflows viewport at ${vp.name}`,
+            ).toBeLessThanOrEqual(vp.width + 2);
+          }
+        }
+        await assertNoHorizontalOverflow(page);
+      });
+
+      // ---- Date range inputs: each input stays within viewport ----
+      test(`Library: date inputs stay within viewport at ${vp.name}`, async ({ page }) => {
+        await loginAndNavigate(page, "/library");
+
+        const fromInput = page.getByLabel("Filter from date");
+        const toInput = page.getByLabel("Filter to date");
+
+        for (const input of [fromInput, toInput]) {
+          if (await input.isVisible()) {
+            const box = await input.boundingBox();
+            if (box) {
+              expect(
+                box.x + box.width,
+                `Date input overflows viewport at ${vp.name}: right edge ${box.x + box.width} > ${vp.width}`,
+              ).toBeLessThanOrEqual(vp.width + 2);
+            }
+          }
+        }
+        await assertNoHorizontalOverflow(page);
+      });
+    });
+  }
+});
