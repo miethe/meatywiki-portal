@@ -23,8 +23,10 @@
  * DP3-01 (design-pass Phase 3) — cosmetic + contract integration:
  *   - Lens Badge compact: already integrated via ArtifactCard header row (P4-06 /
  *     DP3-03); researchOrigin prop wired from artifact.research_origin.
- *   - Stage Tracker compact in Active Workflows panel: deferred to DP4-05
- *     (Phase 4 structural — panel itself does not yet exist).
+ *   - Stage Tracker compact per-card: activeRun wired from artifact.active_run
+ *     (DP4-02a gap fill — DP1-06 #9). Hydrates when backend projects active_run.
+ *   - Active Workflows panel: WorkflowStatusPanel variant="compact" added below
+ *     the artifact grid (DP4-02a gap fill — DP1-06 #9, Stage Tracker manifest §2.5).
  *   - Handoff Chain: accept-code-canonical (delta #10) — deferred to artifact
  *     detail per Handoff Chain manifest row 9 (N-defer).
  *   - All other §2.6 deltas are adr-proposal (structural) — deferred to Phase 4.
@@ -37,6 +39,8 @@ import { LayoutGrid, List, AlertCircle, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
+import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel";
+import { ContextRail } from "@/components/layout/ContextRail";
 import {
   LibraryFilterBar,
   useLensFilterUrlSync,
@@ -284,7 +288,7 @@ export default function ResearchPagesPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Page header */}
+      {/* Page header — full width, above the two-column content area */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap items-center gap-2">
@@ -302,105 +306,141 @@ export default function ResearchPagesPage() {
         />
       </div>
 
-      {/* Filter bar — facet locked to "research" (chip row hidden, lock indicator shown) */}
-      <LibraryFilterBar
-        filters={filters}
-        onFiltersChange={handleFiltersChange}
-        resultCount={isLoading ? undefined : total}
-        lockedFacet="research"
-      />
-
-      {/* Artifact list / grid */}
-      <section aria-label="Research artifacts" aria-busy={isLoading}>
-        {isError && error ? (
-          <ErrorState
-            error={error}
-            onRetry={() => setFilters((f) => ({ ...f }))}
+      {/* Two-column layout: main content + context rail (lg+)                 */}
+      {/* ADR-DPI-002 Option A.1 — rail slots into Standard shell right column.  */}
+      <div className="flex gap-6">
+        {/* Main column: filter bar + artifact grid + workflows panel */}
+        <div className="flex min-w-0 flex-1 flex-col gap-4">
+          {/* Filter bar — facet locked to "research" (chip row hidden, lock indicator shown) */}
+          <LibraryFilterBar
+            filters={filters}
+            onFiltersChange={handleFiltersChange}
+            resultCount={isLoading ? undefined : total}
+            lockedFacet="research"
           />
-        ) : (
-          <>
-            <ul
-              role="list"
-              className={cn(
-                "grid gap-3",
-                viewMode === "grid"
-                  ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-                  : "grid-cols-1",
-              )}
-            >
-              {isLoading && (
-                <ArtifactCardSkeletonGrid
-                  count={viewMode === "grid" ? 9 : 5}
-                  variant={viewMode}
-                />
-              )}
 
-              {!isLoading &&
-                artifacts.map((artifact) => (
-                  <li key={artifact.id}>
-                    <ArtifactCard artifact={artifact} variant={viewMode} />
-                  </li>
-                ))}
-
-              {isFetchingNextPage && (
-                <ArtifactCardSkeletonGrid
-                  count={viewMode === "grid" ? 3 : 2}
-                  variant={viewMode}
-                />
-              )}
-            </ul>
-
-            {!isLoading && artifacts.length === 0 && (
-              <EmptyState hasFilters={hasActiveFilters} />
-            )}
-
-            {hasNextPage && !isLoading && (
-              <div className="mt-4 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => fetchNextPage()}
-                  disabled={isFetchingNextPage}
-                  aria-label="Load more research pages"
+          {/* Artifact list / grid */}
+          <section aria-label="Research artifacts" aria-busy={isLoading}>
+            {isError && error ? (
+              <ErrorState
+                error={error}
+                onRetry={() => setFilters((f) => ({ ...f }))}
+              />
+            ) : (
+              <>
+                <ul
+                  role="list"
                   className={cn(
-                    "inline-flex min-h-[44px] items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground sm:h-8 sm:min-h-0",
-                    "transition-colors hover:bg-accent hover:text-accent-foreground",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                    "disabled:pointer-events-none disabled:opacity-50",
+                    "grid gap-3",
+                    viewMode === "grid"
+                      ? "grid-cols-1 sm:grid-cols-2"
+                      : "grid-cols-1",
                   )}
                 >
-                  {isFetchingNextPage ? (
-                    <>
-                      <svg
-                        aria-hidden="true"
-                        className="size-3.5 animate-spin"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                        />
-                      </svg>
-                      Loading…
-                    </>
-                  ) : (
-                    "Load more"
+                  {isLoading && (
+                    <ArtifactCardSkeletonGrid
+                      count={viewMode === "grid" ? 6 : 5}
+                      variant={viewMode}
+                    />
                   )}
-                </button>
-              </div>
+
+                  {!isLoading &&
+                    artifacts.map((artifact) => (
+                      <li key={artifact.id}>
+                        <ArtifactCard
+                          artifact={artifact}
+                          variant={viewMode}
+                          activeRun={artifact.active_run ?? undefined}
+                        />
+                      </li>
+                    ))}
+
+                  {isFetchingNextPage && (
+                    <ArtifactCardSkeletonGrid
+                      count={viewMode === "grid" ? 2 : 2}
+                      variant={viewMode}
+                    />
+                  )}
+                </ul>
+
+                {!isLoading && artifacts.length === 0 && (
+                  <EmptyState hasFilters={hasActiveFilters} />
+                )}
+
+                {hasNextPage && !isLoading && (
+                  <div className="mt-4 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => fetchNextPage()}
+                      disabled={isFetchingNextPage}
+                      aria-label="Load more research pages"
+                      className={cn(
+                        "inline-flex min-h-[44px] items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground sm:h-8 sm:min-h-0",
+                        "transition-colors hover:bg-accent hover:text-accent-foreground",
+                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                        "disabled:pointer-events-none disabled:opacity-50",
+                      )}
+                    >
+                      {isFetchingNextPage ? (
+                        <>
+                          <svg
+                            aria-hidden="true"
+                            className="size-3.5 animate-spin"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle
+                              className="opacity-25"
+                              cx="12"
+                              cy="12"
+                              r="10"
+                              stroke="currentColor"
+                              strokeWidth="4"
+                            />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                            />
+                          </svg>
+                          Loading…
+                        </>
+                      ) : (
+                        "Load more"
+                      )}
+                    </button>
+                  </div>
+                )}
+              </>
             )}
-          </>
-        )}
-      </section>
+          </section>
+
+          {/*
+           * Active Workflows panel — DP4-02a gap fill (DP1-06 #9).
+           * Stage Tracker manifest §2.5 / §3.3 (Research Workspace Home row 6):
+           *   - Reuses WorkflowStatusPanel variant="compact" as embedded widget.
+           *   - Panel hidden when no active runs exist (WorkflowStatusPanel handles
+           *     the empty state internally with variant="compact").
+           *   - SSE multiplexing delegated to RunSSEPoolBridge inside the panel.
+           *   - Not locked to research workspace — surfaces workspace-level runs
+           *     which is correct for a personal-use single-workspace setup.
+           */}
+          <WorkflowStatusPanel variant="compact" />
+        </div>
+
+        {/* ContextRail — research variant, no artifact selected in v1.          */}
+        {/* Structural slot per ADR-DPI-002 §1 (Research Workspace Home surface).*/}
+        {/* Item-level wiring (clicking card populates rail) is a v1.6 follow-up.*/}
+        <aside
+          aria-label="Context rail"
+          className="hidden w-72 shrink-0 lg:block"
+        >
+          <ContextRail
+            variant="research"
+            ariaLabel="Research context"
+          />
+        </aside>
+      </div>
     </div>
   );
 }

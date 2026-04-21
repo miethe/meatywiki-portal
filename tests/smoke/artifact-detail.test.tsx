@@ -51,6 +51,21 @@ jest.mock("@/hooks/useArtifactWorkflowRuns", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Mock useArtifactEdges (ContextRail dep — avoid real fetch in smoke tests)
+// ---------------------------------------------------------------------------
+
+jest.mock("@/hooks/useArtifactEdges", () => ({
+  ...jest.requireActual("@/hooks/useArtifactEdges"),
+  useArtifactEdges: jest.fn(() => ({
+    data: { artifact_id: "test", incoming: [], outgoing: [] },
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: jest.fn(),
+  })),
+}));
+
+// ---------------------------------------------------------------------------
 // Mock next/navigation (required by WorkflowOSTab)
 // ---------------------------------------------------------------------------
 
