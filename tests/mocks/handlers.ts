@@ -54,6 +54,29 @@ function makeWorkflowRun(overrides: Partial<WorkflowRunStub> = {}): WorkflowRunS
 }
 
 // ---------------------------------------------------------------------------
+// Rollup artifact stub (library-source-rollup-v1 FE-07)
+// ---------------------------------------------------------------------------
+
+interface RollupArtifactCardStub extends ArtifactCardStub {
+  derivative_count: number;
+  derivatives_preview: { id: string; artifact_type: string; title: string | null }[];
+}
+
+function makeRollupArtifactCard(
+  overrides: Partial<RollupArtifactCardStub> = {},
+): RollupArtifactCardStub {
+  return {
+    ...makeArtifactCard({ workspace: "library", type: "concept", status: "active" }),
+    derivative_count: 3,
+    derivatives_preview: [
+      { id: "deriv-01", artifact_type: "synthesis", title: "Synthesis A" },
+      { id: "deriv-02", artifact_type: "evidence", title: "Evidence B" },
+    ],
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Stub type shapes (mirror backend schemas — no import from Python)
 // ---------------------------------------------------------------------------
 
@@ -164,9 +187,46 @@ export const handlers = [
 
   // ------------------------------------------------------------------
   // Artifacts — list (GET /api/artifacts)
-  // Supports query params: workspace, status, type, tags, cursor, limit
+  // Supports query params: workspace, status, type, tags, cursor, limit,
+  //   view (source_rollup), rollup_lens (orphans)
+  // library-source-rollup-v1 FE-07: view=source_rollup returns rollup items
   // ------------------------------------------------------------------
-  http.get(`${API_BASE}/api/artifacts`, () => {
+  http.get(`${API_BASE}/api/artifacts`, ({ request }) => {
+    const url = new URL(request.url);
+    const view = url.searchParams.get("view");
+    const rollupLens = url.searchParams.get("rollup_lens");
+
+    if (view === "source_rollup") {
+      if (rollupLens === "orphans") {
+        // Orphan items: derivative_count=0, derivatives_preview=[]
+        const orphanItems: RollupArtifactCardStub[] = [
+          makeRollupArtifactCard({
+            id: "01ORPHAN000000000000001",
+            type: "synthesis",
+            title: "Orphan synthesis",
+            derivative_count: 0,
+            derivatives_preview: [],
+          }),
+        ];
+        return HttpResponse.json({ data: orphanItems, cursor: null });
+      }
+      // Default source rollup
+      const rollupItems: RollupArtifactCardStub[] = [
+        makeRollupArtifactCard({
+          id: "01ROLLUP000000000000001",
+          title: "Source artifact with derivatives",
+          derivative_count: 3,
+        }),
+        makeRollupArtifactCard({
+          id: "01ROLLUP000000000000002",
+          title: "Source artifact no derivatives",
+          derivative_count: 0,
+          derivatives_preview: [],
+        }),
+      ];
+      return HttpResponse.json({ data: rollupItems, cursor: null });
+    }
+
     const items: ArtifactCardStub[] = [
       makeArtifactCard({ id: "01HXYZ0000000000000000001", workspace: "inbox", title: "First stub artifact" }),
       makeArtifactCard({ id: "01HXYZ0000000000000000002", workspace: "library", type: "concept", title: "Second stub artifact", status: "compiled" }),

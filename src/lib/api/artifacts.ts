@@ -45,6 +45,7 @@ import type {
   LensFreshness,
   LensPatchRequest,
   LensVerificationState,
+  RollupArtifactItem,
   ServiceModeEnvelope,
 } from "@/types/artifact";
 
@@ -115,6 +116,18 @@ export interface ListArtifactsParams {
    * Maps to ?lens_verification=verified on the backend.
    */
   lensVerification?: LensVerificationState[];
+  /**
+   * Source rollup view mode. When set to "source_rollup", the backend returns
+   * RollupArtifactItem entries (ArtifactCard + derivative_count + derivatives_preview).
+   * Serialised as ?view=source_rollup.
+   */
+  view?: "source_rollup";
+  /**
+   * Rollup lens — only valid alongside view=source_rollup.
+   * "orphans" returns derivative-type artifacts with no resolvable source.
+   * Serialised as ?rollup_lens=orphans.
+   */
+  rollupLens?: "orphans";
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +160,8 @@ export async function listArtifacts(
     lensFidelity,
     lensFreshness,
     lensVerification,
+    view,
+    rollupLens,
   } = params;
 
   const query = new URLSearchParams();
@@ -189,10 +204,38 @@ export async function listArtifacts(
     for (const v of lensVerification) query.append("lens_verification", v);
   }
 
+  // Source rollup view (library-source-rollup-v1)
+  if (view) query.set("view", view);
+  if (rollupLens) query.set("rollup_lens", rollupLens);
+
   const qs = query.toString();
   const path = `/artifacts${qs ? `?${qs}` : ""}`;
 
   return apiFetch<ServiceModeEnvelope<ArtifactCard>>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// List artifacts — source rollup view (library-source-rollup-v1 FE-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the source rollup view of the library.
+ *
+ * Wraps listArtifacts with view=source_rollup set. Returns
+ * ServiceModeEnvelope<RollupArtifactItem> so callers get derivative_count
+ * and derivatives_preview on each item.
+ *
+ * Pass rollupLens="orphans" to switch to the orphans sub-lens.
+ *
+ * MISMATCH-NOTE: The backend returns derivative_count=0 / derivatives_preview=[]
+ * for orphan items — the fields are present but not meaningful for that lens.
+ */
+export async function listArtifactsRollup(
+  params: Omit<ListArtifactsParams, "view"> & { rollupLens?: "orphans" } = {},
+): Promise<ServiceModeEnvelope<RollupArtifactItem>> {
+  return listArtifacts({ ...params, view: "source_rollup" }) as Promise<
+    ServiceModeEnvelope<RollupArtifactItem>
+  >;
 }
 
 // ---------------------------------------------------------------------------
