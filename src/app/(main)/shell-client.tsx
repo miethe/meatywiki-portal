@@ -6,6 +6,9 @@
  * P3-10: Extracted from layout.tsx to hold drawer open/close state while
  *        keeping the parent layout.tsx as an async server component (for auth).
  *
+ * DP3-04 §2.10#4: Mobile drawer backdrop colour fixed from bg-black/40 to
+ *   bg-foreground/20 — neutral overlay that works in both light and dark modes.
+ *
  * Exposes MobileNavContext so ShellHeader's hamburger button can toggle the
  * drawer without prop-drilling.
  *
@@ -60,6 +63,14 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
           className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex"
           aria-label="Sidebar navigation"
         >
+          {/* Brand chip — desktop sidebar header (ADR-DPI-006 Option B).
+              Mirrors the mobile drawer header at line ~89 for visual parity.
+              Stitch baseline: 6803245… desktop standard shell. */}
+          <div className="flex h-14 shrink-0 items-center border-b px-3">
+            <span className="text-sm font-semibold tracking-tight">
+              MeatyWiki
+            </span>
+          </div>
           <ShellNav />
         </aside>
 
@@ -68,10 +79,11 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
         {/* ---------------------------------------------------------------- */}
         {mobileNavOpen && (
           <>
-            {/* Backdrop */}
+            {/* Backdrop — DP3-04 §2.10#4: bg-foreground/20 works in both
+                light and dark modes without hard black contrast. */}
             <div
               aria-hidden="true"
-              className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm md:hidden"
+              className="fixed inset-0 z-30 bg-foreground/20 backdrop-blur-sm md:hidden"
               onClick={close}
             />
             {/* Drawer */}

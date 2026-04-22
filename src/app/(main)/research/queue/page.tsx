@@ -8,6 +8,12 @@
  * Route: /research/queue
  * Parent layout: (main)/research/layout.tsx (research workspace shell)
  *
+ * DP4-02b — context rail (ADR-DPI-002 Option A.1):
+ *   Mounts ContextRail in research variant at the page level (right column, lg+).
+ *   In v1 no artifact is pre-selected; the rail shows empty/deferred states.
+ *   Item-level rail wiring (selecting an item populates the rail) is a v1.6 follow-up
+ *   once the row-selection interaction pattern is designed.
+ *
  * Gate types emitted in V1:
  *   - freshness  — stale or outdated lens_freshness score
  *   - contradiction — disputed verification_state
@@ -19,6 +25,7 @@
  */
 
 import { ReviewQueue } from "@/components/research/review-queue";
+import { ContextRail } from "@/components/layout/ContextRail";
 
 export default function QueuePage() {
   return (
@@ -30,7 +37,27 @@ export default function QueuePage() {
         </p>
       </div>
 
-      <ReviewQueue />
+      {/* Two-column layout: queue list + context rail (lg+) */}
+      <div className="flex gap-6">
+        {/* Queue list — flex-1 so it fills remaining space */}
+        <div className="min-w-0 flex-1">
+          <ReviewQueue />
+        </div>
+
+        {/* ContextRail — research variant, no artifact selected in v1.          */}
+        {/* Structural slot per ADR-DPI-002 §1. Item-level wiring is v1.6.       */}
+        {/* — DP1-04 #2 (Review Queue metadata strip) is owned by DP4-02e, not  */}
+        {/*   this file. Touch only the rail slot here to avoid merge conflicts. */}
+        <aside
+          aria-label="Context rail"
+          className="hidden w-72 shrink-0 lg:block"
+        >
+          <ContextRail
+            variant="research"
+            ariaLabel="Queue context"
+          />
+        </aside>
+      </div>
     </div>
   );
 }

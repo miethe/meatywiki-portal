@@ -11,6 +11,7 @@
  *   - Error state renders alert with retry button; retry calls refetch
  *   - Populated list renders all items with title, type badge, gate badge
  *   - LensBadgeSet is rendered per row (via artifact metadata)
+ *   - StageTracker compact rendered per-row when active run present (DP4-02a)
  *   - Action buttons (Promote, Archive, Link) render as disabled stubs
  *   - V1 scope note renders when items are present
  *   - Gate type labels map correctly (freshness, contradiction, unknown)
@@ -86,6 +87,8 @@ function makeReviewItem(
     artifact: makeArtifact(),
     gateType: "freshness",
     reviewedAt: "2026-04-17T10:00:00Z",
+    priority: "ROUTINE",
+    confidenceScore: 0.5,
     ...overrides,
   };
 }
@@ -104,6 +107,15 @@ function defaultHookReturn(
     isError: overrides.isError ?? false,
     error: overrides.error ?? null,
     refetch: jest.fn(),
+    filters: {
+      sort: "priority" as const,
+      order: "asc" as const,
+      priorityFilter: "ALL" as const,
+      gateFilter: "ALL" as const,
+    },
+    setSort: jest.fn(),
+    setPriorityFilter: jest.fn(),
+    setGateFilter: jest.fn(),
   };
 }
 
@@ -229,6 +241,15 @@ describe("ReviewQueue — error state", () => {
       isError: true,
       error: new Error("Timeout"),
       refetch: mockRefetch,
+      filters: {
+        sort: "priority" as const,
+        order: "asc" as const,
+        priorityFilter: "ALL" as const,
+        gateFilter: "ALL" as const,
+      },
+      setSort: jest.fn(),
+      setPriorityFilter: jest.fn(),
+      setGateFilter: jest.fn(),
     });
     renderWithProviders(<ReviewQueue />);
 
@@ -330,7 +351,6 @@ describe("ReviewQueue — gate type badges", () => {
     expect(
       screen.getByLabelText(/triggered by: freshness gate/i),
     ).toBeInTheDocument();
-    expect(screen.getByText("Freshness")).toBeInTheDocument();
   });
 
   it("renders 'Contradiction' gate badge for contradiction gate type", () => {
@@ -338,7 +358,11 @@ describe("ReviewQueue — gate type badges", () => {
     mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
     renderWithProviders(<ReviewQueue />);
 
-    expect(screen.getByText("Contradiction")).toBeInTheDocument();
+    // Use aria-label to target the gate badge specifically (filter dropdown
+    // also shows "Contradiction" in its options after DP4-02e).
+    expect(
+      screen.getByLabelText(/triggered by: contradiction gate/i),
+    ).toBeInTheDocument();
   });
 
   it("renders unknown gate type string as-is for forward compatibility", () => {
@@ -346,7 +370,11 @@ describe("ReviewQueue — gate type badges", () => {
     mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
     renderWithProviders(<ReviewQueue />);
 
-    expect(screen.getByText("Coverage")).toBeInTheDocument();
+    // Use aria-label to target the gate badge specifically (filter dropdown
+    // also shows "Coverage" in its options after DP4-02e).
+    expect(
+      screen.getByLabelText(/triggered by: coverage gate/i),
+    ).toBeInTheDocument();
   });
 });
 
@@ -391,7 +419,73 @@ describe("ReviewQueue — LensBadgeSet", () => {
 });
 
 // ===========================================================================
-// 7. Action buttons — disabled stubs
+// 7. Stage Tracker — DP4-02a gap fill (DP1-13 #9)
+// ===========================================================================
+
+describe("ReviewQueue — StageTracker per row", () => {
+  it("renders StageTracker compact when artifact has an active pending run", () => {
+    const item = makeReviewItem({
+      artifact: makeArtifact({ id: "01RUN1", title: "Active Run Artifact" }),
+      activeRun: {
+        id: "run-aaa",
+        status: "pending",
+        current_stage: 0,
+        template_id: null,
+      },
+    });
+    mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
+    renderWithProviders(<ReviewQueue />);
+
+    // StageTracker compact renders a progressbar with aria-label "Stage progress"
+    expect(screen.getByRole("progressbar", { name: /stage progress/i })).toBeInTheDocument();
+  });
+
+  it("renders StageTracker compact when artifact has an active running run", () => {
+    const item = makeReviewItem({
+      artifact: makeArtifact({ id: "01RUN2", title: "Running Artifact" }),
+      activeRun: {
+        id: "run-bbb",
+        status: "running",
+        current_stage: 1,
+        template_id: null,
+      },
+    });
+    mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
+    renderWithProviders(<ReviewQueue />);
+
+    expect(screen.getByRole("progressbar", { name: /stage progress/i })).toBeInTheDocument();
+  });
+
+  it("does not render StageTracker when artifact has no active run", () => {
+    const item = makeReviewItem({
+      artifact: makeArtifact({ id: "01RUN3", title: "No Run Artifact" }),
+      // activeRun intentionally absent
+    });
+    mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
+    renderWithProviders(<ReviewQueue />);
+
+    expect(screen.queryByRole("progressbar", { name: /stage progress/i })).not.toBeInTheDocument();
+  });
+
+  it("does not render StageTracker when active run is terminal (complete)", () => {
+    const item = makeReviewItem({
+      artifact: makeArtifact({ id: "01RUN4", title: "Complete Run Artifact" }),
+      activeRun: {
+        id: "run-ccc",
+        status: "complete",
+        current_stage: 3,
+        template_id: null,
+      },
+    });
+    mockUseReviewQueue.mockReturnValue(defaultHookReturn([item]));
+    renderWithProviders(<ReviewQueue />);
+
+    expect(screen.queryByRole("progressbar", { name: /stage progress/i })).not.toBeInTheDocument();
+  });
+});
+
+// ===========================================================================
+// 8. Action buttons — disabled stubs (DP4-02e)
 // ===========================================================================
 
 describe("ReviewQueue — action button stubs", () => {
@@ -423,7 +517,7 @@ describe("ReviewQueue — action button stubs", () => {
 });
 
 // ===========================================================================
-// 8. V1 scope note
+// 9. V1 scope note
 // ===========================================================================
 
 describe("ReviewQueue — V1 scope note", () => {

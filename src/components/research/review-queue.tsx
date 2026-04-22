@@ -15,20 +15,42 @@
  * as disabled with ARIA labels explaining the v1.5 target, satisfying
  * the accessibility requirement without misleading the user.
  *
- * Stitch reference: "Review Queue" (P4-05 scope)
+ * DP4-02e (ADR-DPI-008 Option C):
+ *   - Priority badge (HIGH / ROUTINE / CRITICAL) per row.
+ *   - Artifact ID + confidence score metadata strip per row.
+ *   - Filter/sort controls above the list (priority + updated-at).
+ *   - Two-column layout deferred to v1.6 (ADR-DPI-002).
+ *   - Per-row Stage Tracker (DP4-02a / ADR-DPI-001 gap fill — DP1-13 #9):
+ *     StageTracker compact mounted in secondary column right of priority badge
+ *     when artifact has an active (pending|running) workflow run. Null-safe:
+ *     no tracker rendered when activeRun absent or terminal.
+ *   - Right-rail context panel deferred to v1.6 (ADR-DPI-002 / DP4-02b).
+ *
+ * Stitch reference: "Review Queue" fefd2074… (partial — v1.5 scope)
  * WCAG 2.1 AA: all interactive elements have labels; colour + text, not colour-only.
  */
 
 import Link from "next/link";
-import { AlertCircle, CheckCircle2, ArchiveIcon, LinkIcon } from "lucide-react";
+import {
+  AlertCircle,
+  CheckCircle2,
+  ArchiveIcon,
+  LinkIcon,
+  ArrowUpDown,
+  Filter,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
+import { StageTracker } from "@/components/workflow/stage-tracker";
 import { TypeBadge } from "@/components/ui/type-badge";
 import {
   useReviewQueue,
   type ReviewItem,
   type ReviewGateType,
+  type ReviewPriority,
+  type ReviewSortField,
 } from "@/hooks/useReviewQueue";
+import type { SortOrder } from "@/lib/api/artifacts";
 
 // ---------------------------------------------------------------------------
 // Gate type badge
@@ -49,8 +71,7 @@ const GATE_COLOURS: Record<string, string> = {
     "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300",
   coverage:
     "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
-  completeness:
-    "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
+  completeness: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
   relevance:
     "bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300",
 };
@@ -61,8 +82,7 @@ interface GateBadgeProps {
 
 function GateBadge({ gateType }: GateBadgeProps) {
   const label = GATE_LABELS[gateType] ?? gateType;
-  const colour =
-    GATE_COLOURS[gateType] ?? "bg-muted text-muted-foreground";
+  const colour = GATE_COLOURS[gateType] ?? "bg-muted text-muted-foreground";
 
   return (
     <span
@@ -74,6 +94,214 @@ function GateBadge({ gateType }: GateBadgeProps) {
     >
       {label}
     </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Priority badge (ADR-DPI-008 Option C, DP4-02e)
+// ---------------------------------------------------------------------------
+
+const PRIORITY_STYLES: Record<ReviewPriority, string> = {
+  CRITICAL:
+    "bg-rose-100 text-rose-800 border border-rose-300 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-800/60",
+  HIGH: "bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-800/60",
+  ROUTINE:
+    "bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800/60 dark:text-slate-400 dark:border-slate-700",
+};
+
+interface PriorityBadgeProps {
+  priority: ReviewPriority;
+}
+
+function PriorityBadge({ priority }: PriorityBadgeProps) {
+  return (
+    <span
+      aria-label={`Priority: ${priority}`}
+      className={cn(
+        "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[10px] font-bold leading-tight tracking-wide",
+        PRIORITY_STYLES[priority],
+      )}
+    >
+      {priority}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Metadata strip — artifact ID + confidence score (ADR-DPI-008 Option C)
+// ---------------------------------------------------------------------------
+
+interface MetadataStripProps {
+  artifactId: string;
+  confidenceScore: number | null;
+}
+
+function MetadataStrip({ artifactId, confidenceScore }: MetadataStripProps) {
+  const shortId =
+    artifactId.length > 12 ? `${artifactId.slice(0, 8)}…` : artifactId;
+  const confidenceLabel =
+    confidenceScore !== null
+      ? `${Math.round(confidenceScore * 100)}%`
+      : null;
+
+  return (
+    <div
+      aria-label={`Artifact metadata: ID ${artifactId}${confidenceScore !== null ? `, confidence ${confidenceLabel}` : ""}`}
+      className="flex items-center gap-3 text-[11px] text-muted-foreground"
+    >
+      <span title={artifactId} className="font-mono tracking-tight">
+        {shortId}
+      </span>
+      {confidenceLabel && (
+        <>
+          <span aria-hidden="true" className="text-border">
+            ·
+          </span>
+          <span
+            aria-label={`Confidence score: ${confidenceLabel}`}
+            className="tabular-nums"
+          >
+            Conf: {confidenceLabel}
+          </span>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Filter / sort controls (ADR-DPI-008 Option C, DP4-02e)
+// ---------------------------------------------------------------------------
+
+interface FilterSortBarProps {
+  sort: ReviewSortField;
+  order: SortOrder;
+  priorityFilter: ReviewPriority | "ALL";
+  gateFilter: ReviewGateType | "ALL";
+  onSortChange: (field: ReviewSortField, order: SortOrder) => void;
+  onPriorityChange: (p: ReviewPriority | "ALL") => void;
+  onGateChange: (g: ReviewGateType | "ALL") => void;
+}
+
+const PRIORITY_OPTIONS: Array<{ value: ReviewPriority | "ALL"; label: string }> =
+  [
+    { value: "ALL", label: "All priorities" },
+    { value: "CRITICAL", label: "Critical" },
+    { value: "HIGH", label: "High" },
+    { value: "ROUTINE", label: "Routine" },
+  ];
+
+const GATE_OPTIONS: Array<{ value: ReviewGateType | "ALL"; label: string }> = [
+  { value: "ALL", label: "All gates" },
+  { value: "freshness", label: "Freshness" },
+  { value: "contradiction", label: "Contradiction" },
+  { value: "coverage", label: "Coverage" },
+  { value: "completeness", label: "Completeness" },
+];
+
+const SORT_OPTIONS: Array<{
+  field: ReviewSortField;
+  order: SortOrder;
+  label: string;
+}> = [
+  { field: "priority", order: "asc", label: "Priority (high first)" },
+  { field: "updated", order: "desc", label: "Newest first" },
+  { field: "updated", order: "asc", label: "Oldest first" },
+];
+
+function FilterSortBar({
+  sort,
+  order,
+  priorityFilter,
+  gateFilter,
+  onSortChange,
+  onPriorityChange,
+  onGateChange,
+}: FilterSortBarProps) {
+  const currentSortValue = `${sort}:${order}`;
+
+  function handleSortChange(value: string) {
+    const [field, ord] = value.split(":") as [ReviewSortField, SortOrder];
+    onSortChange(field, ord);
+  }
+
+  return (
+    <div
+      role="group"
+      aria-label="Filter and sort review queue"
+      className="mb-4 flex flex-wrap items-center gap-2"
+    >
+      {/* Filter icon label */}
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        <Filter aria-hidden="true" className="size-3.5" />
+        <span className="sr-only">Filter by</span>
+      </span>
+
+      {/* Priority filter */}
+      <select
+        aria-label="Filter by priority"
+        value={priorityFilter}
+        onChange={(e) =>
+          onPriorityChange(e.target.value as ReviewPriority | "ALL")
+        }
+        className={cn(
+          "h-7 rounded-md border bg-background px-2 text-xs text-foreground",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          "cursor-pointer",
+        )}
+      >
+        {PRIORITY_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+
+      {/* Gate filter */}
+      <select
+        aria-label="Filter by gate type"
+        value={gateFilter}
+        onChange={(e) =>
+          onGateChange(e.target.value as ReviewGateType | "ALL")
+        }
+        className={cn(
+          "h-7 rounded-md border bg-background px-2 text-xs text-foreground",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          "cursor-pointer",
+        )}
+      >
+        {GATE_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+
+      {/* Sort control */}
+      <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+        <ArrowUpDown aria-hidden="true" className="size-3.5" />
+        <span className="sr-only">Sort by</span>
+      </span>
+      <select
+        aria-label="Sort review queue"
+        value={currentSortValue}
+        onChange={(e) => handleSortChange(e.target.value)}
+        className={cn(
+          "h-7 rounded-md border bg-background px-2 text-xs text-foreground",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          "cursor-pointer",
+        )}
+      >
+        {SORT_OPTIONS.map((opt) => (
+          <option
+            key={`${opt.field}:${opt.order}`}
+            value={`${opt.field}:${opt.order}`}
+          >
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
@@ -172,8 +400,15 @@ interface ReviewQueueRowProps {
 }
 
 function ReviewQueueRow({ item }: ReviewQueueRowProps) {
-  const { artifact, gateType, reviewedAt } = item;
+  const { artifact, gateType, reviewedAt, priority, confidenceScore, activeRun } = item;
   const relativeTime = formatRelativeTime(reviewedAt);
+
+  // Stage Tracker contract (DP4-02a / ADR-DPI-001 — DP1-13 #9):
+  // Render compact tracker in the row only when an active (pending|running) run
+  // is present. Terminal or absent runs → no tracker, no placeholder.
+  const showStageTracker =
+    activeRun != null &&
+    (activeRun.status === "pending" || activeRun.status === "running");
 
   return (
     <li
@@ -182,8 +417,9 @@ function ReviewQueueRow({ item }: ReviewQueueRowProps) {
     >
       {/* Left: artifact info */}
       <div className="flex flex-1 flex-col gap-1.5 min-w-0">
-        {/* Badge row */}
+        {/* Badge row — stack order: priority | type | gate (ADR-DPI-008 §6) */}
         <div className="flex flex-wrap items-center gap-1.5">
+          <PriorityBadge priority={priority} />
           <TypeBadge type={artifact.type} />
           <GateBadge gateType={gateType} />
         </div>
@@ -199,6 +435,31 @@ function ReviewQueueRow({ item }: ReviewQueueRowProps) {
         >
           {artifact.title}
         </Link>
+
+        {/* Metadata strip — artifact ID + confidence score (DP4-02e) */}
+        <MetadataStrip
+          artifactId={artifact.id}
+          confidenceScore={confidenceScore}
+        />
+
+        {/*
+         * Stage Tracker compact (DP4-02a / ADR-DPI-001 — DP1-13 #9).
+         * Rendered in the row secondary column (below metadata strip) only when
+         * the artifact has an active pending|running workflow run.
+         * Stage Tracker manifest §2.10: "Review Queue row secondary column".
+         * Returns nothing when no active run — no layout break, no placeholder.
+         */}
+        {showStageTracker && activeRun && (
+          <StageTracker
+            runId={activeRun.id}
+            templateId={activeRun.template_id}
+            status={activeRun.status}
+            currentStage={activeRun.current_stage}
+            variant="compact"
+            mode="sse"
+            className="mt-0.5"
+          />
+        )}
 
         {/* Lens badges + timestamp footer */}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -334,14 +595,23 @@ function LoadingState() {
  * ReviewQueue renders the full Review Queue screen content.
  *
  * Handles loading / error / empty / populated states consistently with other
- * Research workspace pages (pages.tsx, synthesis/page.tsx).
+ * Research workspace pages.
  *
- * Action buttons (Promote / Archive / Link) are disabled stubs in v1 with
- * tooltip text explaining the v1.5 target. No backend calls are made for
- * actions in this phase.
+ * DP4-02e additions: filter/sort controls, priority badge, metadata strip.
+ * Action buttons (Promote / Archive / Link) remain disabled stubs in v1.5.
  */
 export function ReviewQueue() {
-  const { items, isLoading, isError, error, refetch } = useReviewQueue();
+  const {
+    items,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    filters,
+    setSort,
+    setPriorityFilter,
+    setGateFilter,
+  } = useReviewQueue();
 
   if (isLoading) {
     return <LoadingState />;
@@ -362,6 +632,17 @@ export function ReviewQueue() {
         {items.length} artifact{items.length !== 1 ? "s" : ""} flagged for
         review
       </p>
+
+      {/* Filter / sort controls — DP4-02e (ADR-DPI-008 Option C) */}
+      <FilterSortBar
+        sort={filters.sort}
+        order={filters.order}
+        priorityFilter={filters.priorityFilter}
+        gateFilter={filters.gateFilter}
+        onSortChange={setSort}
+        onPriorityChange={setPriorityFilter}
+        onGateChange={setGateFilter}
+      />
 
       {/* V1 action scope note */}
       <p

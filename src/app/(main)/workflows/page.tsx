@@ -12,13 +12,21 @@
  * The page owns useWorkflowRuns so it can also drive the WorkflowTopBarIndicator
  * from the same data — no double fetch.
  *
+ * DP3-04 §2.5: cosmetic + contract fixes applied.
+ *   #1 Subtitle tone: concise status copy.
+ *   #4 Card border shade: delegated to WorkflowStatusPanel (border-blue-300/800).
+ *   #5 Stage Tracker: timeline variant in run rows (not progress bar).
+ *   SSE pool cleanup on route leave (Stage Tracker manifest §2.4).
+ *
  * Stitch reference: "Workflows Dashboard" (ID: 4f203d7cc78b4229b71c017c15c055cb)
  * Shell: Standard Archival (per audit §3.2 row 10)
  */
 
+import { useEffect } from "react";
 import { useWorkflowRuns } from "@/hooks/useWorkflowRuns";
 import { WorkflowStatusPanel } from "@/components/workflow/workflow-status-panel";
 import { InitiationWizardDialog } from "@/components/workflow/initiation-wizard";
+import { ssePool } from "@/lib/sse/pool";
 import { cn } from "@/lib/utils";
 
 function RefreshIcon() {
@@ -44,18 +52,26 @@ export default function WorkflowsPage() {
   const workflowHook = useWorkflowRuns();
   const { activeCount, isLoading, refetch } = workflowHook;
 
+  // Stage Tracker manifest §2.4: close all pool connections on route leave.
+  useEffect(() => {
+    return () => {
+      ssePool.closeAll();
+    };
+  }, []);
+
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Workflows</h1>
+          {/* DP3-04 §2.5#1: subtitle tone — concise status copy. */}
           <p className="mt-0.5 text-sm text-muted-foreground">
             {isLoading
-              ? "Loading workflow runs…"
+              ? "Loading…"
               : activeCount > 0
-              ? `${activeCount} active run${activeCount === 1 ? "" : "s"} in progress`
-              : "No active runs — showing last 7 days history"}
+              ? `${activeCount} active run${activeCount === 1 ? "" : "s"}`
+              : "No active runs"}
           </p>
         </div>
 

@@ -421,6 +421,8 @@ export function SynthesisBuilder({
         </div>
 
         {activeRunId && (
+          // DP3-01: research_synthesis_v1 always produces research artifacts;
+          // researchOrigin=true applies amber left-accent to the run progress strip.
           <StageTracker
             runId={activeRunId}
             templateId="research_synthesis_v1"
@@ -429,6 +431,7 @@ export function SynthesisBuilder({
             variant="full"
             events={events}
             mode="sse"
+            researchOrigin
           />
         )}
 
@@ -471,6 +474,14 @@ export function SynthesisBuilder({
           </p>
         )}
       </div>
+
+      {/*
+       * DP4-HC-02 (deferred Phase 4 structural): HandoffChain for the produced-
+       * synthesis preview card. Will render a horizontal compact lineage strip
+       * (backlinked source artifacts → produced synthesis node) once the
+       * GET /api/artifacts/:synthesis_id/lineage endpoint is wired.
+       * Handoff Chain manifest §3 row 10 owns this integration.
+       */}
 
       {completed?.artifactId ? (
         <Link

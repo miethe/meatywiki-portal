@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 import type { WorkflowRun } from "@/types/artifact";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
 import { StageTracker } from "./stage-tracker";
-import { RunSSEBridge } from "./run-sse-bridge";
+import { RunSSEPoolBridge } from "./run-sse-pool-bridge";
 import { useWorkflowRuns } from "@/hooks/useWorkflowRuns";
 
 // ---------------------------------------------------------------------------
@@ -180,8 +180,10 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
     <div
       className={cn(
         "flex flex-col gap-0 rounded-md border overflow-hidden",
+        // DP3-04 §2.5#4: active runs use blue-300/blue-800 (better contrast);
+        // inactive use standard border-border.
         isActive
-          ? "border-blue-200 dark:border-blue-900"
+          ? "border-blue-300 dark:border-blue-800"
           : "border-border",
         className,
       )}
@@ -199,7 +201,7 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
           "flex w-full items-start gap-2 p-3 text-left",
           "bg-card transition-colors",
           isActive
-            ? "hover:bg-blue-50/50 dark:hover:bg-blue-950/20"
+            ? "hover:bg-blue-50/60 dark:hover:bg-blue-950/25"
             : "hover:bg-muted/50",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         )}
@@ -224,13 +226,8 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
             <span>by {run.initiator}</span>
           </div>
 
-          {/* Stage Tracker compact — always visible in row header */}
-          {/*
-           * TODO(P4-07): When stage-tracker.tsx ships the timeline dot variant,
-           * swap variant="compact" for variant="timeline" (or whichever value
-           * P4-07 defines) to get the filled/unfilled circle timeline display.
-           * The current "compact" renders a progress bar (P3-07 style).
-           */}
+          {/* Stage Tracker — DP3-04 §2.5#5: timeline dot variant (not progress
+              bar) for compact inline display on run rows. */}
           <div
             className="mt-1 w-full"
             data-testid="stage-tracker-slot"
@@ -240,7 +237,7 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
               templateId={run.template_id}
               status={run.status}
               currentStage={run.current_stage}
-              variant="compact"
+              variant="timeline"
               mode={isActive ? "sse" : "static"}
             />
           </div>
@@ -258,7 +255,7 @@ function WorkflowRunRow({ run, defaultExpanded = false, className }: WorkflowRun
           className={cn(
             "border-t px-3 py-2.5",
             isActive
-              ? "border-blue-100 bg-blue-50/30 dark:border-blue-900/60 dark:bg-blue-950/10"
+              ? "border-blue-200 bg-blue-50/30 dark:border-blue-800/60 dark:bg-blue-950/10"
               : "border-border bg-muted/20",
           )}
         >
@@ -436,11 +433,14 @@ function ControlledPanel({
         )}
       </div>
 
-      {/* SSE bridges — one per active run, render-null */}
+      {/* Pool-managed SSE bridges — one per active run, render-null.
+          Uses SSEConnectionPool singleton for multiplexed dedup and browser-limit
+          safeguard (Stage Tracker manifest §3.3 / DP3-SSE-POOL). */}
       {activeRuns.map((run) => (
-        <RunSSEBridge
+        <RunSSEPoolBridge
           key={run.id}
           runId={run.id}
+          isActive
           applyEvent={applyEvent}
           notifySSEError={notifySSEError}
         />

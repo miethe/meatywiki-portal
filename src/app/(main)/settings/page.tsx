@@ -9,6 +9,10 @@
  *
  * P1.5-2-05: Added Workflow Templates section linking to /settings/workflow-templates.
  *
+ * DP3-04 §2.12: cosmetic fixes applied.
+ *   - #2 Token rotation button: tooltip updated (no v1 API contract).
+ *   - #3 Reconcile button: tooltip clarified (P4 stub, accept-code-canonical).
+ *
  * Stitch reference: "System Settings & Configuration" (ID: 5fbbc5d4b18748c084f251638932b513)
  * Shell: Standard Archival
  */
@@ -41,11 +45,13 @@ export default function SettingsPage() {
                 Single local bearer token (local-only auth)
               </p>
             </div>
+            {/* DP3-04 §2.12#2: no token rotation API in v1 contract (v1.5 addition). */}
             <button
               type="button"
               disabled
-              title="Token rotation implemented in P4"
-              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground disabled:opacity-50"
+              title="Token rotation not available in v1 — no API contract yet (v1.5)"
+              aria-disabled="true"
+              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               Rotate token
             </button>
@@ -70,11 +76,13 @@ export default function SettingsPage() {
                 <code className="text-xs">POST /api/admin/reconcile</code>)
               </p>
             </div>
+            {/* DP3-04 §2.12#3: reconcile stub — matches FR-14 intent (accept-code-canonical). */}
             <button
               type="button"
               disabled
-              title="Reconcile trigger implemented in P4"
-              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground disabled:opacity-50"
+              title="Reconcile trigger wired in P4"
+              aria-disabled="true"
+              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               Run reconcile
             </button>

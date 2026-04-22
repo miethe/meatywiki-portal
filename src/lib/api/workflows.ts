@@ -32,6 +32,35 @@ export interface SynthesizeParams {
   scope?: string;
   /** Optional free-text focus hint forwarded to the engine. */
   focus?: string;
+  /**
+   * Synthesis type selected in the 2-step wizard (ADR-DPI-005).
+   * Values: "summary" | "analysis" | "compare" | "synthesize"
+   *
+   * ENDPOINT GAP: Not yet consumed by research_synthesis_v1 workflow
+   * template. Collected by wizard and forwarded — backend DTO must be
+   * expanded to accept and pass to the engine prompt (ADR-DPI-005 §3).
+   */
+  type?: string;
+  /**
+   * Response depth hint (ADR-DPI-005).
+   * Values: "brief" | "standard" | "deep" | "exhaustive"
+   *
+   * ENDPOINT GAP: Not yet consumed by research_synthesis_v1 workflow template.
+   */
+  depth?: string;
+  /**
+   * Tone/style hint (ADR-DPI-005).
+   * Values: "neutral" | "academic" | "conversational" | "critical"
+   *
+   * ENDPOINT GAP: Not yet consumed by research_synthesis_v1 workflow template.
+   */
+  tone?: string;
+  /**
+   * Free-text constraints forwarded verbatim to the synthesis prompt (ADR-DPI-005).
+   *
+   * ENDPOINT GAP: Not yet consumed by research_synthesis_v1 workflow template.
+   */
+  constraints?: string;
 }
 
 export interface SynthesizeAcceptedResponse {
@@ -56,6 +85,11 @@ export async function submitSynthesis(
   };
   if (params.scope?.trim()) body.scope = params.scope.trim();
   if (params.focus?.trim()) body.focus = params.focus.trim();
+  // ADR-DPI-005 extended fields — forwarded but not yet consumed by backend
+  if (params.type) body.type = params.type;
+  if (params.depth) body.depth = params.depth;
+  if (params.tone) body.tone = params.tone;
+  if (params.constraints?.trim()) body.constraints = params.constraints.trim();
 
   return apiFetch<SynthesizeAcceptedResponse>("/workflows/synthesize", {
     method: "POST",

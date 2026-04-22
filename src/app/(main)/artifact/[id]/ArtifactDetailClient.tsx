@@ -35,17 +35,17 @@
  * aria-disabled; copy button with aria-live announcement.
  */
 
-import { useState, useCallback, useRef } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { WorkspaceBadge } from "@/components/ui/workspace-badge";
-import { HandoffChain } from "@/components/artifact/HandoffChain";
 import { WorkflowOSTab } from "@/components/workflow/workflow-os-tab";
 import { useArtifact } from "@/hooks/useArtifact";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
+import { ContextRail, type ContextRailAction } from "@/components/layout/ContextRail";
 
 // ---------------------------------------------------------------------------
 // Tab definition
@@ -298,6 +298,8 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 
   const isHtml = content.trimStart().startsWith("<");
 
+  // DP3-02 #7: Draft prose wrapper uses same full typography ruleset as
+  // KnowledgeReader to avoid density drift between readers.
   if (isHtml) {
     return (
       <div
@@ -305,11 +307,19 @@ function DraftReader({ content }: { content: string | null | undefined }) {
           "rounded-md border bg-card p-6",
           "[&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-bold",
           "[&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold",
+          "[&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-base [&_h3]:font-semibold",
           "[&_p]:mb-3 [&_p]:text-sm [&_p]:leading-relaxed",
           "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-sm",
+          "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:text-sm",
           "[&_li]:mb-1",
           "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
+          "[&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:text-xs",
+          "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground",
           "[&_a]:text-primary [&_a]:underline-offset-2 [&_a]:hover:underline",
+          "[&_hr]:border-border",
+          "[&_table]:w-full [&_table]:text-sm",
+          "[&_th]:border-b [&_th]:pb-2 [&_th]:text-left [&_th]:font-semibold",
+          "[&_td]:border-b [&_td]:border-border/50 [&_td]:py-1.5",
         )}
         dangerouslySetInnerHTML={{ __html: content }}
       />
@@ -328,18 +338,15 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 // WorkflowOSPlaceholder removed — replaced by WorkflowOSTab (P4-10).
 
 // ---------------------------------------------------------------------------
-// Action buttons definition
+// Action buttons — rail-owned column (ADR-DPI-002 §1 DP1-03 #2)
+// Migrated from header row to ContextRail action column.
 // ---------------------------------------------------------------------------
 
-interface ActionButton {
-  label: string;
-  ariaLabel: string;
-  /** True when the backend endpoint exists (promote/link/review). */
-  hasEndpoint: boolean;
-  description: string;
-}
-
-const ACTION_BUTTONS: ActionButton[] = [
+/**
+ * Rail-owned action buttons. All disabled in v1 pending endpoint wiring.
+ * Rendered by ContextRail above the tab bar (action-column pattern per ADR §1).
+ */
+const RAIL_ACTIONS: ContextRailAction[] = [
   {
     label: "Promote",
     ariaLabel: "Promote artifact lifecycle stage",
@@ -371,71 +378,6 @@ const ACTION_BUTTONS: ActionButton[] = [
     description: "Engine trigger — wired in P3-07",
   },
 ];
-
-// ---------------------------------------------------------------------------
-// Copy-to-clipboard button
-// ---------------------------------------------------------------------------
-
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard API unavailable (insecure context)
-    }
-  }, [value]);
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      aria-label={copied ? "Copied to clipboard" : "Copy ID to clipboard"}
-      title={copied ? "Copied!" : "Copy ID"}
-      className={cn(
-        "ml-1 inline-flex h-4 w-4 items-center justify-center rounded text-[10px]",
-        "text-muted-foreground transition-colors",
-        "hover:bg-accent hover:text-accent-foreground",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-      )}
-    >
-      {copied ? (
-        <svg
-          aria-hidden="true"
-          className="size-3"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="m5 13 4 4L19 7" />
-        </svg>
-      ) : (
-        <svg
-          aria-hidden="true"
-          className="size-3"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.75}
-            d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2"
-          />
-        </svg>
-      )}
-      <span aria-live="polite" className="sr-only">
-        {copied ? "Copied" : ""}
-      </span>
-    </button>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -473,10 +415,6 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     return <DetailSkeleton />;
   }
 
-  const tags = Array.isArray(artifact.frontmatter_jsonb?.["tags"])
-    ? (artifact.frontmatter_jsonb["tags"] as string[])
-    : [];
-
   return (
     <div className="flex flex-col gap-4">
       {/* ------------------------------------------------------------------ */}
@@ -502,12 +440,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* Artifact header                                                     */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex flex-col gap-2">
-        {/* Badge row */}
+        {/* Lens Badge Set — FULL variant, above the title per manifest §3.4 */}
+        {/* DP3-02: badge row is tab-agnostic and does not re-mount on tab switch */}
+        <LensBadgeSet artifact={artifact} variant="detail" />
+
+        {/* Type / workspace / indicator badge row */}
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={artifact.type} />
           <WorkspaceBadge workspace={artifact.workspace} />
-          {/* LensBadgeSet uses detail variant to show all 5 dimensions */}
-          <LensBadgeSet artifact={artifact} variant="detail" />
           {/* Freshness indicator from raw frontmatter fields (P4-04) */}
           <ArtifactFreshnessBadge
             freshness={artifact.frontmatter_jsonb?.["lens_freshness"] as string | null | undefined}
@@ -518,39 +458,21 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
         </div>
 
         <h1 className="text-2xl font-semibold tracking-tight">{artifact.title}</h1>
-
-        {/* Action buttons — all aria-disabled in v1; wired in later P3 tasks */}
-        <div
-          role="group"
-          aria-label="Artifact actions"
-          className="flex flex-wrap items-center gap-2"
-        >
-          {ACTION_BUTTONS.map(({ label, ariaLabel, description }) => (
-            <button
-              key={label}
-              type="button"
-              aria-label={ariaLabel}
-              aria-disabled="true"
-              title={description}
-              className={cn(
-                "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium",
-                "cursor-not-allowed text-muted-foreground opacity-60 transition-colors",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              )}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        {/*
+         * Action buttons migrated to ContextRail action column (ADR-DPI-002 §1).
+         * Previously rendered here in the header row; now owned by the rail.
+         */}
       </div>
 
       {/* ------------------------------------------------------------------ */}
       {/* Tab bar                                                             */}
+      {/* DP3-02 #10: horizontal scroll on mobile; no line-wrap (tabs stay   */}
+      {/* single-row at all breakpoints to preserve scan order invariant).   */}
       {/* ------------------------------------------------------------------ */}
       <div
         role="tablist"
         aria-label="Artifact readers"
-        className="flex overflow-x-auto border-b"
+        className="flex overflow-x-auto border-b scrollbar-none [-webkit-overflow-scrolling:touch]"
       >
         {TABS.map((tab) => (
           <button
@@ -624,114 +546,20 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           </div>
         </div>
 
-        {/* Metadata sidebar — hidden on mobile, visible lg+ */}
+        {/* ContextRail — inline right-column rail (ADR-DPI-002 Option A.1) */}
+        {/* Hidden below lg; rail owns action column + tabbed panels.       */}
+        {/* Replaces the previous flat metadata aside.                      */}
         <aside
-          aria-label="Artifact metadata"
-          className="hidden w-64 shrink-0 flex-col gap-4 lg:flex"
+          aria-label="Context rail"
+          className="hidden w-72 shrink-0 lg:block"
         >
-          {/* Details card */}
-          <div className="rounded-md border p-3">
-            <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Details
-            </h3>
-            <dl className="flex flex-col gap-2 text-sm">
-              <div>
-                <dt className="text-xs text-muted-foreground">ID</dt>
-                <dd className="flex items-center">
-                  <span className="truncate font-mono text-[11px] text-foreground/80">
-                    {artifact.id}
-                  </span>
-                  <CopyButton value={artifact.id} />
-                </dd>
-              </div>
-
-              <div>
-                <dt className="text-xs text-muted-foreground">Status</dt>
-                <dd className="text-xs font-medium capitalize">{artifact.status}</dd>
-              </div>
-
-              {artifact.created && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">Created</dt>
-                  <dd className="text-xs">
-                    <time dateTime={artifact.created}>
-                      {new Date(artifact.created).toLocaleString()}
-                    </time>
-                  </dd>
-                </div>
-              )}
-
-              {artifact.updated && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">Updated</dt>
-                  <dd className="text-xs">
-                    <time dateTime={artifact.updated}>
-                      {new Date(artifact.updated).toLocaleString()}
-                    </time>
-                  </dd>
-                </div>
-              )}
-
-              {artifact.slug && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">Slug</dt>
-                  <dd className="font-mono text-[11px] text-foreground/80">
-                    {artifact.slug}
-                  </dd>
-                </div>
-              )}
-
-              {artifact.file_path && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">File</dt>
-                  <dd className="break-all font-mono text-[11px] text-foreground/60">
-                    {artifact.file_path}
-                  </dd>
-                </div>
-              )}
-
-              {tags.length > 0 && (
-                <div>
-                  <dt className="text-xs text-muted-foreground">Tags</dt>
-                  <dd className="flex flex-wrap gap-1 pt-0.5">
-                    {tags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </dd>
-                </div>
-              )}
-            </dl>
-          </div>
-
-          {/* Handoff chain card (only when edges exist) */}
-          {artifact.artifact_edges && artifact.artifact_edges.length > 0 && (
-            <div className="rounded-md border p-3">
-              <h3 className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Handoff Chain
-              </h3>
-              <HandoffChain
-                currentArtifactId={artifact.id}
-                edges={artifact.artifact_edges}
-              />
-            </div>
-          )}
-
-          {/* Summary card */}
-          {artifact.summary && (
-            <div className="rounded-md border p-3">
-              <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Summary
-              </h3>
-              <p className="text-xs leading-relaxed text-muted-foreground">
-                {artifact.summary}
-              </p>
-            </div>
-          )}
+          <ContextRail
+            variant="generic"
+            artifactId={artifact.id}
+            artifact={artifact}
+            actions={RAIL_ACTIONS}
+            ariaLabel="Artifact context"
+          />
         </aside>
       </div>
     </div>
