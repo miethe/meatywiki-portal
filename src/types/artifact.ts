@@ -209,6 +209,25 @@ export interface ArtifactCard {
 // ---------------------------------------------------------------------------
 
 /**
+ * A single derivative artifact returned by
+ * GET /api/artifacts/{source_id}/derivatives.
+ *
+ * Mirrors the backend DerivativeArtifactItem DTO (library-source-rollup-v1
+ * Phase 1 API). Ordered by artifact_type, then updated_at desc.
+ *
+ * DETAIL-01 (Phase 3).
+ */
+export interface DerivativeItem {
+  id: string;
+  artifact_type: string;
+  title: string | null;
+  updated_at: string | null;
+  fidelity?: LensFidelity | null;
+  freshness?: LensFreshness | null;
+  verification_state?: LensVerificationState | null;
+}
+
+/**
  * A brief preview of a derivative artifact, included on RollupArtifactItem.
  * Up to 5 items are returned by the backend per source artifact.
  */

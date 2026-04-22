@@ -227,7 +227,7 @@ export function ArtifactCard({
             {typeof derivative_count === "number" && derivative_count > 0 && (
               <DerivativeCountBadge
                 count={derivative_count}
-                href={`/artifact/${id}#derivatives`}
+                href={`/artifact/${id}?tab=derivatives`}
               />
             )}
           </div>
