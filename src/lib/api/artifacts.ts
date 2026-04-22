@@ -41,6 +41,7 @@ import type {
   ArtifactMetadataResponse,
   ArtifactStatus,
   ArtifactWorkspace,
+  DerivativeItem,
   LensFidelity,
   LensFreshness,
   LensPatchRequest,
@@ -257,6 +258,42 @@ export async function getArtifact(id: string): Promise<ArtifactDetail> {
     `/artifacts/${encodeURIComponent(id)}`,
     { method: "GET" },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Derivatives sub-resource (library-source-rollup-v1 DETAIL-01)
+// ---------------------------------------------------------------------------
+
+export interface GetDerivativesParams {
+  cursor?: string | null;
+  limit?: number;
+}
+
+/**
+ * Fetch derivative artifacts compiled from a source artifact.
+ *
+ * Backend: GET /api/artifacts/{source_id}/derivatives
+ * Response: ServiceModeEnvelope<DerivativeItem>
+ * Ordering: artifact_type asc, updated_at desc.
+ *
+ * Throws ApiError with:
+ *   - status 404 and code "not_found"     — unknown source_id
+ *   - status 404 and code "not_a_source"  — artifact exists but is not a source type
+ *
+ * library-source-rollup-v1 Phase 3 DETAIL-01.
+ */
+export async function getDerivatives(
+  sourceId: string,
+  { cursor, limit = 50 }: GetDerivativesParams = {},
+): Promise<ServiceModeEnvelope<DerivativeItem>> {
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  if (cursor) query.set("cursor", cursor);
+
+  const qs = query.toString();
+  const path = `/artifacts/${encodeURIComponent(sourceId)}/derivatives${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<ServiceModeEnvelope<DerivativeItem>>(path, { method: "GET" });
 }
 
 // ---------------------------------------------------------------------------

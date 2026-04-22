@@ -1,0 +1,11 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`DerivativeCountBadge snapshot matches snapshot for link variant as used on ArtifactCard 1`] = `
+<a
+  aria-label="3 derivatives, view list"
+  class="inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium leading-tight bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300 cursor-pointer transition-colors hover:bg-sky-200 dark:hover:bg-sky-800/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+  href="/artifact/test-id?tab=derivatives"
+>
+  3 derivatives
+</a>
+`;
