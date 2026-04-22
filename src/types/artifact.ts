@@ -172,6 +172,20 @@ export interface ArtifactCard {
    */
   workflow_id?: string | null;
   /**
+   * Total number of derivatives compiled from this source artifact.
+   * Present on rollup responses (view=source_rollup); absent on flat list
+   * responses — undefined/null when not in rollup context.
+   * Source: RollupArtifactItem (library-source-rollup-v1 FE-01 / FE-03).
+   */
+  derivative_count?: number | null;
+  /**
+   * Preview of up to 5 derivative artifacts for quick display.
+   * Present on rollup responses (view=source_rollup); absent on flat list
+   * responses — undefined/null when not in rollup context.
+   * Source: RollupArtifactItem (library-source-rollup-v1 FE-01 / FE-03).
+   */
+  derivatives_preview?: DerivativePreview[] | null;
+  /**
    * Most recent non-terminal workflow run associated with this artifact, if any.
    * Projected by GET /api/artifacts when a pending|running run exists.
    *
@@ -188,6 +202,39 @@ export interface ArtifactCard {
     current_stage?: number | null;
     template_id?: string | null;
   } | null;
+}
+
+// ---------------------------------------------------------------------------
+// Source rollup types (library-source-rollup-v1 FE-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * A brief preview of a derivative artifact, included on RollupArtifactItem.
+ * Up to 5 items are returned by the backend per source artifact.
+ */
+export interface DerivativePreview {
+  id: string;
+  artifact_type: string;
+  title: string | null;
+}
+
+/**
+ * An ArtifactCard extended with derivative rollup fields.
+ *
+ * Returned by GET /api/artifacts?workspace=library&view=source_rollup.
+ * derivative_count and derivatives_preview are not meaningful (0/[]) when
+ * rollup_lens=orphans — the endpoint still includes the fields for shape
+ * consistency.
+ *
+ * Optional/nullable so existing flat-list code paths that cast ArtifactCard
+ * objects remain type-safe. Library rollup code paths should prefer
+ * RollupArtifactItem directly.
+ */
+export interface RollupArtifactItem extends ArtifactCard {
+  /** Total number of derivatives compiled from this source artifact. */
+  derivative_count?: number | null;
+  /** Preview of up to 5 derivative artifacts for quick display. */
+  derivatives_preview?: DerivativePreview[] | null;
 }
 
 // ---------------------------------------------------------------------------

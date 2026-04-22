@@ -26,12 +26,17 @@ import { LayoutGrid, List, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
-import { LibraryFilterBar, useLensFilterUrlSync } from "@/components/ui/library-filter-bar";
+import { LibraryFilterBar, useLensFilterUrlSync, useLibraryLensUrlSync } from "@/components/ui/library-filter-bar";
+import {
+  LibraryLensSwitcher,
+  type LibraryLens,
+} from "@/components/ui/library-lens-switcher";
 import {
   useLibraryArtifacts,
   DEFAULT_LIBRARY_FILTERS,
   type LibraryFilters,
 } from "@/hooks/useLibraryArtifacts";
+import { useLibraryRollup } from "@/hooks/useLibraryRollup";
 
 // ---------------------------------------------------------------------------
 // View mode — persisted to localStorage
@@ -179,6 +184,27 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 // Main page component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Lens → type mapping for grouped lenses
+// ---------------------------------------------------------------------------
+
+const GROUPED_LENS_TYPES: Partial<Record<LibraryLens, string>> = {
+  concepts: "concept",
+  entities: "entity",
+  syntheses: "synthesis",
+  evidence: "evidence",
+  contradictions: "contradiction",
+  glossary: "glossary",
+};
+
+function isRollupLens(lens: LibraryLens): boolean {
+  return lens === "default" || lens === "orphans";
+}
+
+// ---------------------------------------------------------------------------
+// Main page component
+// ---------------------------------------------------------------------------
+
 export default function LibraryPage() {
   // View mode — initialised after mount to avoid SSR/hydration mismatch
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
@@ -200,6 +226,22 @@ export default function LibraryPage() {
 
   // URL sync for lens filters (P4-09)
   const { readFromUrl, syncToUrl } = useLensFilterUrlSync();
+  // URL sync for library lens switcher (library-source-rollup-v1 FE-06)
+  const { readLensFromUrl, syncLensToUrl } = useLibraryLensUrlSync();
+
+  // Lens state — initialise from URL on mount
+  const [lens, setLens] = useState<LibraryLens>(() => {
+    if (typeof window === "undefined") return "default";
+    return readLensFromUrl() ?? "default";
+  });
+
+  const handleLensChange = useCallback(
+    (next: LibraryLens) => {
+      setLens(next);
+      syncLensToUrl(next);
+    },
+    [syncLensToUrl],
+  );
 
   // Filter state — initialise lens filters from URL on mount
   const [filters, setFilters] = useState<LibraryFilters>(() => ({
@@ -223,7 +265,22 @@ export default function LibraryPage() {
     [syncToUrl],
   );
 
-  // Data fetching
+  // Data fetching — source depends on active lens
+  // Rollup lenses (default, orphans) use useLibraryRollup; grouped lenses
+  // use useLibraryArtifacts with the type override applied.
+  const rollupResult = useLibraryRollup({
+    filters,
+    rollupLens: lens === "orphans" ? "orphans" : undefined,
+  });
+
+  // Build overridden filters for grouped lenses (type locked to lens value)
+  const groupedLensType = GROUPED_LENS_TYPES[lens];
+  const groupedFilters: LibraryFilters = groupedLensType
+    ? { ...filters, types: [groupedLensType] }
+    : filters;
+  const flatResult = useLibraryArtifacts(groupedFilters);
+
+  // Select active result based on lens
   const {
     artifacts,
     isLoading,
@@ -233,7 +290,7 @@ export default function LibraryPage() {
     isError,
     error,
     total,
-  } = useLibraryArtifacts(filters);
+  } = isRollupLens(lens) ? rollupResult : flatResult;
 
   const hasActiveFilters =
     filters.types.length > 0 ||
@@ -262,11 +319,17 @@ export default function LibraryPage() {
         />
       </div>
 
-      {/* Filter bar */}
+      {/* Lens switcher (library-source-rollup-v1 FE-06) */}
+      <LibraryLensSwitcher lens={lens} onLensChange={handleLensChange} />
+
+      {/* Filter bar — type chip hidden when a grouped lens is active
+          (grouped lens already locks the type; showing the chip would confuse users).
+          Other filters (status, date, lens fidelity/freshness/verification) still apply. */}
       <LibraryFilterBar
         filters={filters}
         onFiltersChange={handleFiltersChange}
         resultCount={isLoading ? undefined : total}
+        hiddenFilterSections={!isRollupLens(lens) && !!groupedLensType ? ["type"] : undefined}
       />
 
       {/* Artifact list / grid */}

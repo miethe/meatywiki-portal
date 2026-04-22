@@ -31,6 +31,7 @@ import type { ArtifactCard as ArtifactCardType, WorkflowRunStatus } from "@/type
 import { TypeBadge } from "./type-badge";
 import { FacetBadge } from "./facet-badge";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
+import { DerivativeCountBadge } from "./derivative-count-badge";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { StageTracker } from "@/components/workflow/stage-tracker";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
@@ -109,6 +110,7 @@ export function ArtifactCard({
     workflow_status,
     preview,
     research_origin,
+    derivative_count,
   } = artifact;
 
   // Stage Tracker contract (DP3-03): render compact tracker only for active runs.
@@ -209,13 +211,25 @@ export function ArtifactCard({
           <p className="line-clamp-2 text-xs text-muted-foreground">{preview}</p>
         )}
 
-        {/* Footer row: freshness badge + timestamps */}
+        {/* Footer row: freshness badge + derivative count + timestamps */}
         <div className="flex items-center justify-between gap-2 pt-0.5">
           <div className="flex flex-wrap items-center gap-1">
             {/* Freshness indicator from metadata (P4-04): compact, cards-only */}
             <ArtifactFreshnessBadge
               freshness={artifact.metadata?.freshness}
             />
+            {/*
+             * Derivative count badge (library-source-rollup-v1 FE-03):
+             * rendered when artifact has derivatives (rollup view only).
+             * Links to artifact detail #derivatives tab — Phase 3 activates
+             * the tab from the hash fragment; we just produce the URL here.
+             */}
+            {typeof derivative_count === "number" && derivative_count > 0 && (
+              <DerivativeCountBadge
+                count={derivative_count}
+                href={`/artifact/${id}#derivatives`}
+              />
+            )}
           </div>
           <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
             {/* Show created date in grid variant (more space); updated in both */}

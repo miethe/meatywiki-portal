@@ -338,6 +338,14 @@ interface LibraryFilterBarProps {
    * and not user-editable. The label prop is shown as a locked indicator.
    */
   lockedFacet?: ArtifactFacet;
+  /**
+   * Filter sections to hide. Used by the Library page when a grouped lens
+   * is active (e.g. "type" is hidden because the lens already locks the type).
+   * Accepts an array of filter section names to suppress from the UI.
+   *
+   * library-source-rollup-v1 FE-06.
+   */
+  hiddenFilterSections?: Array<"type">;
   className?: string;
 }
 
@@ -346,6 +354,7 @@ export function LibraryFilterBar({
   onFiltersChange,
   resultCount,
   lockedFacet,
+  hiddenFilterSections,
   className,
 }: LibraryFilterBarProps) {
   const {
@@ -398,13 +407,16 @@ export function LibraryFilterBar({
     >
       {/* Primary filter row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
-        {/* Type filter */}
-        <MultiSelectChips
-          label="Type"
-          options={KNOWN_ARTIFACT_TYPES}
-          selected={types}
-          onChange={(next) => onFiltersChange({ types: next })}
-        />
+        {/* Type filter — hidden when hiddenFilterSections includes "type"
+            (e.g. when a grouped lens is active and the type is already locked) */}
+        {!hiddenFilterSections?.includes("type") && (
+          <MultiSelectChips
+            label="Type"
+            options={KNOWN_ARTIFACT_TYPES}
+            selected={types}
+            onChange={(next) => onFiltersChange({ types: next })}
+          />
+        )}
 
         {/* Divider */}
         <div aria-hidden="true" className="hidden h-4 w-px bg-border sm:block" />
@@ -611,6 +623,63 @@ export function LibraryFilterBar({
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// URL sync hook for library lens switcher (library-source-rollup-v1 FE-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * useLibraryLensUrlSync — bidirectional sync for the ?lens= URL query param.
+ *
+ * Follows the same pattern as useLensFilterUrlSync. Returns:
+ *   readLensFromUrl()  — reads ?lens= from window.location.search, returns
+ *                        the value or null when absent/invalid.
+ *   syncLensToUrl(lens) — writes ?lens= to the URL without navigation
+ *                         (history.replaceState).
+ *
+ * library-source-rollup-v1 FE-06.
+ */
+export function useLibraryLensUrlSync() {
+  const VALID_LENSES = [
+    "default",
+    "concepts",
+    "entities",
+    "syntheses",
+    "evidence",
+    "contradictions",
+    "glossary",
+    "orphans",
+  ] as const;
+
+  type ValidLens = (typeof VALID_LENSES)[number];
+
+  function readLensFromUrl(): ValidLens | null {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const value = params.get("lens");
+    if (!value) return null;
+    return (VALID_LENSES as readonly string[]).includes(value)
+      ? (value as ValidLens)
+      : null;
+  }
+
+  function syncLensToUrl(lens: string): void {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (lens === "default") {
+      params.delete("lens");
+    } else {
+      params.set("lens", lens);
+    }
+    const qs = params.toString();
+    const newUrl = qs
+      ? `${window.location.pathname}?${qs}`
+      : window.location.pathname;
+    window.history.replaceState(null, "", newUrl);
+  }
+
+  return { readLensFromUrl, syncLensToUrl };
 }
 
 // ---------------------------------------------------------------------------
