@@ -48,6 +48,9 @@ Default API URL is `http://127.0.0.1:8787`. To use a non-loopback address, set `
 ### Write-through-engine
 Any action that modifies vault content (compile, ingest, promote, lint) must go through a backend API endpoint, which in turn uses the engine's `EngineAdapter`. The frontend has no direct vault access.
 
+### Sibling @miethe/ui dependency
+`@miethe/ui` is wired via `"file:../skillmeat/skillmeat/web/packages/ui"` — a `file:` protocol path to the pre-built `dist/` in the sibling skillmeat monorepo. It is NOT published to npm. The package must be rebuilt (`pnpm build` inside the ui package) whenever upstream changes; CI must have the skillmeat repo checked out as a sibling. Added in P6-02 (v1.6) to provide `ContentPane`, `rehype-sanitize` helpers, and other shared components for the content-viewer gate.
+
 ## Authoritative Documents
 
 Read these (in the sibling backend repo) before implementing any P3 task:
