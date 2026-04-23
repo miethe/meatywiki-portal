@@ -58,6 +58,7 @@ import {
   ContextRailProvider,
   useContextRailToggle,
 } from "@/components/ui/context-rail-context";
+import { ArtifactThumbnailFallback } from "@/components/library/thumbnail-fallback";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -126,6 +127,71 @@ const GROUPED_LENS_TYPES: Partial<Record<LibraryLens, string>> = {
 
 function isRollupLens(lens: LibraryLens): boolean {
   return lens === "default" || lens === "orphans";
+}
+
+// ---------------------------------------------------------------------------
+// P3-02: Variant selection + excerpt + thumbnail helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Maximum number of featured cards in the grid (not counting the hero slot).
+ * Chosen to match the Stitch PNG hierarchy: 1 hero + up to 4 featured + rest standard.
+ */
+const FEATURED_CAP = 4;
+
+/**
+ * Derive the display variant for a card at `index` within the flat artifact list.
+ *
+ * Rules (Stitch §4.1 Library hierarchy):
+ *   index 0                → hero  (always; 2-row span in grid)
+ *   index 1..FEATURED_CAP  → featured (if thumbnail-eligible; else standard)
+ *   index > FEATURED_CAP   → standard
+ *
+ * "Thumbnail-eligible" in OQ-1-fallback world = always true (we always have
+ * the procedural fallback), but the slot cap still applies.
+ */
+function resolveDisplayVariant(
+  index: number,
+): "hero" | "featured" | "standard" {
+  if (index === 0) return "hero";
+  if (index <= FEATURED_CAP) return "featured";
+  return "standard";
+}
+
+/**
+ * Derive an excerpt string for a card.
+ *
+ * Priority:
+ *   1. `preview` field from the API response (already ~120 chars, ready to use)
+ *   2. Empty string — ArtifactCard gracefully renders nothing for empty excerpt
+ *
+ * We never fabricate copy; if the backend doesn't provide a preview, the
+ * excerpt slot stays empty.  ArtifactCard only renders excerpt on
+ * featured/hero variants so standard cards are unaffected.
+ */
+function resolveExcerpt(artifact: import("@/types/artifact").ArtifactCard): string {
+  return artifact.preview ?? "";
+}
+
+/**
+ * Resolve the thumbnail string for a card.
+ *
+ * The backend does not yet ship `thumbnail_url` (OQ-1 unresolved as of
+ * portal v1.5).  We return `undefined` here so that `ArtifactCard` renders
+ * no <img> and the caller can decide whether to render a fallback component
+ * alongside it.  When the backend ships a real URL the caller need only pass
+ * it through — this function is the single update point.
+ */
+function resolveThumbnailUrl(
+  artifact: import("@/types/artifact").ArtifactCard,
+): string | undefined {
+  // OQ-1: no thumbnail_url field in ArtifactCard DTO yet.
+  // Cast defensively in case a future backend response sneaks the field in.
+  const maybeThumb = (artifact as unknown as Record<string, unknown>)["thumbnail_url"];
+  if (typeof maybeThumb === "string" && maybeThumb.length > 0) {
+    return maybeThumb;
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -732,21 +798,76 @@ function LibraryPageInner() {
                   />
                 )}
 
-                {/* Artifact cards
-                    P3-02 will introduce hero/featured/standard variant selection.
-                    For P3-01, all cards render as standard to preserve existing behavior. */}
+                {/* P3-02: hero / featured / standard variant selection.
+                    - index 0            → hero (row-span-2 via grid CSS)
+                    - index 1..FEATURED_CAP → featured (thumbnail fallback rendered
+                                             when no real thumbnail URL available — OQ-1)
+                    - index > FEATURED_CAP → standard
+                    excerpt and typeAccent forwarded per design spec §3.1 / §4.1.
+                    Thumbnail fallback: ArtifactThumbnailFallback rendered when
+                    displayVariant is hero|featured and no real thumbnail URL is present. */}
                 {!isLoading &&
-                  artifacts.map((artifact) => (
-                    <li key={artifact.id}>
-                      <ArtifactCard
-                        artifact={artifact}
-                        variant={viewMode}
-                        displayVariant="standard"
-                        typeAccent
-                        activeRun={artifact.active_run ?? undefined}
-                      />
-                    </li>
-                  ))}
+                  artifacts.map((artifact, index) => {
+                    const displayVariant =
+                      viewMode === "grid"
+                        ? resolveDisplayVariant(index)
+                        : "standard";
+                    const excerpt = resolveExcerpt(artifact);
+                    const thumbnailUrl = resolveThumbnailUrl(artifact);
+                    const showFallbackThumbnail =
+                      (displayVariant === "hero" || displayVariant === "featured") &&
+                      !thumbnailUrl;
+
+                    return (
+                      <li
+                        key={artifact.id}
+                        className={cn(
+                          // Hero card spans 2 grid rows so the neighbouring featured
+                          // cards stack alongside it (grid-auto-flow:dense fills gaps).
+                          displayVariant === "hero" && viewMode === "grid"
+                            ? "row-span-2"
+                            : undefined,
+                        )}
+                      >
+                        {/* Thumbnail fallback rendered above card when no real image.
+                            Wrapped in a relative container so it bleeds into the card
+                            header area — ArtifactCard's own thumbnail slot handles
+                            real URLs. */}
+                        {showFallbackThumbnail && (
+                          <div
+                            className={cn(
+                              "overflow-hidden",
+                              displayVariant === "hero"
+                                ? "rounded-t-[var(--radius-editorial,0.75rem)]"
+                                : "rounded-t-md",
+                            )}
+                          >
+                            <ArtifactThumbnailFallback
+                              title={artifact.title}
+                              artifactType={artifact.type}
+                            />
+                          </div>
+                        )}
+                        <ArtifactCard
+                          artifact={artifact}
+                          variant={viewMode}
+                          displayVariant={displayVariant}
+                          excerpt={excerpt}
+                          thumbnail={thumbnailUrl}
+                          typeAccent
+                          activeRun={artifact.active_run ?? undefined}
+                          className={cn(
+                            // When fallback thumbnail sits above, remove the top
+                            // border-radius so they read as a single unit.
+                            showFallbackThumbnail &&
+                              (displayVariant === "hero"
+                                ? "rounded-t-none"
+                                : "rounded-t-none"),
+                          )}
+                        />
+                      </li>
+                    );
+                  })}
 
                 {/* Skeleton appended during next-page fetch */}
                 {isFetchingNextPage && (
