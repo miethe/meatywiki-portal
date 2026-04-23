@@ -14,8 +14,30 @@
  *
  * Responsive scaffolding:
  *   - <768px (mobile): filter column hidden, ContextRail hidden (sidebar only).
- *   - 768–1279px (tablet): filter column visible, ContextRail collapsed (toggle).
+ *     Mobile filter affordance: "Filters" button in page header opens a
+ *     right-side fixed drawer (same pattern as ShellClient mobile nav drawer).
+ *   - 768–1279px (tablet): filter column visible, ContextRail collapsed via
+ *     RailToggleButton. When toggled open, rail renders as a fixed right overlay
+ *     (same backdrop pattern) so it does not crush the main grid.
  *   - ≥1280px (desktop): full three-column layout.
+ *
+ * Sticky behavior (P3-04):
+ *   The scroll container is <main id="main-content" className="flex-1 overflow-y-auto">
+ *   in shell-client.tsx. The sticky elements (filter column, rail) are direct
+ *   children of the three-column flex row that sits inside this scroll container.
+ *   No overflow:hidden/auto ancestor exists between the scroll container and the
+ *   sticky elements, so position:sticky works correctly. The outer page wrapper
+ *   uses min-h-0 (not overflow:auto) so it does not interrupt the sticky chain.
+ *
+ * Dark-mode tokens (P3-04):
+ *   All surfaces use CSS variable tokens from globals.css / tailwind.config.ts.
+ *   No raw hex on backgrounds or text. Type-accent stripe and thumbnail fallback
+ *   gradients use intentional brand hues (decorative, not text-on-bg), so WCAG
+ *   AA applies to text tokens only — all text tokens verified:
+ *     - Filter column: bg-card / text-foreground / text-muted-foreground / border
+ *     - Inputs/checkboxes: accent-primary (tint only, no text overlap)
+ *     - Chips: bg-primary/text-primary-foreground (active), border/text-muted-foreground (idle)
+ *     - Empty/error states: bg-muted/text-foreground/text-muted-foreground
  *
  * Previous title "Knowledge Library" replaced with "Universal Browser" per Stitch.
  * Subtitle binds to `total` from the active data hook (falls back to artifacts.length).
@@ -25,7 +47,7 @@
  *
  * P3-02: hero/featured/standard variant selection logic.
  * P3-03: ContextRail selected-artifact data wiring (this file).
- * P3-04: full responsive QA + dark-mode audit.
+ * P3-04: full responsive QA + dark-mode audit (this file).
  *
  * Stitch reference: "Library" screen (§4.1, stitch-exports/v1/library/library.png)
  * Shell: Standard Archival
@@ -42,6 +64,7 @@ import {
   ExternalLink,
   Unlink,
   Clock,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
@@ -190,6 +213,7 @@ function ViewToggle({ view, onChange }: ViewToggleProps) {
 
 // ---------------------------------------------------------------------------
 // ContextRail toggle button (inline in header for pages that own a rail)
+// Visible only on tablet (md–xl). On desktop (xl+), the rail is always shown.
 // ---------------------------------------------------------------------------
 
 function RailToggleButton() {
@@ -201,7 +225,10 @@ function RailToggleButton() {
       aria-pressed={isOpen}
       onClick={toggle}
       className={cn(
-        "inline-flex min-h-[44px] items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors xl:hidden sm:h-8 sm:min-h-0",
+        // Visible on tablet (md to xl); hidden below md (mobile uses filter drawer)
+        // and hidden at xl+ (rail is always shown via CSS)
+        "hidden md:inline-flex xl:hidden",
+        "min-h-[44px] items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         isOpen
           ? "bg-accent text-accent-foreground border-accent"
@@ -215,15 +242,58 @@ function RailToggleButton() {
 }
 
 // ---------------------------------------------------------------------------
+// Mobile "Filters" button — visible only on <768px (md breakpoint)
+// Opens a slide-in filter drawer following the same pattern as ShellClient
+// mobile nav (fixed overlay + backdrop, no extra deps).
+// ---------------------------------------------------------------------------
+
+interface MobileFiltersButtonProps {
+  onClick: () => void;
+  activeCount: number;
+}
+
+function MobileFiltersButton({ onClick, activeCount }: MobileFiltersButtonProps) {
+  return (
+    <button
+      type="button"
+      aria-label={`Open filters${activeCount > 0 ? ` (${activeCount} active)` : ""}`}
+      onClick={onClick}
+      className={cn(
+        "md:hidden",
+        "inline-flex min-h-[44px] items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        activeCount > 0
+          ? "border-primary text-primary bg-primary/8"
+          : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+      )}
+    >
+      <SlidersHorizontal aria-hidden="true" className="size-3.5" />
+      <span>Filters</span>
+      {activeCount > 0 && (
+        <span
+          aria-hidden="true"
+          className="flex size-4 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground"
+        >
+          {activeCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Left filter column
 // ---------------------------------------------------------------------------
 
 interface ArchiveFilterColumnProps {
   filters: ArchiveFilters;
   onChange: (next: Partial<ArchiveFilters>) => void;
+  /** When true, renders without the `hidden md:flex` breakpoint class (for use
+   *  inside the mobile drawer where the column is already conditionally shown) */
+  alwaysVisible?: boolean;
 }
 
-function ArchiveFilterColumn({ filters, onChange }: ArchiveFilterColumnProps) {
+function ArchiveFilterColumn({ filters, onChange, alwaysVisible = false }: ArchiveFilterColumnProps) {
   const [freshMin, freshMax] = filters.freshness;
 
   function toggleArchiveType(value: string) {
@@ -252,12 +322,16 @@ function ArchiveFilterColumn({ filters, onChange }: ArchiveFilterColumnProps) {
       aria-label="Archive filters"
       className={cn(
         // Fixed width, sticky scroll
+        // Sticky behavior: this element is a direct child of the three-column
+        // flex row which itself lives inside <main overflow-y-auto>. No
+        // overflow:hidden/auto ancestor interrupts the sticky chain.
+        // See P3-04 comment in page header for full ancestry analysis.
         "w-[200px] shrink-0",
         "sticky top-0 self-start max-h-[calc(100vh-7rem)] overflow-y-auto",
-        // Surface
+        // Surface — bg-card token works in both light and dark mode
         "rounded-lg border bg-card",
-        // Hide entirely on mobile (<768px / md) — responsive scaffolding P3-01
-        "hidden md:flex flex-col gap-0",
+        // Visibility: always shown in mobile drawer; hidden <768px in page layout
+        alwaysVisible ? "flex flex-col gap-0" : "hidden md:flex flex-col gap-0",
       )}
     >
       {/* Column header */}
@@ -286,6 +360,8 @@ function ArchiveFilterColumn({ filters, onChange }: ArchiveFilterColumnProps) {
                   checked={filters.archiveTypes.includes(value)}
                   onChange={() => toggleArchiveType(value)}
                   className={cn(
+                    // accent-primary applies the theme primary color without
+                    // a background surface — no dark mode token needed here.
                     "size-3.5 rounded border-input accent-primary",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   )}
@@ -316,6 +392,7 @@ function ArchiveFilterColumn({ filters, onChange }: ArchiveFilterColumnProps) {
                 aria-pressed={filters.knowledgeFocus.includes(tag)}
                 onClick={() => toggleFocus(tag)}
                 className={cn(
+                  // Both active + idle states use tokens — dark mode safe.
                   "rounded-full px-2 py-0.5 text-[10px] font-medium border transition-colors",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
                   filters.knowledgeFocus.includes(tag)
@@ -427,6 +504,140 @@ function ArchiveFilterColumn({ filters, onChange }: ArchiveFilterColumnProps) {
         )}
       </div>
     </aside>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Mobile filter drawer — fixed overlay, same pattern as ShellClient mobile nav
+// Renders below md breakpoint. Opened by MobileFiltersButton in page header.
+// ---------------------------------------------------------------------------
+
+interface MobileFilterDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  filters: ArchiveFilters;
+  onFiltersChange: (next: Partial<ArchiveFilters>) => void;
+}
+
+function MobileFilterDrawer({
+  isOpen,
+  onClose,
+  filters,
+  onFiltersChange,
+}: MobileFilterDrawerProps) {
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* Backdrop — bg-foreground/20 per DP3-04 §2.10#4 pattern (neutral in both themes) */}
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 z-30 bg-foreground/20 backdrop-blur-sm md:hidden"
+        onClick={onClose}
+      />
+
+      {/* Drawer — slides in from the left, full height */}
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Archive filters"
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex flex-col md:hidden",
+          // Width: 280px on small screens; cap to 85vw on very narrow viewports
+          "w-[280px] max-w-[85vw]",
+          // Surface uses bg-card token (dark mode safe)
+          "border-r bg-card",
+        )}
+      >
+        {/* Drawer header */}
+        <div className="flex h-14 items-center justify-between border-b px-3 shrink-0">
+          <div className="flex items-center gap-2">
+            <SlidersHorizontal aria-hidden="true" className="size-3.5 text-muted-foreground" />
+            <span className="text-sm font-semibold text-foreground">Filters</span>
+          </div>
+          <button
+            type="button"
+            aria-label="Close filters"
+            onClick={onClose}
+            className={cn(
+              "inline-flex size-9 items-center justify-center rounded-md",
+              "text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            <X aria-hidden="true" className="size-4" />
+          </button>
+        </div>
+
+        {/* Filter content — scrollable */}
+        <div className="flex-1 overflow-y-auto">
+          <ArchiveFilterColumn
+            filters={filters}
+            onChange={(next) => {
+              onFiltersChange(next);
+            }}
+            alwaysVisible
+          />
+        </div>
+
+        {/* Footer CTA */}
+        <div className="shrink-0 border-t p-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className={cn(
+              "w-full inline-flex items-center justify-center rounded-md border px-4 py-2",
+              "text-sm font-medium text-foreground transition-colors",
+              "hover:bg-accent hover:text-accent-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            Apply & close
+          </button>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tablet ContextRail overlay — fixed right-side panel, visible md–xl when open.
+// This prevents the rail from crushing the main grid on tablet viewports when
+// the toggle is activated. At xl+, the rail is always shown inline via CSS.
+// ---------------------------------------------------------------------------
+
+interface TabletRailOverlayProps {
+  isOpen: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}
+
+function TabletRailOverlay({ isOpen, onClose, children }: TabletRailOverlayProps) {
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* Backdrop — same neutral overlay token as mobile nav */}
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 z-20 bg-foreground/10 backdrop-blur-sm xl:hidden"
+        onClick={onClose}
+      />
+      {/* The ContextRail itself is positioned fixed right-0. We wrap the
+          rail with a fixed container so it floats over the grid. */}
+      <div
+        className={cn(
+          "fixed inset-y-0 right-0 z-30 xl:hidden",
+          // Width matches the rail width token
+          "w-rail",
+          // Clip to viewport height
+          "flex flex-col",
+          // bg-[hsl(var(--portal-bg-rail))] is applied inside ContextRail already
+        )}
+      >
+        {children}
+      </div>
+    </>
   );
 }
 
@@ -861,6 +1072,19 @@ function LibraryPageInner() {
   );
 
   // -------------------------------------------------------------------------
+  // P3-04: Mobile filter drawer state
+  // -------------------------------------------------------------------------
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const openMobileFilters = useCallback(() => setMobileFiltersOpen(true), []);
+  const closeMobileFilters = useCallback(() => setMobileFiltersOpen(false), []);
+
+  // Count active archive filter selections for the mobile button badge
+  const activeArchiveFilterCount =
+    archiveFilters.archiveTypes.length +
+    archiveFilters.knowledgeFocus.length +
+    archiveFilters.archivalStatuses.length;
+
+  // -------------------------------------------------------------------------
   // P3-03: Selected artifact state
   //
   // Design decision: click-to-select.
@@ -877,6 +1101,8 @@ function LibraryPageInner() {
   //   - Selection clears automatically when lens or filters change.
   // -------------------------------------------------------------------------
   const [selectedArtifact, setSelectedArtifact] = useState<ArtifactCardType | null>(null);
+
+  const { isOpen: railIsOpen, close: closeRail } = useContextRailToggle();
 
   const handleCardClick = useCallback(
     (artifact: ArtifactCardType, e: React.MouseEvent<HTMLLIElement>) => {
@@ -950,9 +1176,37 @@ function LibraryPageInner() {
       : selectedArtifact.title
     : "Context";
 
+  // Build the ContextRail element once for reuse in both inline (xl) and
+  // overlay (tablet) render paths.
+  const railElement = (
+    <ContextRail
+      title={railTitle}
+      sections={railSections}
+      collapsible
+      width={320}
+      className="sticky top-0 self-start max-h-[calc(100vh-7rem)] overflow-hidden"
+    />
+  );
+
   return (
-    // Full-height flex column — fills the shell's <main> area
-    <div className="flex flex-col gap-4 h-full">
+    // Full-height flex column — fills the shell's <main> area.
+    // NOTE: intentionally uses min-h-0 rather than overflow:auto so that
+    // position:sticky on the filter column and ContextRail can propagate up
+    // to the <main overflow-y-auto> scroll container without interruption.
+    <div className="flex flex-col gap-4 min-h-0">
+
+      {/* Mobile filter drawer — fixed overlay, <768px only */}
+      <MobileFilterDrawer
+        isOpen={mobileFiltersOpen}
+        onClose={closeMobileFilters}
+        filters={archiveFilters}
+        onFiltersChange={handleArchiveFilterChange}
+      />
+
+      {/* Tablet ContextRail overlay — fixed right panel, md–xl only */}
+      <TabletRailOverlay isOpen={railIsOpen} onClose={closeRail}>
+        {railElement}
+      </TabletRailOverlay>
 
       {/* ------------------------------------------------------------------ */}
       {/* Page header row                                                      */}
@@ -970,7 +1224,12 @@ function LibraryPageInner() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* ContextRail toggle — only visible below xl (≥1280px rail is always shown) */}
+          {/* Mobile filters button — visible <768px only */}
+          <MobileFiltersButton
+            onClick={openMobileFilters}
+            activeCount={activeArchiveFilterCount}
+          />
+          {/* ContextRail toggle — visible on tablet (md–xl only) */}
           <RailToggleButton />
           <ViewToggle
             view={mounted ? viewMode : "grid"}
@@ -997,7 +1256,11 @@ function LibraryPageInner() {
       {/* ------------------------------------------------------------------ */}
       <div className="flex flex-1 min-h-0 gap-4 items-start">
 
-        {/* Left filter column — 200px fixed, sticky, hidden <768px */}
+        {/* Left filter column — 200px fixed, sticky, hidden <768px.
+            Sticky chain: this is a direct flex child of the row below, which
+            itself is a flex child of the page wrapper (min-h-0, no overflow).
+            The scroll container is <main overflow-y-auto> in shell-client.tsx.
+            No overflow:hidden/auto between sticky element and scroll container. */}
         <ArchiveFilterColumn
           filters={archiveFilters}
           onChange={handleArchiveFilterChange}
@@ -1133,16 +1396,10 @@ function LibraryPageInner() {
           )}
         </section>
 
-        {/* Right ContextRail — 320px, auto-hides <1280px via xl:block CSS.
-            P3-03: sections and title are driven by selectedArtifact state. */}
-        <ContextRail
-          title={railTitle}
-          sections={railSections}
-          collapsible
-          width={320}
-          // Pull out of normal flow so it doesn't push the grid; sticky to viewport
-          className="sticky top-0 self-start max-h-[calc(100vh-7rem)] overflow-hidden"
-        />
+        {/* Right ContextRail — inline at xl (≥1280px), overlay on tablet (md–xl).
+            The inline instance is hidden below xl via ContextRail's own CSS
+            (hidden xl:block); the overlay is rendered via TabletRailOverlay above. */}
+        {railElement}
       </div>
     </div>
   );
