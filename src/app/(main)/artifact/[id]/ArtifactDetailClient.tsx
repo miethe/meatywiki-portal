@@ -15,6 +15,10 @@
  *     in v1 until POST handlers are wired to UI state); Compile Now + Lint Scope
  *     are engine triggers (deferred to P3-07); all show "not yet wired" tooltip
  *   - HandoffChain in sidebar using artifact_edges
+ *
+ * P4-04 additions:
+ *   - HandoffChainRibbon: horizontal stage pill row between badge row and tabs
+ *   - ActivityTimeline: inline activity feed below body/rail grid
  *   - Metadata sidebar: id (copy), created_at, updated_at, status, tags
  *   - Responsive: tabs natural flow on mobile, sidebar hidden on small screens
  *
@@ -58,6 +62,8 @@ import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
 import { ContextRail, type ContextRailAction } from "@/components/layout/ContextRail";
 import { ArtifactTitleBlock } from "@/components/artifact/artifact-title-block";
 import { ArtifactBody } from "@/components/artifact/artifact-body";
+import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
+import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -457,6 +463,13 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       </div>
 
       {/* ------------------------------------------------------------------ */}
+      {/* Handoff Chain ribbon — P4-04                                       */}
+      {/* Horizontal stage pills: ingest→classify→extract→compile→file→lint  */}
+      {/* Stages inferred from artifact lifecycle state (no new endpoint).   */}
+      {/* ------------------------------------------------------------------ */}
+      <HandoffChainRibbon artifact={artifact} />
+
+      {/* ------------------------------------------------------------------ */}
       {/* Tab bar                                                             */}
       {/* DP3-02 #10: horizontal scroll on mobile; no line-wrap (tabs stay   */}
       {/* single-row at all breakpoints to preserve scan order invariant).   */}
@@ -567,6 +580,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           />
         </aside>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Activity Timeline — P4-04                                          */}
+      {/* Inline activity feed at body bottom (full-width below reader+rail) */}
+      {/* Falls back to mock fixture data when endpoint absent (per P4-04    */}
+      {/* plan Notes). HistoryPanel in rail keeps its graceful empty state.  */}
+      {/* ------------------------------------------------------------------ */}
+      <ActivityTimeline artifactId={artifact.id} />
     </div>
   );
 }
