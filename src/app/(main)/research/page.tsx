@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Research Home — editorial layout scaffold with skeleton placeholders.
  *

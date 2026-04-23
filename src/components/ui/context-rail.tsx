@@ -89,11 +89,11 @@ export function ContextRail({
       {/* Optional eyebrow title */}
       {title && (
         <>
-          <div className="flex items-center px-4 h-11 shrink-0">
+          <h2 className="flex items-center px-4 h-11 shrink-0">
             <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground select-none">
               {title}
             </span>
-          </div>
+          </h2>
           <Separator />
         </>
       )}
