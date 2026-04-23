@@ -32,6 +32,84 @@
     --portal-lens-verified: 142 71% 45%;    /* emerald-600 */
     --portal-lens-disputed: 347 77% 50%;    /* rose-600 */
     --portal-lens-unverified: 215 16% 47%;  /* slate-500 */
+
+    /* ── Portal v1.5 Stitch Reskin — design spec §6.1 ─────────────────── */
+
+    /* Layout dimensions (unitless rem — consumed by Tailwind width tokens) */
+    --portal-rail-width: 20rem;           /* 320px — Context Rail */
+    --portal-rail-width-compact: 17.5rem; /* 280px — dense variant */
+    --portal-filter-width: 12.5rem;       /* 200px — Library filter column */
+
+    /* Brand typography */
+    --portal-brand-display: var(--font-fraunces), "Iowan Old Style", "Charter", "Georgia", serif;
+    --portal-brand-tracking-wide: 0.18em;
+    --portal-brand-lockup-padding: 16px 20px 20px;
+    --portal-brand-lockup-gap: 2px;
+
+    /* Brand foreground — light */
+    --portal-brand-fg: 222 47% 11%;       /* slate-900 — "Intellectual Archive" */
+    --portal-brand-muted: 215 16% 47%;    /* slate-500 — tagline + micro-caps */
+
+    /* Surfaces — light */
+    --portal-bg-rail: 0 0% 100%;          /* white — Context Rail */
+    --portal-bg-editorial: 210 40% 98%;   /* off-white — main editorial */
+    --portal-bg-promo: 222 47% 11%;       /* slate-900 — dark promo cards */
+    --portal-fg-promo: 210 40% 98%;       /* near-white — promo card text */
+    --portal-fg-editorial: 222 47% 15%;   /* editorial body copy */
+
+    /* Topic accent */
+    --portal-accent-topic: 215 28% 25%;   /* topic/entity chip */
+
+    /* Urgency badges — identical in light + dark */
+    --portal-urgency-new: 199 89% 48%;    /* sky-500 — "New" */
+    --portal-urgency-warn: 37 91% 55%;    /* amber-500 — "Needs Action" */
+    --portal-urgency-urgent: 347 77% 50%; /* rose-600 — "Urgent" */
+    --portal-urgency-stale: 215 16% 47%;  /* slate-500 — "Stale" */
+
+    /* Contradiction callout — light */
+    --portal-contradiction-bg: 347 77% 97%;
+    --portal-contradiction-border: 347 77% 85%;
+
+    /* Editorial quote — light */
+    --portal-editorial-quote: 215 16% 35%;
+
+    /* Radius */
+    --radius-editorial: 0.75rem;          /* 12px — hero/featured cards */
+
+    /* Shadow — hero card elevation */
+    --portal-shadow-hero: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -12px rgb(15 23 42 / 0.12);
+  }
+
+  .dark {
+    /* Brand foreground — dark */
+    --portal-brand-fg: 210 40% 98%;       /* near-white */
+    --portal-brand-muted: 215 20% 65%;    /* lighter slate */
+
+    /* Surfaces — dark */
+    --portal-bg-rail: 222 47% 6%;         /* deep slate — Context Rail */
+    --portal-bg-editorial: 222 47% 5%;    /* deepest slate — main editorial */
+    --portal-bg-promo: 222 47% 11%;       /* same — dark promo cards */
+    --portal-fg-promo: 210 40% 98%;       /* same — promo card text */
+    --portal-fg-editorial: 210 40% 92%;   /* editorial body copy — dark */
+
+    /* Topic accent — dark */
+    --portal-accent-topic: 215 28% 75%;
+
+    /* Urgency badges — same as light (intentional per spec) */
+    --portal-urgency-new: 199 89% 48%;
+    --portal-urgency-warn: 37 91% 55%;
+    --portal-urgency-urgent: 347 77% 50%;
+    --portal-urgency-stale: 215 20% 65%;  /* slightly lighter in dark */
+
+    /* Contradiction callout — dark */
+    --portal-contradiction-bg: 347 50% 12%;
+    --portal-contradiction-border: 347 50% 30%;
+
+    /* Editorial quote — dark */
+    --portal-editorial-quote: 210 40% 85%;
+
+    /* Shadow — softened for dark surfaces */
+    --portal-shadow-hero: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px -12px rgb(0 0 0 / 0.30);
   }
 }
 
