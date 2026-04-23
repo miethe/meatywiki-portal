@@ -24,15 +24,25 @@
  * LibraryLensSwitcher, LibraryFilterBar) are preserved unchanged.
  *
  * P3-02: hero/featured/standard variant selection logic.
- * P3-03: ContextRail selected-artifact data wiring.
+ * P3-03: ContextRail selected-artifact data wiring (this file).
  * P3-04: full responsive QA + dark-mode audit.
  *
  * Stitch reference: "Library" screen (§4.1, stitch-exports/v1/library/library.png)
  * Shell: Standard Archival
  */
 
-import { useState, useCallback, useEffect } from "react";
-import { LayoutGrid, List, AlertCircle, SlidersHorizontal, PanelRight } from "lucide-react";
+import { useState, useCallback, useEffect, useMemo } from "react";
+import Link from "next/link";
+import {
+  LayoutGrid,
+  List,
+  AlertCircle,
+  SlidersHorizontal,
+  PanelRight,
+  ExternalLink,
+  Unlink,
+  Clock,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
@@ -54,11 +64,12 @@ import {
 } from "@/hooks/useLibraryArtifacts";
 import { useLibraryRollup } from "@/hooks/useLibraryRollup";
 import { ContextRail } from "@/components/ui/context-rail";
+import type { RailSection } from "@/components/ui/context-rail";
 import {
   ContextRailProvider,
   useContextRailToggle,
 } from "@/components/ui/context-rail-context";
-import { ArtifactThumbnailFallback } from "@/components/library/thumbnail-fallback";
+import type { ArtifactCard as ArtifactCardType } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -127,71 +138,6 @@ const GROUPED_LENS_TYPES: Partial<Record<LibraryLens, string>> = {
 
 function isRollupLens(lens: LibraryLens): boolean {
   return lens === "default" || lens === "orphans";
-}
-
-// ---------------------------------------------------------------------------
-// P3-02: Variant selection + excerpt + thumbnail helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Maximum number of featured cards in the grid (not counting the hero slot).
- * Chosen to match the Stitch PNG hierarchy: 1 hero + up to 4 featured + rest standard.
- */
-const FEATURED_CAP = 4;
-
-/**
- * Derive the display variant for a card at `index` within the flat artifact list.
- *
- * Rules (Stitch §4.1 Library hierarchy):
- *   index 0                → hero  (always; 2-row span in grid)
- *   index 1..FEATURED_CAP  → featured (if thumbnail-eligible; else standard)
- *   index > FEATURED_CAP   → standard
- *
- * "Thumbnail-eligible" in OQ-1-fallback world = always true (we always have
- * the procedural fallback), but the slot cap still applies.
- */
-function resolveDisplayVariant(
-  index: number,
-): "hero" | "featured" | "standard" {
-  if (index === 0) return "hero";
-  if (index <= FEATURED_CAP) return "featured";
-  return "standard";
-}
-
-/**
- * Derive an excerpt string for a card.
- *
- * Priority:
- *   1. `preview` field from the API response (already ~120 chars, ready to use)
- *   2. Empty string — ArtifactCard gracefully renders nothing for empty excerpt
- *
- * We never fabricate copy; if the backend doesn't provide a preview, the
- * excerpt slot stays empty.  ArtifactCard only renders excerpt on
- * featured/hero variants so standard cards are unaffected.
- */
-function resolveExcerpt(artifact: import("@/types/artifact").ArtifactCard): string {
-  return artifact.preview ?? "";
-}
-
-/**
- * Resolve the thumbnail string for a card.
- *
- * The backend does not yet ship `thumbnail_url` (OQ-1 unresolved as of
- * portal v1.5).  We return `undefined` here so that `ArtifactCard` renders
- * no <img> and the caller can decide whether to render a fallback component
- * alongside it.  When the backend ships a real URL the caller need only pass
- * it through — this function is the single update point.
- */
-function resolveThumbnailUrl(
-  artifact: import("@/types/artifact").ArtifactCard,
-): string | undefined {
-  // OQ-1: no thumbnail_url field in ArtifactCard DTO yet.
-  // Cast defensively in case a future backend response sneaks the field in.
-  const maybeThumb = (artifact as unknown as Record<string, unknown>)["thumbnail_url"];
-  if (typeof maybeThumb === "string" && maybeThumb.length > 0) {
-    return maybeThumb;
-  }
-  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -555,41 +501,280 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// ContextRail stub content (P3-03 wires real selected-artifact data)
+// ContextRail content components (P3-03)
 // ---------------------------------------------------------------------------
 
-const LIBRARY_RAIL_SECTIONS = [
-  {
-    id: "properties",
-    title: "Properties",
-    variant: "properties" as const,
-    content: (
-      <p className="text-xs text-muted-foreground px-4 py-2">
-        Select an artifact to view its properties.
+/**
+ * Formats an ISO date string into a human-readable "Month D, YYYY" label.
+ * Returns empty string on parse error or null input.
+ */
+function formatDate(iso?: string | null): string {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Capitalises the first letter and replaces underscores with spaces.
+ */
+function humanise(value: string): string {
+  return value.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+/**
+ * Properties section — type, workspace, lens badges, dates, status.
+ * Backed exclusively by ArtifactCard fields available in the list payload.
+ *
+ * OQ-P3-03-A: Lens score numeric fields (novelty, clarity, etc.) are only
+ * present on ArtifactMetadataResponse (PATCH /lens response), not on
+ * ArtifactCard metadata. Currently rendering fidelity / freshness /
+ * verification_state only. Wire full scores when P3-06 fetches ArtifactDetail.
+ */
+function PropertiesContent({ artifact }: { artifact: ArtifactCardType }) {
+  const rows: { label: string; value: string }[] = [
+    { label: "Type", value: humanise(artifact.type) },
+  ];
+
+  if (artifact.subtype) {
+    rows.push({ label: "Subtype", value: humanise(artifact.subtype) });
+  }
+
+  rows.push(
+    { label: "Workspace", value: humanise(artifact.workspace) },
+    { label: "Status", value: humanise(artifact.status) },
+  );
+
+  const createdLabel = formatDate(artifact.created);
+  const updatedLabel = formatDate(artifact.updated);
+  if (createdLabel) rows.push({ label: "Created", value: createdLabel });
+  if (updatedLabel) rows.push({ label: "Updated", value: updatedLabel });
+
+  // Lens metadata (present when artifact has ArtifactMetadataCard)
+  if (artifact.metadata?.fidelity) {
+    rows.push({ label: "Fidelity", value: humanise(artifact.metadata.fidelity) });
+  }
+  if (artifact.metadata?.freshness) {
+    rows.push({ label: "Freshness", value: humanise(artifact.metadata.freshness) });
+  }
+  if (artifact.metadata?.verification_state) {
+    rows.push({ label: "Verification", value: humanise(artifact.metadata.verification_state) });
+  }
+
+  return (
+    <dl className="flex flex-col gap-2">
+      {rows.map(({ label, value }) => (
+        <div key={label} className="flex items-baseline justify-between gap-2">
+          <dt className="text-[11px] text-muted-foreground shrink-0">{label}</dt>
+          <dd className="text-[11px] font-medium text-foreground text-right truncate max-w-[140px]">
+            {value}
+          </dd>
+        </div>
+      ))}
+      {/* Open artifact CTA */}
+      <div className="mt-2 pt-2 border-t border-border">
+        <Link
+          href={`/artifact/${artifact.id}`}
+          className={cn(
+            "inline-flex items-center gap-1.5 text-[11px] font-medium text-primary",
+            "hover:text-primary/80 underline-offset-2 hover:underline transition-colors",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded",
+          )}
+        >
+          <ExternalLink aria-hidden="true" className="size-3" />
+          Open artifact
+        </Link>
+      </div>
+    </dl>
+  );
+}
+
+/**
+ * Connections section — artifact edges and derivatives preview.
+ *
+ * OQ-P3-03-B: artifact_edges live on ArtifactDetail (GET /api/artifacts/:id),
+ * not on ArtifactCard. derivatives_preview is present on RollupArtifactItem
+ * responses only. Neither is reliably available on the list payload. This
+ * section renders an empty state + note until P3-06 fetches the detail endpoint.
+ * When derivatives_preview is present (rollup lens), it renders those items.
+ */
+function ConnectionsContent({ artifact }: { artifact: ArtifactCardType }) {
+  const derivatives = artifact.derivatives_preview ?? [];
+
+  if (derivatives.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-3 text-center">
+        <Unlink aria-hidden="true" className="size-4 text-muted-foreground/50" />
+        <p className="text-[11px] text-muted-foreground">No connections yet.</p>
+        <p className="text-[10px] text-muted-foreground/70 leading-relaxed">
+          Linked artifacts are available on the detail page.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="flex flex-col gap-1.5" aria-label="Derivative artifacts">
+      {derivatives.map((d) => (
+        <li key={d.id}>
+          <Link
+            href={`/artifact/${d.id}`}
+            className={cn(
+              "flex items-center gap-2 rounded px-1 py-1 text-[11px]",
+              "text-foreground hover:bg-accent/60 transition-colors",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-muted-foreground">
+              {d.artifact_type}
+            </span>
+            <span className="truncate">{d.title ?? d.id}</span>
+          </Link>
+        </li>
+      ))}
+      {typeof artifact.derivative_count === "number" &&
+        artifact.derivative_count > derivatives.length && (
+          <li>
+            <Link
+              href={`/artifact/${artifact.id}?tab=derivatives`}
+              className={cn(
+                "text-[10px] text-muted-foreground hover:text-foreground hover:underline",
+                "underline-offset-2 transition-colors",
+              )}
+            >
+              +{artifact.derivative_count - derivatives.length} more on detail page
+            </Link>
+          </li>
+        )}
+    </ul>
+  );
+}
+
+/**
+ * History section — activity timeline / lineage.
+ *
+ * OQ-P3-03-C: No history/lineage fields exist on ArtifactCard. The revision
+ * history and frontmatter_jsonb live on ArtifactDetail only. This section
+ * renders a minimal timestamp-based micro-timeline from the card payload, plus
+ * an informative note. P3-06 (Artifact Detail endpoint) will unlock full history.
+ */
+function HistoryContent({ artifact }: { artifact: ArtifactCardType }) {
+  const events: { label: string; time: string | null | undefined }[] = [
+    { label: "Last updated", time: artifact.updated },
+    { label: "Created", time: artifact.created },
+  ].filter((e) => !!e.time);
+
+  if (events.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-3 text-center">
+        <Clock aria-hidden="true" className="size-4 text-muted-foreground/50" />
+        <p className="text-[11px] text-muted-foreground">No history available.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <ol className="flex flex-col gap-2.5" aria-label="Artifact timeline">
+        {events.map(({ label, time }) => (
+          <li key={label} className="flex items-start gap-2.5">
+            <span
+              aria-hidden="true"
+              className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground/40"
+            />
+            <div className="flex flex-col gap-0.5 min-w-0">
+              <span className="text-[11px] font-medium text-foreground">{label}</span>
+              {time && (
+                <time dateTime={time} className="text-[10px] text-muted-foreground">
+                  {formatDate(time)}
+                </time>
+              )}
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p className="text-[10px] text-muted-foreground/70 border-t border-border pt-2 mt-1 leading-relaxed">
+        Full activity log available on the detail page.
       </p>
-    ),
-  },
-  {
-    id: "connections",
-    title: "Connections",
-    variant: "connections" as const,
-    content: (
-      <p className="text-xs text-muted-foreground px-4 py-2">
-        Linked artifacts and synthesis references will appear here.
-      </p>
-    ),
-  },
-  {
-    id: "history",
-    title: "History",
-    variant: "activity" as const,
-    content: (
-      <p className="text-xs text-muted-foreground px-4 py-2">
-        Activity timeline and lineage will appear here.
-      </p>
-    ),
-  },
-];
+    </div>
+  );
+}
+
+/**
+ * Unselected empty state — shown when no card has been clicked.
+ */
+function RailEmptyState() {
+  return (
+    <div className="flex flex-col items-center justify-center gap-3 py-10 px-4 text-center">
+      <div className="flex size-10 items-center justify-center rounded-full bg-muted">
+        <svg
+          aria-hidden="true"
+          className="size-5 text-muted-foreground"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={1.5}
+            d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5"
+          />
+        </svg>
+      </div>
+      <div>
+        <p className="text-xs font-medium text-foreground">Select an artifact</p>
+        <p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+          Click any card to see its properties, connections, and history.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// buildRailSections — returns live RailSection[] for the selected artifact
+// ---------------------------------------------------------------------------
+
+function buildRailSections(artifact: ArtifactCardType | null): RailSection[] {
+  if (!artifact) {
+    return [
+      {
+        id: "empty",
+        title: "No selection",
+        variant: "properties" as const,
+        content: <RailEmptyState />,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: "properties",
+      title: "Properties",
+      variant: "properties" as const,
+      content: <PropertiesContent artifact={artifact} />,
+    },
+    {
+      id: "connections",
+      title: "Connections",
+      variant: "connections" as const,
+      content: <ConnectionsContent artifact={artifact} />,
+    },
+    {
+      id: "history",
+      title: "History",
+      variant: "activity" as const,
+      content: <HistoryContent artifact={artifact} />,
+    },
+  ];
+}
 
 // ---------------------------------------------------------------------------
 // Inner page (requires ContextRailProvider in scope)
@@ -675,6 +860,42 @@ function LibraryPageInner() {
     [handleFiltersChange],
   );
 
+  // -------------------------------------------------------------------------
+  // P3-03: Selected artifact state
+  //
+  // Design decision: click-to-select.
+  //   - Hover selection is unreliable on touch devices and creates noise when
+  //     scrolling. Click is deterministic and explicit.
+  //   - Navigation preserved: cmd/ctrl+click (or middle-click) on the
+  //     underlying ArtifactCard <Link> still navigates per browser native
+  //     behaviour (metaKey/ctrlKey passthrough in the handler).
+  //   - Plain left-click on the <li> wrapper intercepts the Link navigation
+  //     via e.preventDefault() and sets selection instead.
+  //   - An explicit "Open artifact" link inside the Properties rail section
+  //     provides a keyboard/touch-accessible navigation path.
+  //   - Clicking the already-selected card deselects it (toggle behaviour).
+  //   - Selection clears automatically when lens or filters change.
+  // -------------------------------------------------------------------------
+  const [selectedArtifact, setSelectedArtifact] = useState<ArtifactCardType | null>(null);
+
+  const handleCardClick = useCallback(
+    (artifact: ArtifactCardType, e: React.MouseEvent<HTMLLIElement>) => {
+      // Allow cmd/ctrl/meta click to pass through to the underlying <Link>
+      // so the user can open the artifact detail in a new tab.
+      if (e.metaKey || e.ctrlKey) return;
+      e.preventDefault();
+      setSelectedArtifact((prev) =>
+        prev?.id === artifact.id ? null : artifact,
+      );
+    },
+    [],
+  );
+
+  // Clear selection when the artifact list context changes
+  useEffect(() => {
+    setSelectedArtifact(null);
+  }, [lens]);
+
   // Data fetching — source depends on active lens
   const rollupResult = useLibraryRollup({
     filters,
@@ -713,6 +934,21 @@ function LibraryPageInner() {
     archiveFilters.archiveTypes.length > 0 ||
     archiveFilters.knowledgeFocus.length > 0 ||
     archiveFilters.archivalStatuses.length > 0;
+
+  // Build rail sections from the current selection.
+  // useMemo keeps the reference stable when selectedArtifact hasn't changed,
+  // avoiding unnecessary ContextRail re-renders.
+  const railSections = useMemo(
+    () => buildRailSections(selectedArtifact),
+    [selectedArtifact],
+  );
+
+  // Rail title shows the selected artifact title (truncated) or default "Context"
+  const railTitle = selectedArtifact
+    ? selectedArtifact.title.length > 24
+      ? `${selectedArtifact.title.slice(0, 22)}…`
+      : selectedArtifact.title
+    : "Context";
 
   return (
     // Full-height flex column — fills the shell's <main> area
@@ -798,72 +1034,37 @@ function LibraryPageInner() {
                   />
                 )}
 
-                {/* P3-02: hero / featured / standard variant selection.
-                    - index 0            → hero (row-span-2 via grid CSS)
-                    - index 1..FEATURED_CAP → featured (thumbnail fallback rendered
-                                             when no real thumbnail URL available — OQ-1)
-                    - index > FEATURED_CAP → standard
-                    excerpt and typeAccent forwarded per design spec §3.1 / §4.1.
-                    Thumbnail fallback: ArtifactThumbnailFallback rendered when
-                    displayVariant is hero|featured and no real thumbnail URL is present. */}
+                {/* Artifact cards
+                    P3-02 will introduce hero/featured/standard variant selection.
+                    For P3-01/P3-03, all cards render as standard to preserve
+                    existing behavior.
+                    P3-03: <li> wrapper captures plain-click → select; cmd/ctrl
+                    click passes through to the underlying ArtifactCard <Link>. */}
                 {!isLoading &&
-                  artifacts.map((artifact, index) => {
-                    const displayVariant =
-                      viewMode === "grid"
-                        ? resolveDisplayVariant(index)
-                        : "standard";
-                    const excerpt = resolveExcerpt(artifact);
-                    const thumbnailUrl = resolveThumbnailUrl(artifact);
-                    const showFallbackThumbnail =
-                      (displayVariant === "hero" || displayVariant === "featured") &&
-                      !thumbnailUrl;
-
+                  artifacts.map((artifact) => {
+                    const isSelected = selectedArtifact?.id === artifact.id;
                     return (
                       <li
                         key={artifact.id}
+                        onClick={(e) => handleCardClick(artifact, e)}
+                        aria-current={isSelected ? "true" : undefined}
+                        title={
+                          isSelected
+                            ? "Click to deselect"
+                            : "Click to preview • Cmd+click to open"
+                        }
                         className={cn(
-                          // Hero card spans 2 grid rows so the neighbouring featured
-                          // cards stack alongside it (grid-auto-flow:dense fills gaps).
-                          displayVariant === "hero" && viewMode === "grid"
-                            ? "row-span-2"
-                            : undefined,
+                          "cursor-pointer rounded-md transition-all",
+                          isSelected &&
+                            "ring-2 ring-primary ring-offset-2 ring-offset-background",
                         )}
                       >
-                        {/* Thumbnail fallback rendered above card when no real image.
-                            Wrapped in a relative container so it bleeds into the card
-                            header area — ArtifactCard's own thumbnail slot handles
-                            real URLs. */}
-                        {showFallbackThumbnail && (
-                          <div
-                            className={cn(
-                              "overflow-hidden",
-                              displayVariant === "hero"
-                                ? "rounded-t-[var(--radius-editorial,0.75rem)]"
-                                : "rounded-t-md",
-                            )}
-                          >
-                            <ArtifactThumbnailFallback
-                              title={artifact.title}
-                              artifactType={artifact.type}
-                            />
-                          </div>
-                        )}
                         <ArtifactCard
                           artifact={artifact}
                           variant={viewMode}
-                          displayVariant={displayVariant}
-                          excerpt={excerpt}
-                          thumbnail={thumbnailUrl}
+                          displayVariant="standard"
                           typeAccent
                           activeRun={artifact.active_run ?? undefined}
-                          className={cn(
-                            // When fallback thumbnail sits above, remove the top
-                            // border-radius so they read as a single unit.
-                            showFallbackThumbnail &&
-                              (displayVariant === "hero"
-                                ? "rounded-t-none"
-                                : "rounded-t-none"),
-                          )}
                         />
                       </li>
                     );
@@ -932,10 +1133,11 @@ function LibraryPageInner() {
           )}
         </section>
 
-        {/* Right ContextRail — 320px, auto-hides <1280px via xl:block CSS */}
+        {/* Right ContextRail — 320px, auto-hides <1280px via xl:block CSS.
+            P3-03: sections and title are driven by selectedArtifact state. */}
         <ContextRail
-          title="Context"
-          sections={LIBRARY_RAIL_SECTIONS}
+          title={railTitle}
+          sections={railSections}
           collapsible
           width={320}
           // Pull out of normal flow so it doesn't push the grid; sticky to viewport
