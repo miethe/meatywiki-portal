@@ -57,6 +57,7 @@ import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
 import { ContextRail, type ContextRailAction } from "@/components/layout/ContextRail";
 import { ArtifactTitleBlock } from "@/components/artifact/artifact-title-block";
+import { ArtifactBody } from "@/components/artifact/artifact-body";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -295,139 +296,22 @@ function SourceReader({ content }: { content: string | null | undefined }) {
 }
 
 // ---------------------------------------------------------------------------
-// Knowledge Reader — compiled HTML output
+// Knowledge Reader — compiled HTML / markdown output (P4-02)
+// Delegates to ArtifactBody for editorial prose + callout rendering.
 // ---------------------------------------------------------------------------
 
 function KnowledgeReader({ content }: { content: string | null | undefined }) {
-  if (!content) {
-    return (
-      <div
-        role="status"
-        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-12 text-center"
-      >
-        <p className="text-sm text-muted-foreground">No compiled content yet.</p>
-        <p className="text-xs text-muted-foreground/60">
-          Run Compile to generate the knowledge reader output.
-        </p>
-      </div>
-    );
-  }
-
-  // Detect if content looks like HTML (starts with <) or plain text/markdown.
-  // If HTML, render with dangerouslySetInnerHTML (Portal is local-only auth).
-  // If plain text, fall back to pre block.
-  const isHtml = content.trimStart().startsWith("<");
-
-  if (isHtml) {
-    return (
-      <div
-        className={cn(
-          "rounded-md border bg-card p-6",
-          "[&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-bold",
-          "[&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold",
-          "[&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-base [&_h3]:font-semibold",
-          "[&_p]:mb-3 [&_p]:text-sm [&_p]:leading-relaxed",
-          "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-sm",
-          "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:text-sm",
-          "[&_li]:mb-1",
-          "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
-          "[&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:text-xs",
-          "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground",
-          "[&_a]:text-primary [&_a]:underline-offset-2 [&_a]:hover:underline",
-          "[&_hr]:border-border",
-          "[&_table]:w-full [&_table]:text-sm",
-          "[&_th]:border-b [&_th]:pb-2 [&_th]:text-left [&_th]:font-semibold",
-          "[&_td]:border-b [&_td]:border-border/50 [&_td]:py-1.5",
-        )}
-        // Portal is local-only with bearer-token auth — HTML is from the engine.
-        // Add DOMPurify here before enabling PORTAL_ALLOW_NETWORK=1.
-        dangerouslySetInnerHTML={{ __html: content }}
-      />
-    );
-  }
-
-  // Plain text / markdown fallback
-  return (
-    <div className="overflow-auto rounded-md border bg-muted/30">
-      <pre className="whitespace-pre-wrap break-words p-4 font-mono text-sm leading-relaxed text-foreground/80">
-        {content}
-      </pre>
-    </div>
-  );
+  return <ArtifactBody content={content} variant="knowledge" />;
 }
 
 // ---------------------------------------------------------------------------
-// Draft Reader — synthesis/draft content
+// Draft Reader — synthesis/draft content (P4-02)
+// Delegates to ArtifactBody for editorial prose + callout rendering.
+// DP3-02 #7: Draft uses same typography ruleset as Knowledge to avoid drift.
 // ---------------------------------------------------------------------------
 
 function DraftReader({ content }: { content: string | null | undefined }) {
-  if (!content) {
-    return (
-      <div
-        role="status"
-        className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-12 text-center"
-      >
-        <svg
-          aria-hidden="true"
-          className="size-8 text-muted-foreground/40"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.25}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <div>
-          <p className="text-sm font-medium text-foreground">No draft content</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Draft content appears here for synthesis and staged artifacts.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const isHtml = content.trimStart().startsWith("<");
-
-  // DP3-02 #7: Draft prose wrapper uses same full typography ruleset as
-  // KnowledgeReader to avoid density drift between readers.
-  if (isHtml) {
-    return (
-      <div
-        className={cn(
-          "rounded-md border bg-card p-6",
-          "[&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-bold",
-          "[&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold",
-          "[&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-base [&_h3]:font-semibold",
-          "[&_p]:mb-3 [&_p]:text-sm [&_p]:leading-relaxed",
-          "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-sm",
-          "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:text-sm",
-          "[&_li]:mb-1",
-          "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
-          "[&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:text-xs",
-          "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground",
-          "[&_a]:text-primary [&_a]:underline-offset-2 [&_a]:hover:underline",
-          "[&_hr]:border-border",
-          "[&_table]:w-full [&_table]:text-sm",
-          "[&_th]:border-b [&_th]:pb-2 [&_th]:text-left [&_th]:font-semibold",
-          "[&_td]:border-b [&_td]:border-border/50 [&_td]:py-1.5",
-        )}
-        dangerouslySetInnerHTML={{ __html: content }}
-      />
-    );
-  }
-
-  return (
-    <div className="overflow-auto rounded-md border bg-muted/30">
-      <pre className="whitespace-pre-wrap break-words p-4 font-mono text-sm leading-relaxed text-foreground/80">
-        {content}
-      </pre>
-    </div>
-  );
+  return <ArtifactBody content={content} variant="draft" />;
 }
 
 // WorkflowOSPlaceholder removed — replaced by WorkflowOSTab (P4-10).
