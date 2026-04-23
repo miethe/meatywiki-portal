@@ -1,5 +1,7 @@
 "use client";
 
+import DOMPurify from "isomorphic-dompurify";
+
 /**
  * ArtifactBody — editorial prose renderer for Knowledge and Draft tab content.
  *
@@ -514,12 +516,12 @@ export function ArtifactBody({ content, variant = "knowledge", className }: Arti
 
   // --- HTML path ---
   if (content.trimStart().startsWith("<")) {
+    // HTML sanitized via DOMPurify (P6-03/P6-04 — sanitization gate for PORTAL_ALLOW_NETWORK=1).
+    const sanitized = DOMPurify.sanitize(content, { USE_PROFILES: { html: true } });
     return (
       <div
         className={cn(HTML_PROSE_CLASSES, className)}
-        // Portal is local-only with bearer-token auth — HTML is from the engine.
-        // Add DOMPurify here before enabling PORTAL_ALLOW_NETWORK=1.
-        dangerouslySetInnerHTML={{ __html: content }}
+        dangerouslySetInnerHTML={{ __html: sanitized }}
       />
     );
   }
