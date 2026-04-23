@@ -9,6 +9,9 @@
  *   - Loading skeleton (initial load-more in-flight)
  *   - Error state (inline alert)
  *   - Empty state
+ *   - Status grouping (P5-01): items bucketed into NEW / NEEDS COMPILE /
+ *     NEEDS DESTINATION sections using StatusGroupSection headers with count
+ *     pills and per-group urgency color indicators.
  *
  * Design aesthetic: clean archival/editorial — slate palette, subtle
  * monospaced accents for timestamps, generous whitespace. Matches the
@@ -17,18 +20,115 @@
  * P3-10: Page header flex changed to flex-wrap + gap so title + button
  *        stack cleanly at 320px. Quick Add button touch target bumped to
  *        min-h-[44px] on xs.
+ * P5-01: Status grouping with StatusGroupSection headers (StatusGroupSection
+ *        reused from src/components/ui/status-group-section.tsx).
  *
  * Stitch reference: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
  * WCAG 2.1 AA: preserved from scaffold; focusable interactive elements have
  * visible focus rings.
+ *
+ * --- Status enum notes (P5-01) ---
+ * Expected backend inbox status enum: new | needs_compile | needs_destination
+ * (per phase-5-inbox-reskin.md §Status mapping).
+ *
+ * Current ArtifactCard.status type is ArtifactStatus = "draft" | "active" |
+ * "archived" | "stale" — the backend has not yet shipped the inbox-specific
+ * enum on this field. Until the backend updates the ArtifactCard DTO, we
+ * derive the inbox group from the existing status value using the mapping
+ * below (MISMATCH-04). When the backend ships `new | needs_compile |
+ * needs_destination`, remove the mapping and use InboxStatus directly.
+ *
+ * Fallback: items with missing or unrecognised status are bucketed under
+ * NEEDS COMPILE (most conservative triage action — they need human review
+ * before any routing decision). Rationale: "needs compile" is the safest
+ * default since compilation is reversible and low-risk.
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
+import { StatusGroupSection } from "@/components/ui/status-group-section";
 import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
 import { useInboxArtifacts } from "@/hooks/useInboxArtifacts";
 import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
+
+// ---------------------------------------------------------------------------
+// Inbox status grouping (P5-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * Three canonical inbox groups as defined in the Stitch design spec and
+ * phase-5-inbox-reskin.md §"Design Reference: Inbox Stitch PNG".
+ *
+ * Backend target enum: "new" | "needs_compile" | "needs_destination"
+ * Frontend mapping from current ArtifactStatus:
+ *   "draft"    → new          (freshly captured, untouched)
+ *   "active"   → needs_compile (in-progress; needs compilation to become useful)
+ *   "stale"    → needs_destination (processed; needs routing to a workspace)
+ *   "archived" → needs_destination (completed but may need re-routing)
+ *
+ * MISMATCH-04: remove mapping and use ArtifactStatus extension once backend
+ * ships inbox-specific enum on the ArtifactCard DTO.
+ */
+type InboxGroup = "new" | "needs_compile" | "needs_destination";
+
+const STATUS_TO_GROUP: Record<string, InboxGroup> = {
+  // Current ArtifactStatus values → inbox group
+  draft: "new",
+  active: "needs_compile",
+  stale: "needs_destination",
+  archived: "needs_destination",
+  // Forward-compat: backend inbox-specific enum values map 1:1
+  new: "new",
+  needs_compile: "needs_compile",
+  needs_destination: "needs_destination",
+};
+
+const GROUP_ORDER: InboxGroup[] = ["new", "needs_compile", "needs_destination"];
+
+const GROUP_LABELS: Record<InboxGroup, string> = {
+  new: "NEW",
+  needs_compile: "NEEDS COMPILE",
+  needs_destination: "NEEDS DESTINATION",
+};
+
+/** Derive urgency for the whole group based on whether any item is >24h old.
+ *  Uses the artifact's `updated` or `created` field (ISO 8601 string) if present.
+ *  >24h → urgent (red); 4–24h with at least one such item → warn (amber); else normal.
+ */
+function deriveGroupUrgency(
+  items: ArtifactCardType[],
+): "normal" | "warn" | "urgent" {
+  const now = Date.now();
+  let hasWarn = false;
+  for (const item of items) {
+    const ts = item.updated ?? item.created;
+    if (!ts) continue;
+    const ageMs = now - new Date(ts).getTime();
+    const ageHours = ageMs / 3_600_000;
+    if (ageHours > 24) return "urgent";
+    if (ageHours > 4) hasWarn = true;
+  }
+  return hasWarn ? "warn" : "normal";
+}
+
+/** Partition artifacts into the three inbox groups. Items with missing /
+ *  unrecognised status fall back to "needs_compile" (documented above).
+ */
+function groupArtifacts(
+  artifacts: ArtifactCardType[],
+): Record<InboxGroup, ArtifactCardType[]> {
+  const groups: Record<InboxGroup, ArtifactCardType[]> = {
+    new: [],
+    needs_compile: [],
+    needs_destination: [],
+  };
+  for (const artifact of artifacts) {
+    const group: InboxGroup = STATUS_TO_GROUP[artifact.status] ?? "needs_compile";
+    groups[group].push(artifact);
+  }
+  return groups;
+}
 
 // ---------------------------------------------------------------------------
 // Skeleton card
@@ -143,6 +243,10 @@ export function InboxClient({ initialData }: InboxClientProps) {
     initialData,
   });
 
+  // P5-01: Group artifacts by inbox status. Recalculates only when the
+  // artifacts array reference changes (load-more appends a new array).
+  const groups = useMemo(() => groupArtifacts(artifacts), [artifacts]);
+
   return (
     <>
       {/* ------------------------------------------------------------------ */}
@@ -193,7 +297,7 @@ export function InboxClient({ initialData }: InboxClientProps) {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Artifact list                                                       */}
+      {/* Artifact list — status-grouped (P5-01)                             */}
       {/* ------------------------------------------------------------------ */}
       <section aria-label="Inbox artifacts" className="mt-4">
         {/* sr-only h2 bridges h1 → h3 heading order (WCAG 1.3.1 heading-order) */}
@@ -201,13 +305,39 @@ export function InboxClient({ initialData }: InboxClientProps) {
         {artifacts.length === 0 && !isLoading ? (
           <InboxEmpty />
         ) : (
-          <ul role="list" aria-label="Inbox artifacts" className="flex flex-col gap-2">
-            {artifacts.map((artifact) => (
-              <li key={artifact.id}>
-                <ArtifactCard artifact={artifact} variant="list" />
-              </li>
-            ))}
-          </ul>
+          /*
+           * P5-01: Render one StatusGroupSection per non-empty group.
+           * Order: NEW → NEEDS COMPILE → NEEDS DESTINATION.
+           * Empty groups are hidden (no header rendered).
+           * Urgency indicator is derived from item age within the group.
+           */
+          <div className="flex flex-col gap-6">
+            {GROUP_ORDER.map((groupKey) => {
+              const items = groups[groupKey];
+              if (items.length === 0) return null;
+              const urgency = deriveGroupUrgency(items);
+              return (
+                <StatusGroupSection
+                  key={groupKey}
+                  label={GROUP_LABELS[groupKey]}
+                  count={items.length}
+                  urgency={urgency}
+                >
+                  <ul
+                    role="list"
+                    aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
+                    className="flex flex-col gap-2"
+                  >
+                    {items.map((artifact) => (
+                      <li key={artifact.id}>
+                        <ArtifactCard artifact={artifact} variant="list" />
+                      </li>
+                    ))}
+                  </ul>
+                </StatusGroupSection>
+              );
+            })}
+          </div>
         )}
 
         {/* Load-more skeleton rows */}
