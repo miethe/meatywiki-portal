@@ -45,6 +45,8 @@ import { DerivativeCountBadge } from "./derivative-count-badge";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { StageTracker } from "@/components/workflow/stage-tracker";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
+import { UrgencyBadge } from "./urgency-badge";
+import type { UrgencyLevel } from "./urgency-badge";
 import type { ArtifactFacet } from "@/types/artifact";
 
 /**
@@ -97,6 +99,19 @@ function workspaceToFacet(workspace: string): ArtifactFacet | null {
   return null;
 }
 
+/**
+ * Inbox group keys that map to contextual CTA labels (P5-02).
+ * Matches InboxGroup type in InboxClient.tsx.
+ */
+export type InboxGroup = "new" | "needs_compile" | "needs_destination";
+
+/** CTA labels per inbox group (P5-02, phase-5-inbox-reskin.md §Task P5-02) */
+const INBOX_CTA_LABELS: Record<InboxGroup, string> = {
+  new: "Draft",
+  needs_compile: "Start Compilation",
+  needs_destination: "Review Needed",
+};
+
 interface ArtifactCardProps {
   artifact: ArtifactCardType;
   /** Layout direction: "list" for Inbox (full-width row), "grid" for Library grid */
@@ -133,6 +148,19 @@ interface ArtifactCardProps {
    * Null/undefined → component not rendered; no placeholder, no layout break.
    */
   activeRun?: ActiveRunShape | null;
+  /**
+   * Inbox mode (P5-02): when set, overrides card layout to the triage row
+   * design — type chip + title (bold) + 1-line preview (truncated) +
+   * UrgencyBadge (right-aligned) + contextual CTA button.
+   *
+   * `inboxGroup` drives the CTA label ("Draft" | "Start Compilation" |
+   * "Review Needed") and must match the StatusGroupSection the card lives in.
+   * `urgencyLevel` and `urgencyMinutesAgo` are passed through to UrgencyBadge
+   * and are computed by InboxClient from artifact.updated / artifact.created.
+   */
+  inboxGroup?: InboxGroup;
+  urgencyLevel?: UrgencyLevel;
+  urgencyMinutesAgo?: number;
   className?: string;
 }
 
@@ -162,6 +190,9 @@ export function ArtifactCard({
   thumbnail,
   typeAccent = true,
   activeRun,
+  inboxGroup,
+  urgencyLevel,
+  urgencyMinutesAgo,
   className,
 }: ArtifactCardProps) {
   const {
@@ -192,6 +223,97 @@ export function ArtifactCard({
   const isHero = displayVariant === "hero";
   const isFeatured = displayVariant === "featured";
   const isCompact = displayVariant === "compact";
+
+  // ---------------------------------------------------------------------------
+  // Inbox mode render path (P5-02)
+  // ---------------------------------------------------------------------------
+  // When `inboxGroup` is provided, we bypass the standard card layout and
+  // render the triage row: type chip + title + 1-line preview + urgency badge
+  // (right) + contextual CTA button. Existing callsites without `inboxGroup`
+  // are completely unaffected.
+
+  if (inboxGroup !== undefined) {
+    const ctaLabel = INBOX_CTA_LABELS[inboxGroup];
+    const accentColorInbox = typeAccentColor(type);
+
+    return (
+      <article
+        className={cn(
+          "group relative flex items-center gap-3 rounded-md border bg-card p-3",
+          "transition-shadow hover:shadow-sm",
+          isResearchOrigin && "ring-1 ring-teal-400/50",
+          className,
+        )}
+        style={{
+          borderLeftWidth: "3px",
+          borderLeftStyle: "solid",
+          borderLeftColor: accentColorInbox,
+        }}
+        aria-label={isResearchOrigin ? `${title} (research origin)` : title}
+        data-research-origin={isResearchOrigin ? "true" : undefined}
+        data-inbox-group={inboxGroup}
+      >
+        {/* Stretch link covers the card for navigation */}
+        <Link
+          href={`/artifact/${id}`}
+          aria-label={`View ${title}`}
+          className="absolute inset-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          tabIndex={0}
+        />
+
+        {/* Type chip — left anchor */}
+        <div className="pointer-events-none shrink-0">
+          <TypeBadge type={type} />
+        </div>
+
+        {/* Main content: title + 1-line preview */}
+        <div className="pointer-events-none min-w-0 flex-1">
+          <p className="truncate text-sm font-semibold leading-snug text-foreground">
+            {title}
+          </p>
+          {preview && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {preview}
+            </p>
+          )}
+        </div>
+
+        {/* Right cluster: urgency badge + CTA */}
+        <div className="pointer-events-none flex shrink-0 items-center gap-2">
+          {urgencyLevel && (
+            <UrgencyBadge
+              level={urgencyLevel}
+              minutesAgo={urgencyMinutesAgo}
+              className="hidden sm:inline-flex"
+            />
+          )}
+          {/* CTA button: pointer-events-auto so clicks go through stretch link */}
+          <button
+            type="button"
+            aria-label={`${ctaLabel} — ${title}`}
+            onClick={(e) => {
+              // Prevent the stretch link from navigating on CTA click.
+              // CTA actions will be wired in future tasks (P5-03/P5-04).
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            className={cn(
+              "pointer-events-auto inline-flex h-7 items-center rounded-md border px-2.5",
+              "text-xs font-medium text-foreground",
+              "transition-colors hover:bg-accent hover:text-accent-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            {ctaLabel}
+          </button>
+        </div>
+      </article>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Standard / featured / compact / hero render paths (unchanged below)
+  // ---------------------------------------------------------------------------
 
   // Left-edge type-accent stripe: width varies by display variant
   const stripeWidthPx = isHero ? 4 : isCompact ? 2 : 3;

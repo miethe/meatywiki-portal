@@ -12,6 +12,10 @@
  *   - Status grouping (P5-01): items bucketed into NEW / NEEDS COMPILE /
  *     NEEDS DESTINATION sections using StatusGroupSection headers with count
  *     pills and per-group urgency color indicators.
+ *   - Item selection + ContextRail (P5-03): clicking an item card selects it;
+ *     <InboxContextRail> renders in the right column with item properties and
+ *     stub action buttons. First item auto-selected on mount when data is
+ *     available. Selection is keyboard-accessible (Enter/Space on focused card).
  *
  * Design aesthetic: clean archival/editorial — slate palette, subtle
  * monospaced accents for timestamps, generous whitespace. Matches the
@@ -22,10 +26,13 @@
  *        min-h-[44px] on xs.
  * P5-01: Status grouping with StatusGroupSection headers (StatusGroupSection
  *        reused from src/components/ui/status-group-section.tsx).
+ * P5-02: UrgencyBadge per item + per-item urgency derivation.
+ * P5-03: Item selection state + ContextRail right column.
  *
  * Stitch reference: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
  * WCAG 2.1 AA: preserved from scaffold; focusable interactive elements have
- * visible focus rings.
+ * visible focus rings. Item cards wrapped as <button> for click+keyboard
+ * selection (P5-03 a11y requirement).
  *
  * --- Status enum notes (P5-01) ---
  * Expected backend inbox status enum: new | needs_compile | needs_destination
@@ -44,13 +51,15 @@
  * default since compilation is reversible and low-risk.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { StatusGroupSection } from "@/components/ui/status-group-section";
 import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
+import { InboxContextRail } from "@/components/inbox/InboxContextRail";
 import { useInboxArtifacts } from "@/hooks/useInboxArtifacts";
 import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
+import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
 // ---------------------------------------------------------------------------
 // Inbox status grouping (P5-01)
@@ -128,6 +137,60 @@ function groupArtifacts(
     groups[group].push(artifact);
   }
   return groups;
+}
+
+// ---------------------------------------------------------------------------
+// Per-item urgency computation (P5-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Derive UrgencyLevel and minutesAgo for a single artifact.
+ *
+ * Level thresholds (phase-5-inbox-reskin.md §"Urgency Level Mapping"):
+ *   <1h  → new
+ *   1–4h → needs-action
+ *   4–24h → stale
+ *   >24h  → urgent
+ *
+ * Status override: if the artifact's status is "urgent" (forward-compat), force
+ * the urgent level regardless of age.
+ *
+ * Falls back to { level: "new", minutesAgo: 0 } when no timestamp is available.
+ */
+function deriveItemUrgency(artifact: ArtifactCardType): {
+  level: UrgencyLevel;
+  minutesAgo: number;
+} {
+  // Status override (forward-compat: backend inbox-specific enum may include "urgent")
+  if ((artifact.status as string) === "urgent") {
+    const ts = artifact.updated ?? artifact.created;
+    const minutesAgo = ts
+      ? Math.floor((Date.now() - new Date(ts).getTime()) / 60_000)
+      : 0;
+    return { level: "urgent", minutesAgo };
+  }
+
+  const ts = artifact.updated ?? artifact.created;
+  if (!ts) return { level: "new", minutesAgo: 0 };
+
+  const minutesAgo = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(ts).getTime()) / 60_000),
+  );
+  const hoursAgo = minutesAgo / 60;
+
+  let level: UrgencyLevel;
+  if (hoursAgo < 1) {
+    level = "new";
+  } else if (hoursAgo < 4) {
+    level = "needs-action";
+  } else if (hoursAgo < 24) {
+    level = "stale";
+  } else {
+    level = "urgent";
+  }
+
+  return { level, minutesAgo };
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +288,58 @@ function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
 }
 
 // ---------------------------------------------------------------------------
+// SelectableCardWrapper — thin a11y wrapper (P5-03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Wraps an ArtifactCard in a <button> so it is click + keyboard selectable.
+ * We prefer a real <button> for native keyboard semantics (Enter/Space fires
+ * onClick automatically) without manual onKeyDown handlers.
+ *
+ * Selected state adds a primary ring so the selected item is unmistakable
+ * without relying on colour alone (WCAG 1.4.1).
+ */
+interface SelectableCardWrapperProps {
+  artifact: ArtifactCardType;
+  inboxGroup: InboxGroup;
+  urgencyLevel: UrgencyLevel;
+  urgencyMinutesAgo: number;
+  isSelected: boolean;
+  onSelect: (artifact: ArtifactCardType) => void;
+}
+
+function SelectableCardWrapper({
+  artifact,
+  inboxGroup,
+  urgencyLevel,
+  urgencyMinutesAgo,
+  isSelected,
+  onSelect,
+}: SelectableCardWrapperProps) {
+  return (
+    <button
+      type="button"
+      aria-pressed={isSelected}
+      aria-label={`Select inbox item: ${artifact.title}`}
+      onClick={() => onSelect(artifact)}
+      className={cn(
+        "w-full text-left rounded-md transition-all",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        isSelected ? "ring-2 ring-primary ring-offset-1" : "ring-0",
+      )}
+    >
+      <ArtifactCard
+        artifact={artifact}
+        variant="list"
+        inboxGroup={inboxGroup}
+        urgencyLevel={urgencyLevel}
+        urgencyMinutesAgo={urgencyMinutesAgo}
+      />
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -239,6 +354,9 @@ interface InboxClientProps {
 export function InboxClient({ initialData }: InboxClientProps) {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
+  // P5-03: selected item state — null until data loads, then auto-selects first.
+  const [selectedItem, setSelectedItem] = useState<ArtifactCardType | null>(null);
+
   const { artifacts, hasMore, isLoading, error, loadMore } = useInboxArtifacts({
     initialData,
   });
@@ -246,6 +364,19 @@ export function InboxClient({ initialData }: InboxClientProps) {
   // P5-01: Group artifacts by inbox status. Recalculates only when the
   // artifacts array reference changes (load-more appends a new array).
   const groups = useMemo(() => groupArtifacts(artifacts), [artifacts]);
+
+  // P5-03: Auto-select the first item once artifacts are available.
+  // Only fires on the initial non-empty population — load-more calls do not
+  // reset the active selection.
+  useEffect(() => {
+    if (selectedItem === null && artifacts.length > 0) {
+      setSelectedItem(artifacts[0]);
+    }
+  }, [artifacts, selectedItem]);
+
+  const handleSelectItem = useCallback((artifact: ArtifactCardType) => {
+    setSelectedItem(artifact);
+  }, []);
 
   return (
     <>
@@ -297,116 +428,144 @@ export function InboxClient({ initialData }: InboxClientProps) {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Artifact list — status-grouped (P5-01)                             */}
+      {/* Two-column layout: artifact list (left) + ContextRail (right)      */}
+      {/* P5-03: ContextRail hidden below xl (1280px). We use xl (not lg)    */}
+      {/* because the inbox list benefits from the extra horizontal space.   */}
       {/* ------------------------------------------------------------------ */}
-      <section aria-label="Inbox artifacts" className="mt-4">
-        {/* sr-only h2 bridges h1 → h3 heading order (WCAG 1.3.1 heading-order) */}
-        <h2 className="sr-only">Artifact list</h2>
-        {artifacts.length === 0 && !isLoading ? (
-          <InboxEmpty />
-        ) : (
-          /*
-           * P5-01: Render one StatusGroupSection per non-empty group.
-           * Order: NEW → NEEDS COMPILE → NEEDS DESTINATION.
-           * Empty groups are hidden (no header rendered).
-           * Urgency indicator is derived from item age within the group.
-           */
-          <div className="flex flex-col gap-6">
-            {GROUP_ORDER.map((groupKey) => {
-              const items = groups[groupKey];
-              if (items.length === 0) return null;
-              const urgency = deriveGroupUrgency(items);
-              return (
-                <StatusGroupSection
-                  key={groupKey}
-                  label={GROUP_LABELS[groupKey]}
-                  count={items.length}
-                  urgency={urgency}
-                >
-                  <ul
-                    role="list"
-                    aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
-                    className="flex flex-col gap-2"
+      <div className="mt-4 flex gap-6">
+        {/* ---------------------------------------------------------------- */}
+        {/* Left: Artifact list — status-grouped (P5-01)                    */}
+        {/* ---------------------------------------------------------------- */}
+        <section aria-label="Inbox artifacts" className="min-w-0 flex-1">
+          {/* sr-only h2 bridges h1 → h3 heading order (WCAG 1.3.1 heading-order) */}
+          <h2 className="sr-only">Artifact list</h2>
+          {artifacts.length === 0 && !isLoading ? (
+            <InboxEmpty />
+          ) : (
+            /*
+             * P5-01: Render one StatusGroupSection per non-empty group.
+             * P5-02: Pass per-item urgency data into ArtifactCard.
+             * P5-03: Items wrapped in SelectableCardWrapper for click selection.
+             * Order: NEW → NEEDS COMPILE → NEEDS DESTINATION.
+             */
+            <div className="flex flex-col gap-6">
+              {GROUP_ORDER.map((groupKey) => {
+                const items = groups[groupKey];
+                if (items.length === 0) return null;
+                const urgency = deriveGroupUrgency(items);
+                return (
+                  <StatusGroupSection
+                    key={groupKey}
+                    label={GROUP_LABELS[groupKey]}
+                    count={items.length}
+                    urgency={urgency}
                   >
-                    {items.map((artifact) => (
-                      <li key={artifact.id}>
-                        <ArtifactCard artifact={artifact} variant="list" />
-                      </li>
-                    ))}
-                  </ul>
-                </StatusGroupSection>
-              );
-            })}
-          </div>
-        )}
+                    <ul
+                      role="list"
+                      aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
+                      className="flex flex-col gap-2"
+                    >
+                      {items.map((artifact) => {
+                        const { level, minutesAgo } = deriveItemUrgency(artifact);
+                        return (
+                          <li key={artifact.id}>
+                            <SelectableCardWrapper
+                              artifact={artifact}
+                              inboxGroup={groupKey}
+                              urgencyLevel={level}
+                              urgencyMinutesAgo={minutesAgo}
+                              isSelected={selectedItem?.id === artifact.id}
+                              onSelect={handleSelectItem}
+                            />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </StatusGroupSection>
+                );
+              })}
+            </div>
+          )}
 
-        {/* Load-more skeleton rows */}
-        {isLoading && (
-          <ul
-            role="list"
-            aria-label="Loading more artifacts"
-            className="mt-2 flex flex-col gap-2"
-          >
-            {Array.from({ length: 3 }).map((_, i) => (
-              // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable id
-              <li key={i}>
-                <ArtifactCardSkeleton />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        {/* Error banner */}
-        {error && (
-          <div className="mt-3">
-            <ErrorBanner message={error} onRetry={loadMore} />
-          </div>
-        )}
-
-        {/* Load more button */}
-        {hasMore && !isLoading && (
-          <div className="mt-4 flex justify-center">
-            <button
-              type="button"
-              onClick={loadMore}
-              aria-label="Load more artifacts"
-              className={cn(
-                "inline-flex h-8 items-center gap-1.5 rounded-md border px-4",
-                "text-sm text-muted-foreground",
-                "transition-colors hover:bg-accent hover:text-accent-foreground",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              )}
+          {/* Load-more skeleton rows */}
+          {isLoading && (
+            <ul
+              role="list"
+              aria-label="Loading more artifacts"
+              className="mt-2 flex flex-col gap-2"
             >
-              Load more
-              {/* Chevron down */}
-              <svg
-                aria-hidden="true"
-                className="size-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="m6 9 6 6 6-6"
-                />
-              </svg>
-            </button>
-          </div>
-        )}
+              {Array.from({ length: 3 }).map((_, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: skeleton placeholders have no stable id
+                <li key={i}>
+                  <ArtifactCardSkeleton />
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {/* End-of-list indicator (only when items exist and pagination is exhausted) */}
-        {!hasMore && !isLoading && artifacts.length > 0 && (
-          <p
-            aria-live="polite"
-            className="mt-4 text-center text-xs text-muted-foreground/60"
-          >
-            All artifacts loaded
-          </p>
-        )}
-      </section>
+          {/* Error banner */}
+          {error && (
+            <div className="mt-3">
+              <ErrorBanner message={error} onRetry={loadMore} />
+            </div>
+          )}
+
+          {/* Load more button */}
+          {hasMore && !isLoading && (
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={loadMore}
+                aria-label="Load more artifacts"
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-md border px-4",
+                  "text-sm text-muted-foreground",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                Load more
+                {/* Chevron down */}
+                <svg
+                  aria-hidden="true"
+                  className="size-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="m6 9 6 6 6-6"
+                  />
+                </svg>
+              </button>
+            </div>
+          )}
+
+          {/* End-of-list indicator (only when items exist and pagination is exhausted) */}
+          {!hasMore && !isLoading && artifacts.length > 0 && (
+            <p
+              aria-live="polite"
+              className="mt-4 text-center text-xs text-muted-foreground/60"
+            >
+              All artifacts loaded
+            </p>
+          )}
+        </section>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Right: ContextRail — hidden below xl (P5-03)                    */}
+        {/* The rail fills 100% of its column; parent controls breakpoint.  */}
+        {/* ---------------------------------------------------------------- */}
+        <aside
+          aria-label="Inbox item context"
+          className="hidden w-72 shrink-0 xl:block"
+        >
+          <InboxContextRail selectedItem={selectedItem} />
+        </aside>
+      </div>
 
       {/* ------------------------------------------------------------------ */}
       {/* Quick Add modal (form wiring is P3-04)                             */}

@@ -16,11 +16,16 @@
  *   < 768px  → sidebar hidden; hamburger in top bar; clicking opens a left
  *              drawer with full nav + backdrop to close.
  *   ≥ 768px  → persistent sidebar, drawer never renders.
+ *
+ * P5-04: Added sidebar footer with SmartTriageButton (OQ-6 stub) below the
+ *        nav items in both desktop sidebar and mobile drawer.
  */
 
 import { useState, createContext, useContext, useCallback } from "react";
 import { ShellNav } from "./shell-nav";
 import { ShellHeader } from "./shell-header";
+import { SmartTriageButton } from "@/components/inbox/smart-triage-button";
+import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -41,6 +46,19 @@ export const MobileNavContext = createContext<MobileNavContextValue>({
 
 export function useMobileNav(): MobileNavContextValue {
   return useContext(MobileNavContext);
+}
+
+// ---------------------------------------------------------------------------
+// SidebarFooterSlot — shared footer content for desktop sidebar + mobile drawer
+// ---------------------------------------------------------------------------
+
+function SidebarFooterSlot({ compact = false }: { compact?: boolean }) {
+  return (
+    <footer className={cn("mt-auto flex flex-col", compact ? "gap-1 px-2 py-2" : "gap-1.5 px-3 py-3")}>
+      <Separator className="mb-0.5" />
+      <SmartTriageButton compact={compact} />
+    </footer>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -72,6 +90,7 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
             </span>
           </div>
           <ShellNav />
+          <SidebarFooterSlot />
         </aside>
 
         {/* ---------------------------------------------------------------- */}
@@ -126,6 +145,7 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
               </div>
               {/* Nav items with close-on-click */}
               <ShellNav onNavClick={close} />
+              <SidebarFooterSlot />
             </aside>
           </>
         )}
