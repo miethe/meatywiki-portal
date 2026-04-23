@@ -61,9 +61,19 @@
 
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowDownLeft, ArrowUpRight, AlertCircle, Info } from "lucide-react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  AlertCircle,
+  Info,
+  Clock,
+  Link2,
+  BookOpen,
+  GitMerge,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/ui/type-badge";
+import { FidelityBadge, FreshnessBadge, VerificationBadge } from "@/components/ui/lens-badge";
 import {
   useArtifactEdges,
   type ArtifactEdgeItem,
@@ -94,6 +104,8 @@ export interface ContextRailAction {
   hasEndpoint: boolean;
   description: string;
   onClick?: () => void;
+  /** Leading icon component (lucide-react). Renders left of label. */
+  icon?: React.ComponentType<{ className?: string }>;
 }
 
 export interface ContextRailProps {
@@ -247,20 +259,47 @@ function PropertiesPanel({ artifact }: { artifact: Artifact | undefined }) {
     ? (artifact.frontmatter_jsonb["tags"] as string[])
     : [];
 
+  // Lens dimensions — from metadata if available, fallback to frontmatter fields
+  const fidelity = artifact.metadata?.fidelity
+    ?? (artifact.frontmatter_jsonb?.["lens_fidelity"] as string | null | undefined);
+  const freshness = artifact.metadata?.freshness
+    ?? (artifact.frontmatter_jsonb?.["lens_freshness"] as string | null | undefined);
+  const verificationState = artifact.metadata?.verification_state
+    ?? (artifact.frontmatter_jsonb?.["verification_state"] as string | null | undefined);
+  const hasLensBadges = Boolean(fidelity || freshness || verificationState);
+
+  // Word count — from raw_content if available; frontmatter_jsonb fallback
+  const wordCountFm = artifact.frontmatter_jsonb?.["word_count"];
+  const wordCount: number | null =
+    typeof wordCountFm === "number"
+      ? wordCountFm
+      : artifact.raw_content
+        ? artifact.raw_content.trim().split(/\s+/).filter(Boolean).length
+        : null;
+
   return (
     <dl className="flex flex-col gap-2.5 text-xs">
+      {/* Lens badges — fidelity / freshness / verification */}
+      {hasLensBadges && (
+        <div>
+          <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Lens
+          </dt>
+          <dd className="mt-1 flex flex-wrap gap-1">
+            <FidelityBadge value={fidelity as Parameters<typeof FidelityBadge>[0]["value"]} />
+            <FreshnessBadge value={freshness as Parameters<typeof FreshnessBadge>[0]["value"]} />
+            <VerificationBadge value={verificationState as Parameters<typeof VerificationBadge>[0]["value"]} />
+          </dd>
+        </div>
+      )}
+
       <div>
         <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Type
         </dt>
         <dd className="mt-0.5 capitalize">{artifact.type ?? "—"}</dd>
       </div>
-      <div>
-        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Status
-        </dt>
-        <dd className="mt-0.5 capitalize">{artifact.status ?? "—"}</dd>
-      </div>
+
       {artifact.workspace && (
         <div>
           <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -269,6 +308,14 @@ function PropertiesPanel({ artifact }: { artifact: Artifact | undefined }) {
           <dd className="mt-0.5 capitalize">{artifact.workspace}</dd>
         </div>
       )}
+
+      <div>
+        <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+          Status
+        </dt>
+        <dd className="mt-0.5 capitalize">{artifact.status ?? "—"}</dd>
+      </div>
+
       {artifact.created && (
         <div>
           <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -293,6 +340,16 @@ function PropertiesPanel({ artifact }: { artifact: Artifact | undefined }) {
           </dd>
         </div>
       )}
+
+      {wordCount !== null && (
+        <div>
+          <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Word Count
+          </dt>
+          <dd className="mt-0.5 tabular-nums">{wordCount.toLocaleString()}</dd>
+        </div>
+      )}
+
       {artifact.slug && (
         <div>
           <dt className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -404,38 +461,102 @@ function ConnectionsPanel({ artifactId }: { artifactId: string | undefined }) {
         role="status"
         className="flex flex-col items-center gap-2 rounded-md border border-dashed px-3 py-6 text-center"
       >
-        <p className="text-xs font-medium text-foreground">No connections</p>
-        <p className="text-[11px] text-muted-foreground">
-          Edges appear after compilation and reconciliation.
+        <GitMerge aria-hidden="true" className="size-5 text-muted-foreground/40" />
+        <p className="text-xs font-medium text-foreground">No connections yet</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Connections will surface as the artifact grows and is compiled.
         </p>
+      </div>
+    );
+  }
+
+  // Group by semantic category for readability.
+  // Synthesis: derived_from + contains edges (this artifact feeds/is fed by a synthesis)
+  // Evidence cited by: supports edges where this artifact is supported-by others
+  // Links: relates_to, contradicts, supersedes — general cross-references
+  const synthTypes: EdgeType[] = ["derived_from", "contains"];
+  const evidenceTypes: EdgeType[] = ["supports"];
+
+  const synthEdges = allEdges.filter((e) => synthTypes.includes(e.type));
+  const evidenceEdges = allEdges.filter((e) => evidenceTypes.includes(e.type));
+  const linkEdges = allEdges.filter(
+    (e) => !synthTypes.includes(e.type) && !evidenceTypes.includes(e.type),
+  );
+
+  // If groups produce nothing meaningful (all edges fit a single bucket), fall
+  // back to the classic incoming/outgoing split so nothing is hidden.
+  const useGrouped = synthEdges.length > 0 || evidenceEdges.length > 0;
+
+  if (!useGrouped) {
+    return (
+      <div className="flex flex-col gap-3">
+        {incoming.length > 0 && (
+          <section aria-labelledby="rail-incoming-heading">
+            <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <ArrowDownLeft aria-hidden="true" className="size-3" />
+              <span id="rail-incoming-heading">Incoming ({incoming.length})</span>
+            </div>
+            <ul role="list" aria-label="Incoming edges" className="flex flex-col gap-1">
+              {incoming.map((edge) => (
+                <CompactEdgeRow key={`in-${edge.artifact_id}-${edge.type}`} edge={edge} />
+              ))}
+            </ul>
+          </section>
+        )}
+        {outgoing.length > 0 && (
+          <section aria-labelledby="rail-outgoing-heading">
+            <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <ArrowUpRight aria-hidden="true" className="size-3" />
+              <span id="rail-outgoing-heading">Outgoing ({outgoing.length})</span>
+            </div>
+            <ul role="list" aria-label="Outgoing edges" className="flex flex-col gap-1">
+              {outgoing.map((edge) => (
+                <CompactEdgeRow key={`out-${edge.artifact_id}-${edge.type}`} edge={edge} />
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {incoming.length > 0 && (
-        <section aria-labelledby="rail-incoming-heading">
+      {synthEdges.length > 0 && (
+        <section aria-labelledby="rail-synth-heading">
           <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <ArrowDownLeft aria-hidden="true" className="size-3" />
-            <span id="rail-incoming-heading">Incoming ({incoming.length})</span>
+            <BookOpen aria-hidden="true" className="size-3" />
+            <span id="rail-synth-heading">Synthesis references ({synthEdges.length})</span>
           </div>
-          <ul role="list" aria-label="Incoming edges" className="flex flex-col gap-1">
-            {incoming.map((edge) => (
-              <CompactEdgeRow key={`in-${edge.artifact_id}-${edge.type}`} edge={edge} />
+          <ul role="list" aria-label="Synthesis reference edges" className="flex flex-col gap-1">
+            {synthEdges.map((edge) => (
+              <CompactEdgeRow key={`synth-${edge.artifact_id}-${edge.type}`} edge={edge} />
             ))}
           </ul>
         </section>
       )}
-      {outgoing.length > 0 && (
-        <section aria-labelledby="rail-outgoing-heading">
+      {evidenceEdges.length > 0 && (
+        <section aria-labelledby="rail-evidence-heading">
           <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            <ArrowUpRight aria-hidden="true" className="size-3" />
-            <span id="rail-outgoing-heading">Outgoing ({outgoing.length})</span>
+            <ArrowDownLeft aria-hidden="true" className="size-3" />
+            <span id="rail-evidence-heading">Evidence cited by ({evidenceEdges.length})</span>
           </div>
-          <ul role="list" aria-label="Outgoing edges" className="flex flex-col gap-1">
-            {outgoing.map((edge) => (
-              <CompactEdgeRow key={`out-${edge.artifact_id}-${edge.type}`} edge={edge} />
+          <ul role="list" aria-label="Evidence cited-by edges" className="flex flex-col gap-1">
+            {evidenceEdges.map((edge) => (
+              <CompactEdgeRow key={`evid-${edge.artifact_id}-${edge.type}`} edge={edge} />
+            ))}
+          </ul>
+        </section>
+      )}
+      {linkEdges.length > 0 && (
+        <section aria-labelledby="rail-links-heading">
+          <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <Link2 aria-hidden="true" className="size-3" />
+            <span id="rail-links-heading">Links ({linkEdges.length})</span>
+          </div>
+          <ul role="list" aria-label="Linked artifacts" className="flex flex-col gap-1">
+            {linkEdges.map((edge) => (
+              <CompactEdgeRow key={`link-${edge.artifact_id}-${edge.type}`} edge={edge} />
             ))}
           </ul>
         </section>
@@ -445,18 +566,104 @@ function ConnectionsPanel({ artifactId }: { artifactId: string | undefined }) {
 }
 
 // ---------------------------------------------------------------------------
-// Panel: History (generic variant) — deferred (no lineage timeline endpoint)
+// Panel: History (generic variant) — empty state (OQ-P3-03-C)
+// Activity endpoint not yet shipped. Render graceful placeholder.
+// P4-04 wires the inline body timeline; this panel shows the rail view.
 // ---------------------------------------------------------------------------
 
-function HistoryPanel() {
+/**
+ * Placeholder timeline entry shape — used only if activity data arrives later.
+ * Backend: GET /api/artifacts/:id/activity (not yet shipped as of v1.5).
+ */
+interface ActivityEntry {
+  id: string;
+  actor: string;
+  action: string;
+  /** ISO 8601 string */
+  timestamp: string;
+  /** Optional short summary of what changed */
+  summary?: string | null;
+}
+
+function RelativeTime({ iso }: { iso: string }) {
+  const ms = Date.now() - new Date(iso).getTime();
+  const secs = Math.floor(ms / 1000);
+  if (secs < 60) return <span>{secs}s ago</span>;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return <span>{mins}m ago</span>;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return <span>{hours}h ago</span>;
+  const days = Math.floor(hours / 24);
+  return <span>{days}d ago</span>;
+}
+
+function ActivityTimelineEntry({ entry }: { entry: ActivityEntry }) {
+  const initials = entry.actor
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
-    <ComingSoonPanel
-      label="Lineage History"
-      reason={
-        "GET /api/artifacts/:id/lineage (runs joined timeline) is not yet shipped. " +
-        "Raw edges are available in the Connections tab."
-      }
-    />
+    <li className="flex items-start gap-2.5">
+      {/* Avatar */}
+      <span
+        aria-hidden="true"
+        className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-semibold uppercase tracking-wide text-muted-foreground"
+      >
+        {initials}
+      </span>
+      <div className="flex flex-col gap-0.5">
+        <p className="text-[11px] leading-snug text-foreground">
+          <span className="font-medium">{entry.actor}</span>{" "}
+          <span className="text-muted-foreground">{entry.action}</span>
+        </p>
+        {entry.summary && (
+          <p className="text-[10px] text-muted-foreground/80">{entry.summary}</p>
+        )}
+        <time
+          dateTime={entry.timestamp}
+          className="text-[10px] text-muted-foreground/60"
+        >
+          <RelativeTime iso={entry.timestamp} />
+        </time>
+      </div>
+    </li>
+  );
+}
+
+function HistoryPanel({ entries }: { entries?: ActivityEntry[] | null }) {
+  // Activity endpoint (GET /api/artifacts/:id/activity) is not yet shipped.
+  // OQ-P3-03-C: render graceful empty state; do NOT mock fixture data.
+  if (!entries || entries.length === 0) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center gap-2.5 rounded-md border border-dashed px-3 py-8 text-center"
+      >
+        <Clock aria-hidden="true" className="size-5 text-muted-foreground/40" />
+        <div>
+          <p className="text-xs font-medium text-foreground">No activity yet</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+            Revisions, promotions, and system events will appear here once the
+            activity endpoint ships.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ul
+      role="list"
+      aria-label="Activity history"
+      className="flex flex-col gap-3"
+    >
+      {entries.map((entry) => (
+        <ActivityTimelineEntry key={entry.id} entry={entry} />
+      ))}
+    </ul>
   );
 }
 
@@ -678,7 +885,9 @@ const GENERIC_TABS: ContextRailTab[] = [
   {
     id: "history",
     label: "History",
-    renderContent: () => <HistoryPanel />,
+    // Activity entries are not yet fetched (endpoint not shipped).
+    // OQ-P3-03-C: pass null so HistoryPanel renders the graceful empty state.
+    renderContent: () => <HistoryPanel entries={null} />,
   },
 ];
 
@@ -765,23 +974,31 @@ export function ContextRail({
           aria-label="Artifact actions"
           className="flex flex-col gap-1.5"
         >
-          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick }) => (
+          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick, icon: Icon }) => (
             <button
               key={label}
               type="button"
               aria-label={btnAriaLabel}
               aria-disabled={!onClick ? "true" : undefined}
               title={description}
-              onClick={onClick}
+              onClick={
+                onClick
+                  ? onClick
+                  : () => {
+                      console.debug(`[ContextRail] Action stub: "${label}" — ${description}`);
+                    }
+              }
               className={cn(
-                "inline-flex h-8 w-full items-center justify-center rounded-md border px-3 text-xs font-medium",
+                // shadcn Button variant="outline" pattern
+                "inline-flex h-8 w-full items-center justify-start gap-2 rounded-md border bg-background px-3 text-xs font-medium",
                 "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 onClick
                   ? "hover:bg-accent hover:text-accent-foreground"
-                  : "cursor-not-allowed text-muted-foreground opacity-60",
+                  : "cursor-default text-muted-foreground hover:bg-muted/50",
               )}
             >
-              {label}
+              {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
+              <span className="truncate">{label}</span>
             </button>
           ))}
         </div>
@@ -843,6 +1060,8 @@ export function ContextRail({
 // ---------------------------------------------------------------------------
 // Named panel exports — for surfaces that want to compose panels individually
 // ---------------------------------------------------------------------------
+
+export type { ActivityEntry };
 
 export {
   PropertiesPanel,

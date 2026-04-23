@@ -1,7 +1,23 @@
 import type { Metadata, Viewport } from "next";
+import { Fraunces } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { PwaProviders } from "@/components/pwa/pwa-providers";
+
+/**
+ * Fraunces — variable display serif for the Portal brand lockup.
+ * Uses font-display: swap to avoid FOIT; falls back to the
+ * --portal-brand-display serif stack if the network fetch fails.
+ * opsz axis: optical-size range (9–144pt), enables crisp text at
+ * both lockup sizes (9px tagline, 15px heading).
+ * Traces P1-03 (portal-v1.5-stitch-reskin).
+ */
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-fraunces",
+  axes: ["opsz"],
+});
 
 export const metadata: Metadata = {
   title: "MeatyWiki Portal",
@@ -47,7 +63,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={fraunces.variable}>
       <body>
         <QueryProvider>{children}</QueryProvider>
         {/*

@@ -3,6 +3,9 @@
 /**
  * ShellNav — sidebar navigation for the authenticated shell.
  *
+ * Updated in P6-04: added "Home" entry (href=/home) above Inbox per P6-01
+ *   bookmarkable route decision (/inbox remains default landing).
+ *
  * Updated in P3-10: accepts optional onNavClick callback so mobile drawer
  * can close when a nav link is activated.
  *
@@ -10,7 +13,7 @@
  * Stitch reference: "Unified Shell — Standard Archival" sidebar.
  *
  * Navigation sections:
- *   - Primary workspace links (Inbox, Library, Research)
+ *   - Primary workspace links (Home, Inbox, Library, Research)
  *   - Workflow OS (Workflows)
  *   - Admin (Settings)
  *
@@ -37,6 +40,14 @@ interface NavSection {
 }
 
 // Icon primitives (inline SVG — no icon lib dependency)
+function HomeIcon() {
+  return (
+    <svg aria-hidden="true" className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+    </svg>
+  );
+}
+
 function InboxIcon() {
   return (
     <svg aria-hidden="true" className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -94,10 +105,12 @@ function ProjectsIcon() {
     </svg>
   );
 }
+
 const NAV_SECTIONS: NavSection[] = [
   {
     title: "Workspace",
     items: [
+      { label: "Home", href: "/home", icon: <HomeIcon /> },
       { label: "Inbox", href: "/inbox", icon: <InboxIcon /> },
       { label: "Library", href: "/library", icon: <LibraryIcon /> },
       { label: "Research", href: "/research", icon: <ResearchIcon /> },

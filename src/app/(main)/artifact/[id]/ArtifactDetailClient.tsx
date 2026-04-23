@@ -15,6 +15,10 @@
  *     in v1 until POST handlers are wired to UI state); Compile Now + Lint Scope
  *     are engine triggers (deferred to P3-07); all show "not yet wired" tooltip
  *   - HandoffChain in sidebar using artifact_edges
+ *
+ * P4-04 additions:
+ *   - HandoffChainRibbon: horizontal stage pill row between badge row and tabs
+ *   - ActivityTimeline: inline activity feed below body/rail grid
  *   - Metadata sidebar: id (copy), created_at, updated_at, status, tags
  *   - Responsive: tabs natural flow on mobile, sidebar hidden on small screens
  *
@@ -38,6 +42,13 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import {
+  StickyNote,
+  Archive,
+  Link2,
+  CheckSquare,
+  FileText,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { TypeBadge } from "@/components/ui/type-badge";
@@ -49,6 +60,10 @@ import { DerivativesList } from "@/components/workflow/derivatives-list";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
 import { ContextRail, type ContextRailAction } from "@/components/layout/ContextRail";
+import { ArtifactTitleBlock } from "@/components/artifact/artifact-title-block";
+import { ArtifactBody } from "@/components/artifact/artifact-body";
+import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
+import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -287,139 +302,22 @@ function SourceReader({ content }: { content: string | null | undefined }) {
 }
 
 // ---------------------------------------------------------------------------
-// Knowledge Reader — compiled HTML output
+// Knowledge Reader — compiled HTML / markdown output (P4-02)
+// Delegates to ArtifactBody for editorial prose + callout rendering.
 // ---------------------------------------------------------------------------
 
 function KnowledgeReader({ content }: { content: string | null | undefined }) {
-  if (!content) {
-    return (
-      <div
-        role="status"
-        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-12 text-center"
-      >
-        <p className="text-sm text-muted-foreground">No compiled content yet.</p>
-        <p className="text-xs text-muted-foreground/60">
-          Run Compile to generate the knowledge reader output.
-        </p>
-      </div>
-    );
-  }
-
-  // Detect if content looks like HTML (starts with <) or plain text/markdown.
-  // If HTML, render with dangerouslySetInnerHTML (Portal is local-only auth).
-  // If plain text, fall back to pre block.
-  const isHtml = content.trimStart().startsWith("<");
-
-  if (isHtml) {
-    return (
-      <div
-        className={cn(
-          "rounded-md border bg-card p-6",
-          "[&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-bold",
-          "[&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold",
-          "[&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-base [&_h3]:font-semibold",
-          "[&_p]:mb-3 [&_p]:text-sm [&_p]:leading-relaxed",
-          "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-sm",
-          "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:text-sm",
-          "[&_li]:mb-1",
-          "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
-          "[&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:text-xs",
-          "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground",
-          "[&_a]:text-primary [&_a]:underline-offset-2 [&_a]:hover:underline",
-          "[&_hr]:border-border",
-          "[&_table]:w-full [&_table]:text-sm",
-          "[&_th]:border-b [&_th]:pb-2 [&_th]:text-left [&_th]:font-semibold",
-          "[&_td]:border-b [&_td]:border-border/50 [&_td]:py-1.5",
-        )}
-        // Portal is local-only with bearer-token auth — HTML is from the engine.
-        // Add DOMPurify here before enabling PORTAL_ALLOW_NETWORK=1.
-        dangerouslySetInnerHTML={{ __html: content }}
-      />
-    );
-  }
-
-  // Plain text / markdown fallback
-  return (
-    <div className="overflow-auto rounded-md border bg-muted/30">
-      <pre className="whitespace-pre-wrap break-words p-4 font-mono text-sm leading-relaxed text-foreground/80">
-        {content}
-      </pre>
-    </div>
-  );
+  return <ArtifactBody content={content} variant="knowledge" />;
 }
 
 // ---------------------------------------------------------------------------
-// Draft Reader — synthesis/draft content
+// Draft Reader — synthesis/draft content (P4-02)
+// Delegates to ArtifactBody for editorial prose + callout rendering.
+// DP3-02 #7: Draft uses same typography ruleset as Knowledge to avoid drift.
 // ---------------------------------------------------------------------------
 
 function DraftReader({ content }: { content: string | null | undefined }) {
-  if (!content) {
-    return (
-      <div
-        role="status"
-        className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-12 text-center"
-      >
-        <svg
-          aria-hidden="true"
-          className="size-8 text-muted-foreground/40"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={1.25}
-            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-          />
-        </svg>
-        <div>
-          <p className="text-sm font-medium text-foreground">No draft content</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Draft content appears here for synthesis and staged artifacts.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const isHtml = content.trimStart().startsWith("<");
-
-  // DP3-02 #7: Draft prose wrapper uses same full typography ruleset as
-  // KnowledgeReader to avoid density drift between readers.
-  if (isHtml) {
-    return (
-      <div
-        className={cn(
-          "rounded-md border bg-card p-6",
-          "[&_h1]:mb-4 [&_h1]:text-2xl [&_h1]:font-bold",
-          "[&_h2]:mb-3 [&_h2]:mt-6 [&_h2]:text-xl [&_h2]:font-semibold",
-          "[&_h3]:mb-2 [&_h3]:mt-4 [&_h3]:text-base [&_h3]:font-semibold",
-          "[&_p]:mb-3 [&_p]:text-sm [&_p]:leading-relaxed",
-          "[&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:text-sm",
-          "[&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:text-sm",
-          "[&_li]:mb-1",
-          "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-xs",
-          "[&_pre]:overflow-auto [&_pre]:rounded-md [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:text-xs",
-          "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_blockquote]:text-muted-foreground",
-          "[&_a]:text-primary [&_a]:underline-offset-2 [&_a]:hover:underline",
-          "[&_hr]:border-border",
-          "[&_table]:w-full [&_table]:text-sm",
-          "[&_th]:border-b [&_th]:pb-2 [&_th]:text-left [&_th]:font-semibold",
-          "[&_td]:border-b [&_td]:border-border/50 [&_td]:py-1.5",
-        )}
-        dangerouslySetInnerHTML={{ __html: content }}
-      />
-    );
-  }
-
-  return (
-    <div className="overflow-auto rounded-md border bg-muted/30">
-      <pre className="whitespace-pre-wrap break-words p-4 font-mono text-sm leading-relaxed text-foreground/80">
-        {content}
-      </pre>
-    </div>
-  );
+  return <ArtifactBody content={content} variant="draft" />;
 }
 
 // WorkflowOSPlaceholder removed — replaced by WorkflowOSTab (P4-10).
@@ -430,39 +328,47 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 // ---------------------------------------------------------------------------
 
 /**
- * Rail-owned action buttons. All disabled in v1 pending endpoint wiring.
- * Rendered by ContextRail above the tab bar (action-column pattern per ADR §1).
+ * Rail-owned action buttons (P4-03 reskin).
+ * - Verb-first labels per Stitch spec §4.2
+ * - shadcn outline button pattern with leading lucide icon
+ * - Buttons without onClick stubs log console.debug (no-op per P4-03 scope)
+ * - No new backend flows invented here; existing endpoint stubs preserved
  */
 const RAIL_ACTIONS: ContextRailAction[] = [
   {
-    label: "Promote",
-    ariaLabel: "Promote artifact lifecycle stage",
+    label: "Add Note",
+    ariaLabel: "Add a note to this artifact",
+    hasEndpoint: false,
+    description: "Note creation — deferred to v1.5 write path",
+    icon: StickyNote,
+  },
+  {
+    label: "Promote to Archive",
+    ariaLabel: "Promote artifact to archive lifecycle stage",
     hasEndpoint: true,
     description: "POST /api/artifacts/:id/promote — wired in a future P3 task",
+    icon: Archive,
   },
   {
-    label: "Link",
-    ariaLabel: "Link artifact to another artifact",
+    label: "Link Related",
+    ariaLabel: "Link this artifact to a related artifact",
     hasEndpoint: true,
     description: "POST /api/artifacts/:id/link — wired in a future P3 task",
+    icon: Link2,
   },
   {
-    label: "Review",
-    ariaLabel: "Add artifact to review queue",
+    label: "Request Review",
+    ariaLabel: "Add this artifact to the review queue",
     hasEndpoint: true,
     description: "POST /api/artifacts/:id/review — wired in a future P3 task",
+    icon: CheckSquare,
   },
   {
     label: "Compile Now",
-    ariaLabel: "Trigger compilation workflow",
+    ariaLabel: "Trigger compilation workflow for this artifact",
     hasEndpoint: false,
     description: "Engine trigger — wired in P3-07",
-  },
-  {
-    label: "Lint Scope",
-    ariaLabel: "Trigger lint workflow on this artifact scope",
-    hasEndpoint: false,
-    description: "Engine trigger — wired in P3-07",
+    icon: FileText,
   },
 ];
 
@@ -525,30 +431,17 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   return (
     <div className="flex flex-col gap-4">
       {/* ------------------------------------------------------------------ */}
-      {/* Breadcrumbs                                                         */}
+      {/* Title block — P4-01: breadcrumbs + eyebrow tags + display title   */}
+      {/* + metadata strip. ArtifactTitleBlock owns all four sub-sections.  */}
       {/* ------------------------------------------------------------------ */}
-      <nav
-        aria-label="Breadcrumb"
-        className="flex items-center gap-1.5 text-sm text-muted-foreground"
-      >
-        <Link
-          href="/library"
-          className="hover:text-foreground rounded transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          Library
-        </Link>
-        <span aria-hidden="true">/</span>
-        <span className="max-w-[240px] truncate text-foreground">
-          {artifact.title}
-        </span>
-      </nav>
+      <ArtifactTitleBlock artifact={artifact} />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Artifact header                                                     */}
+      {/* Lens badges + secondary metadata (type, workspace, freshness)      */}
+      {/* DP3-02: badge row is tab-agnostic and does not re-mount on switch  */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex flex-col gap-2">
-        {/* Lens Badge Set — FULL variant, above the title per manifest §3.4 */}
-        {/* DP3-02: badge row is tab-agnostic and does not re-mount on tab switch */}
+        {/* Lens Badge Set — FULL variant, above the tab bar per manifest §3.4 */}
         <LensBadgeSet artifact={artifact} variant="detail" />
 
         {/* Type / workspace / indicator badge row */}
@@ -563,13 +456,18 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           {/* Contradiction flag from edges endpoint (P4-04) */}
           <ContradictionFlag artifactId={artifact.id} />
         </div>
-
-        <h1 className="text-2xl font-semibold tracking-tight">{artifact.title}</h1>
         {/*
          * Action buttons migrated to ContextRail action column (ADR-DPI-002 §1).
          * Previously rendered here in the header row; now owned by the rail.
          */}
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Handoff Chain ribbon — P4-04                                       */}
+      {/* Horizontal stage pills: ingest→classify→extract→compile→file→lint  */}
+      {/* Stages inferred from artifact lifecycle state (no new endpoint).   */}
+      {/* ------------------------------------------------------------------ */}
+      <HandoffChainRibbon artifact={artifact} />
 
       {/* ------------------------------------------------------------------ */}
       {/* Tab bar                                                             */}
@@ -682,6 +580,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           />
         </aside>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Activity Timeline — P4-04                                          */}
+      {/* Inline activity feed at body bottom (full-width below reader+rail) */}
+      {/* Falls back to mock fixture data when endpoint absent (per P4-04    */}
+      {/* plan Notes). HistoryPanel in rail keeps its graceful empty state.  */}
+      {/* ------------------------------------------------------------------ */}
+      <ActivityTimeline artifactId={artifact.id} />
     </div>
   );
 }

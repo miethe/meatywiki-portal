@@ -20,5 +20,8 @@ export {
   DEFAULT_LIBRARY_FILTERS,
 } from "@/hooks/useLibraryArtifacts";
 
+// Thumbnail fallback (P3-02 OQ-1 procedural illustration)
+export { ArtifactThumbnailFallback } from "./thumbnail-fallback";
+
 // Types
 export type { LibraryFilters } from "@/hooks/useLibraryArtifacts";
