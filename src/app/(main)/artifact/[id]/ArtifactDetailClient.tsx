@@ -61,7 +61,14 @@ import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
 import { ContextRail, type ContextRailAction } from "@/components/layout/ContextRail";
 import { ArtifactTitleBlock } from "@/components/artifact/artifact-title-block";
-import { ArtifactBody } from "@/components/artifact/artifact-body";
+import dynamic from "next/dynamic";
+// ArtifactBody uses isomorphic-dompurify which loads jsdom on the server;
+// ssr: false prevents the ENOENT crash on jsdom's browser/default-stylesheet.css
+// when Next.js pre-renders the client component shell. (P6-05)
+const ArtifactBody = dynamic(
+  () => import("@/components/artifact/artifact-body").then((m) => ({ default: m.ArtifactBody })),
+  { ssr: false },
+);
 import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 
