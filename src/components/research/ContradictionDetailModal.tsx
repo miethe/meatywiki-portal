@@ -132,7 +132,7 @@ function ArtifactPane({ artifact, side }: ArtifactPaneProps) {
 export interface ContradictionDetailModalProps {
   pair: ContradictionPair | null;
   open: boolean;
-  onClose: () => void;
+  onCloseAction: () => void;
 }
 
 /**
@@ -145,10 +145,10 @@ export interface ContradictionDetailModalProps {
 export function ContradictionDetailModal({
   pair,
   open,
-  onClose,
+  onCloseAction,
 }: ContradictionDetailModalProps) {
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o) onCloseAction(); }}>
       <DialogContent
         className="mx-4 max-w-3xl"
         aria-describedby="contradiction-modal-description"
@@ -185,7 +185,7 @@ export function ContradictionDetailModal({
                 {/* Close button */}
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={onCloseAction}
                   aria-label="Close contradiction detail"
                   className={cn(
                     "shrink-0 rounded-md p-1 text-muted-foreground",

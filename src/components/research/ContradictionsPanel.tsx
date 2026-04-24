@@ -335,7 +335,7 @@ export function ContradictionsPanel({ className }: ContradictionsPanelProps) {
       <ContradictionDetailModal
         pair={selectedPair}
         open={modalOpen}
-        onClose={handleModalClose}
+        onCloseAction={handleModalClose}
       />
     </>
   );
