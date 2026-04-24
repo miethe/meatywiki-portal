@@ -1087,17 +1087,13 @@ function LibraryPageInner() {
   // -------------------------------------------------------------------------
   // P3-03: Selected artifact state
   //
-  // Design decision: click-to-select.
-  //   - Hover selection is unreliable on touch devices and creates noise when
-  //     scrolling. Click is deterministic and explicit.
-  //   - Navigation preserved: cmd/ctrl+click (or middle-click) on the
-  //     underlying ArtifactCard <Link> still navigates per browser native
-  //     behaviour (metaKey/ctrlKey passthrough in the handler).
-  //   - Plain left-click on the <li> wrapper intercepts the Link navigation
-  //     via e.preventDefault() and sets selection instead.
-  //   - An explicit "Open artifact" link inside the Properties rail section
-  //     provides a keyboard/touch-accessible navigation path.
-  //   - Clicking the already-selected card deselects it (toggle behaviour).
+  // Design decision: click-to-navigate + select.
+  //   - Plain left-click navigates to /artifact/:id via the card's stretch
+  //     <Link>. Selection state is set as a side-effect so the ContextRail
+  //     updates before the page transition completes.
+  //   - Cmd/ctrl+click opens the artifact in a new tab (browser native).
+  //   - Clicking the already-selected card deselects it without blocking
+  //     navigation.
   //   - Selection clears automatically when lens or filters change.
   // -------------------------------------------------------------------------
   const [selectedArtifact, setSelectedArtifact] = useState<ArtifactCardType | null>(null);
@@ -1105,11 +1101,9 @@ function LibraryPageInner() {
   const { isOpen: railIsOpen, close: closeRail } = useContextRailToggle();
 
   const handleCardClick = useCallback(
-    (artifact: ArtifactCardType, e: React.MouseEvent<HTMLLIElement>) => {
-      // Allow cmd/ctrl/meta click to pass through to the underlying <Link>
-      // so the user can open the artifact detail in a new tab.
-      if (e.metaKey || e.ctrlKey) return;
-      e.preventDefault();
+    (artifact: ArtifactCardType, _e: React.MouseEvent<HTMLLIElement>) => {
+      // Update selection state as a side-effect; do NOT call preventDefault so
+      // the card's stretch <Link href="/artifact/:id"> navigates normally.
       setSelectedArtifact((prev) =>
         prev?.id === artifact.id ? null : artifact,
       );
