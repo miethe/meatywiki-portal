@@ -1,20 +1,18 @@
 "use client";
 
 /**
- * Research Home — editorial layout scaffold with skeleton placeholders.
- *
- * All content sections render skeleton/empty states. Backend APIs are
- * deferred to v1.6 per OQ-2 resolution. No API calls are made here.
+ * Research Home — editorial layout with live panels.
  *
  * Layout structure:
- *   - Empty state banner (top, always-on until v1.6)
+ *   - Empty state banner (top, always-on until v1.6 APIs ship broadly)
  *   - Page heading + workspace selector dropdown (skeleton)
  *   - Two-column area:
  *       Left/main:
  *         - Priority Topics 2×2 grid (skeletons + Add New Entity slot)
  *         - New Evidence column (skeleton rows with timestamps)
- *         - Contradictions callout (rose-tinted, skeleton count)
+ *         - ContradictionsPanel (P7-02 — LIVE, wired to backend)
  *         - Synthesis Narrative (skeleton pull-quote + 3-col breakdown)
+ *         - Stale Artifacts panel (P7-01 — LIVE, wired to backend)
  *       Right ContextRail (xl+):
  *         - Workspace Health gauge (skeleton circle)
  *         - Recent Syntheses section (skeleton rows)
@@ -22,8 +20,12 @@
  *
  * P6-03: Research Home editorial scaffold.
  * P6-04: Fixed rail breakpoint to xl (1280px) to match home/library pattern.
- * OQ-2 resolution: APIs deferred to v1.6 (Topics, Contradictions, Synthesis,
- *                  Workspace Health).
+ * P7-01: Stale Artifacts panel wired to GET /api/artifacts/research/freshness-status.
+ * P7-02: ContradictionsPanel wired to GET /api/artifacts/research/contradictions.
+ *        Replaces ContradictionsCallout skeleton placeholder.
+ *
+ * OQ-2 resolution: APIs deferred to v1.6 (Topics, Synthesis, Workspace Health)
+ *   — Freshness (P7-01) and Contradictions (P7-02) endpoints ship in v1.6.
  *
  * Stitch reference: "Research Home" (ID: 0cf6fb7b27d9459e8b5bebfea66915c5)
  * Design spec §4.3.
@@ -35,9 +37,10 @@ import { ContextRail } from "@/components/layout/ContextRail";
 import { ResearchWorkspaceEmpty } from "@/components/research/ResearchWorkspaceEmpty";
 import { PriorityTopicsGrid } from "@/components/research/PriorityTopicsGrid";
 import { NewEvidenceColumn } from "@/components/research/NewEvidenceColumn";
-import { ContradictionsCallout } from "@/components/research/ContradictionsCallout";
+import { ContradictionsPanel } from "@/components/research/ContradictionsPanel";
 import { SynthesisNarrative } from "@/components/research/SynthesisNarrative";
 import { WorkspaceHealthGauge } from "@/components/research/WorkspaceHealthGauge";
+import { StaleArtifactsPanel } from "@/components/research/StaleArtifactsPanel";
 
 // ---------------------------------------------------------------------------
 // Shimmer primitive (inlined for ContextRail skeleton sections)
@@ -227,12 +230,10 @@ export default function ResearchHomePage() {
              */}
             <NewEvidenceColumn />
 
-            {/* Contradictions callout — rose-tinted skeleton */}
-            {/*
-             * TODO v1.6: wire GET /api/research/evidence-pulse/contradictions.
-             * ContradictionsCallout renders rose-tinted card with count skeleton.
-             */}
-            <ContradictionsCallout />
+            {/* Contradictions panel — P7-02: LIVE (wired to backend)          */}
+            {/* GET /api/artifacts/research/contradictions                      */}
+            {/* Replaces ContradictionsCallout skeleton placeholder (P6-03).   */}
+            <ContradictionsPanel />
           </div>
 
           {/* Synthesis Narrative — skeleton pull-quote + 3-col breakdown */}
@@ -241,6 +242,14 @@ export default function ResearchHomePage() {
            * SynthesisNarrative renders italic skeleton pull-quote and 3-col grid.
            */}
           <SynthesisNarrative />
+
+          {/* ------------------------------------------------------------ */}
+          {/* Stale Artifacts panel — P7-01 (live, wired to backend)        */}
+          {/* GET /api/artifacts/research/freshness-status                  */}
+          {/* Freshness score bar (0–100), last synthesis date, source      */}
+          {/* artifact count, configurable threshold, cursor pagination.    */}
+          {/* ------------------------------------------------------------ */}
+          <StaleArtifactsPanel />
         </div>
 
         {/* ---------------------------------------------------------------- */}
