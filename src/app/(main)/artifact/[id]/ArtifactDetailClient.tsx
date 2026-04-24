@@ -6,11 +6,13 @@
  * Implements P3-06 scope:
  *   - GET /api/artifacts/:id via useArtifact (TanStack Query)
  *   - Loading skeleton, 404 state, generic error state
- *   - Tabs: Source | Knowledge | Draft | Workflow OS
+ *   - Tabs: Source | Knowledge | Draft | Workflow OS | Backlinks
  *   - Source Reader: raw markdown in <pre><code> with monospace styling
  *   - Knowledge Reader: compiled content (compiled_content field)
  *   - Draft Reader: synthesis/draft content or empty state if absent
- *   - Workflow OS tab: "Coming in Phase 4" placeholder
+ *   - Workflow OS tab: WorkflowOSTab (P4-10)
+ *   - Backlinks tab: server-side GET /api/artifacts/:id/backlinks with
+ *     client-side edge-walk fallback (P7-04)
  *   - Action buttons: Promote, Link, Review (have backend endpoints — disabled
  *     in v1 until POST handlers are wired to UI state); Compile Now + Lint Scope
  *     are engine triggers (deferred to P3-07); all show "not yet wired" tooltip
@@ -21,6 +23,11 @@
  *   - ActivityTimeline: inline activity feed below body/rail grid
  *   - Metadata sidebar: id (copy), created_at, updated_at, status, tags
  *   - Responsive: tabs natural flow on mobile, sidebar hidden on small screens
+ *
+ * P7-04 additions:
+ *   - Backlinks tab: useArtifactBacklinks hook with server-side primary path
+ *     and transparent client-side fallback on 404/network error.
+ *   - Optional edge_type filter dropdown in Backlinks tab.
  *
  * Rendering decisions:
  *   - raw_content: displayed in <pre><code> block — no dangerouslySetInnerHTML.
@@ -48,6 +55,9 @@ import {
   Link2,
   CheckSquare,
   FileText,
+  ArrowDownLeft,
+  ArrowUpRight,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
@@ -61,6 +71,12 @@ import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
 import { ContextRail, type ContextRailAction } from "@/components/layout/ContextRail";
 import { ArtifactTitleBlock } from "@/components/artifact/artifact-title-block";
+import {
+  useArtifactBacklinks,
+  KNOWN_EDGE_TYPES,
+  type BacklinkItem,
+} from "@/hooks/useArtifactBacklinks";
+import type { EdgeType } from "@/hooks/useArtifactEdges";
 import dynamic from "next/dynamic";
 // ArtifactBody uses isomorphic-dompurify which loads jsdom on the server;
 // ssr: false prevents the ENOENT crash on jsdom's browser/default-stylesheet.css
@@ -91,10 +107,48 @@ function isSourceType(artifactType: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Edge type label map (shared with backlinks UI)
+// ---------------------------------------------------------------------------
+
+const EDGE_TYPE_LABELS: Record<string, string> = {
+  derived_from: "Derived from",
+  supports: "Supports",
+  relates_to: "Relates to",
+  supersedes: "Supersedes",
+  contradicts: "Contradicts",
+  contains: "Contains",
+};
+
+const EDGE_TYPE_COLOURS: Record<string, string> = {
+  derived_from: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
+  supports: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  relates_to: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  supersedes: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
+  contradicts: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300",
+  contains: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+};
+
+function EdgeTypeBadge({ edgeType }: { edgeType: EdgeType }) {
+  const label = EDGE_TYPE_LABELS[edgeType] ?? edgeType;
+  const colour = EDGE_TYPE_COLOURS[edgeType] ?? "bg-muted text-muted-foreground";
+  return (
+    <span
+      aria-label={`Edge type: ${label}`}
+      className={cn(
+        "inline-flex items-center rounded-sm px-1.5 py-0.5 text-[11px] font-medium leading-tight",
+        colour,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab definition
 // ---------------------------------------------------------------------------
 
-const BASE_TABS = ["Source", "Knowledge", "Draft", "Workflow OS"] as const;
+const BASE_TABS = ["Source", "Knowledge", "Draft", "Workflow OS", "Backlinks"] as const;
 type TabId = (typeof BASE_TABS)[number] | "Derivatives";
 
 function tabPanelId(tab: TabId) {
@@ -167,6 +221,283 @@ function DerivativesPanel({ artifactId }: { artifactId: string }) {
       derivatives={derivatives}
       totalCount={derivatives.length}
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Backlinks panel (P7-04)
+// Uses useArtifactBacklinks — server-side primary path with client-side fallback.
+// ---------------------------------------------------------------------------
+
+/**
+ * Backlink row — mirrors EdgeRow from BacklinksPanel but uses BacklinkItem type.
+ */
+function BacklinkRow({ item }: { item: BacklinkItem }) {
+  const hasTitle = item.title !== null && item.title !== undefined;
+  return (
+    <li className="flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2.5 text-sm transition-shadow hover:shadow-sm">
+      {item.subtype && <TypeBadge type={item.subtype} />}
+      <EdgeTypeBadge edgeType={item.type} />
+      {hasTitle ? (
+        <Link
+          href={`/artifact/${item.artifact_id}`}
+          className={cn(
+            "min-w-0 flex-1 truncate font-medium text-foreground leading-snug",
+            "hover:underline underline-offset-2",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+          )}
+        >
+          {item.title}
+        </Link>
+      ) : (
+        <span className="min-w-0 flex-1 truncate">
+          <Link
+            href={`/artifact/${item.artifact_id}`}
+            className={cn(
+              "font-mono text-[12px] text-foreground/80",
+              "hover:underline underline-offset-2",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+            )}
+          >
+            {item.artifact_id}
+          </Link>
+          <span className="ml-1.5 text-[11px] text-muted-foreground">(not indexed)</span>
+        </span>
+      )}
+    </li>
+  );
+}
+
+/**
+ * BacklinksSection — a labelled list of items with a direction icon.
+ */
+function BacklinksSection({
+  label,
+  items,
+  icon,
+  emptyHint,
+  listAriaLabel,
+}: {
+  label: string;
+  items: BacklinkItem[];
+  icon: React.ReactNode;
+  emptyHint: string;
+  listAriaLabel: string;
+}) {
+  const headingId = `backlinks-section-${label.toLowerCase().replace(/\s+/g, "-")}`;
+  return (
+    <section aria-labelledby={headingId}>
+      <div className="mb-2 flex items-center gap-1.5">
+        <span aria-hidden="true" className="text-muted-foreground">
+          {icon}
+        </span>
+        <h3 id={headingId} className="text-sm font-semibold text-foreground">
+          {label}
+          <span className="ml-1.5 text-xs font-normal text-muted-foreground">
+            ({items.length})
+          </span>
+        </h3>
+      </div>
+      {items.length === 0 ? (
+        <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+          {emptyHint}
+        </p>
+      ) : (
+        <ul role="list" aria-label={listAriaLabel} className="flex flex-col gap-1.5">
+          {items.map((item) => (
+            <BacklinkRow key={`${item.artifact_id}-${item.type}`} item={item} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
+ * BacklinksTab — rendered inside the Backlinks tab panel.
+ *
+ * Renders an edge_type filter dropdown + incoming/outgoing sections.
+ * Primary data source: GET /api/artifacts/:id/backlinks.
+ * Fallback: client-side edge-walk via GET /api/artifacts/:id/edges.
+ */
+function BacklinksTab({ artifactId }: { artifactId: string }) {
+  const [edgeType, setEdgeType] = useState<EdgeType | "">("");
+
+  const {
+    incoming,
+    outgoing,
+    items,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    isFallback,
+  } = useArtifactBacklinks(artifactId, edgeType || null);
+
+  // Loading skeleton
+  if (isLoading) {
+    return (
+      <div aria-busy="true" aria-label="Backlinks loading" className="flex flex-col gap-6">
+        {[0, 1].map((section) => (
+          <div key={section} className="flex flex-col gap-2">
+            <div className="flex animate-pulse items-center gap-1.5">
+              <div className="h-4 w-4 rounded bg-muted" />
+              <div className="h-4 w-24 rounded bg-muted" />
+            </div>
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                aria-hidden="true"
+                className="flex animate-pulse items-center gap-2 rounded-md border bg-card px-3 py-2.5"
+              >
+                <div className="h-4 w-14 rounded-sm bg-muted" />
+                <div className="h-4 w-16 rounded-sm bg-muted" />
+                <div className="h-4 w-40 rounded bg-muted" />
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Error state — only shown when fallback also failed
+  if (isError && error) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-center justify-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 py-12 text-center"
+      >
+        <p className="text-sm font-medium text-foreground">Failed to load backlinks</p>
+        <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+        <button
+          type="button"
+          onClick={refetch}
+          className={cn(
+            "inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive",
+            "transition-colors hover:bg-destructive/10",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  // Determine whether to show split view (incoming/outgoing) or flat list.
+  // Primary path returns a flat list (isFallback=false); fallback has split.
+  const hasSplit = isFallback;
+  const hasAnyItems = hasSplit
+    ? incoming.length > 0 || outgoing.length > 0
+    : items.length > 0;
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* ------------------------------------------------------------------ */}
+      {/* Edge type filter dropdown                                           */}
+      {/* ------------------------------------------------------------------ */}
+      <div className="flex items-center gap-2">
+        <label
+          htmlFor="backlinks-edge-type-filter"
+          className="text-xs font-medium text-muted-foreground"
+        >
+          Filter by type
+        </label>
+        <div className="relative">
+          <select
+            id="backlinks-edge-type-filter"
+            value={edgeType}
+            onChange={(e) => setEdgeType(e.target.value as EdgeType | "")}
+            aria-label="Filter backlinks by edge type"
+            className={cn(
+              "h-7 appearance-none rounded-md border bg-background pl-2.5 pr-7 text-xs font-medium text-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "transition-colors hover:border-primary/60",
+            )}
+          >
+            <option value="">All types</option>
+            {KNOWN_EDGE_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {EDGE_TYPE_LABELS[type] ?? type}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+          />
+        </div>
+        {/* Fallback indicator — subtle, informational only */}
+        {isFallback && (
+          <span
+            role="note"
+            aria-label="Using client-side edge data (server backlinks endpoint unavailable)"
+            className="ml-auto text-[10px] text-muted-foreground/60"
+          >
+            (client data)
+          </span>
+        )}
+      </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* No edges                                                            */}
+      {/* ------------------------------------------------------------------ */}
+      {!hasAnyItems && (
+        <div
+          role="status"
+          aria-label="No backlinks found"
+          className="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed py-16 text-center"
+        >
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+            <ArrowDownLeft aria-hidden="true" className="size-6 text-muted-foreground" />
+          </div>
+          <div className="max-w-xs">
+            <p className="text-sm font-medium text-foreground">No backlinks found</p>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              {edgeType
+                ? `No edges of type "${EDGE_TYPE_LABELS[edgeType] ?? edgeType}" found.`
+                : "This artifact has no incoming or outgoing edges in the overlay. Edges are created during compilation."}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Populated state                                                      */}
+      {/* ------------------------------------------------------------------ */}
+      {hasAnyItems && hasSplit && (
+        <>
+          <BacklinksSection
+            label="Incoming"
+            items={incoming}
+            icon={<ArrowDownLeft className="size-4" />}
+            emptyHint="No artifacts reference this one."
+            listAriaLabel="Incoming edges"
+          />
+          <BacklinksSection
+            label="Outgoing"
+            items={outgoing}
+            icon={<ArrowUpRight className="size-4" />}
+            emptyHint="This artifact does not reference others."
+            listAriaLabel="Outgoing edges"
+          />
+        </>
+      )}
+
+      {hasAnyItems && !hasSplit && (
+        <section aria-labelledby="backlinks-all-heading">
+          <h3 id="backlinks-all-heading" className="sr-only">
+            Backlinks ({items.length})
+          </h3>
+          <ul role="list" aria-label="Backlinks" className="flex flex-col gap-1.5">
+            {items.map((item) => (
+              <BacklinkRow key={`${item.artifact_id}-${item.type}`} item={item} />
+            ))}
+          </ul>
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -405,6 +736,9 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     if (tabParam === "derivatives" && artifact && isSourceType(artifact.type)) {
       setActiveTab("Derivatives");
     }
+    if (tabParam === "backlinks" && artifact) {
+      setActiveTab("Backlinks");
+    }
   }, [searchParams, artifact]);
 
   // ---- Loading state ----
@@ -481,6 +815,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* DP3-02 #10: horizontal scroll on mobile; no line-wrap (tabs stay   */}
       {/* single-row at all breakpoints to preserve scan order invariant).   */}
       {/* Derivatives tab appended for source-type artifacts only.           */}
+      {/* Backlinks tab always visible (P7-04).                              */}
       {/* ------------------------------------------------------------------ */}
       <div
         role="tablist"
@@ -556,6 +891,18 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
               artifact={artifact}
               enabled={activeTab === "Workflow OS"}
             />
+          </div>
+
+          {/* Backlinks tab (P7-04) */}
+          <div
+            id={tabPanelId("Backlinks")}
+            role="tabpanel"
+            aria-labelledby={tabButtonId("Backlinks")}
+            hidden={activeTab !== "Backlinks"}
+          >
+            {activeTab === "Backlinks" && (
+              <BacklinksTab artifactId={artifact.id} />
+            )}
           </div>
 
           {/* Derivatives tab — source-type artifacts only (DETAIL-03) */}
