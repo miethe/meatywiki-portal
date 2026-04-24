@@ -12,6 +12,9 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "e2e": "playwright test",
+    "e2e:content-viewer": "playwright test e2e/content-viewer/",
+    "e2e:update-snapshots": "playwright test e2e/content-viewer/visual-regression.spec.ts --update-snapshots",
+    "measure-bundle": "node scripts/measure-bundle.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {
