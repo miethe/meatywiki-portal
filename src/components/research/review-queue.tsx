@@ -19,12 +19,12 @@
  *   - Priority badge (HIGH / ROUTINE / CRITICAL) per row.
  *   - Artifact ID + confidence score metadata strip per row.
  *   - Filter/sort controls above the list (priority + updated-at).
- *   - Two-column layout deferred to v1.6 (ADR-DPI-002).
+ *   - Two-column layout deferred (ADR-DPI-002).
  *   - Per-row Stage Tracker (DP4-02a / ADR-DPI-001 gap fill — DP1-13 #9):
  *     StageTracker compact mounted in secondary column right of priority badge
  *     when artifact has an active (pending|running) workflow run. Null-safe:
  *     no tracker rendered when activeRun absent or terminal.
- *   - Right-rail context panel deferred to v1.6 (ADR-DPI-002 / DP4-02b).
+ *   - Right-rail context panel deferred (ADR-DPI-002 / DP4-02b).
  *
  * Stitch reference: "Review Queue" fefd2074… (partial — v1.5 scope)
  * WCAG 2.1 AA: all interactive elements have labels; colour + text, not colour-only.

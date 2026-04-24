@@ -4,13 +4,15 @@
  * WorkflowViewerScreen — Screen B: 4-panel workflow detail view (P1.5-2-02).
  *
  * Panels:
- *   A) TimelinePanel    — horizontal stage timeline, click to select
- *   B) StageContextPanel — inputs / outputs / artifact lineage for selected stage
+ *   A) TimelinePanel        — horizontal stage timeline, click to select
+ *   B) StageContextPanel    — inputs / outputs / artifact lineage for selected stage
  *   C) ArtifactLineageGraph — SVG DAG of produced artifact nodes + edges
- *   D) RunHistoryList   — previous runs + re-run button
+ *   D) RunHistoryList       — previous runs + re-run button
+ *   E) OperatorActionsBlock — pause / resume / cancel (P7-03, shown above timeline)
+ *   F) AuditLogPanel        — compact operator audit log (P7-03, below lineage)
  *
  * Layout (2-column on lg+):
- *   Left col (lg:col-span-9): [A] + [B] + [C] stacked
+ *   Left col (lg:col-span-9): [E] + [A] + [B] + [C] + [F] stacked
  *   Right rail (lg:col-span-3): [D]
  *
  * Data:
@@ -31,7 +33,7 @@
  * Traces FR-1.5-07.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
@@ -41,6 +43,8 @@ import { TimelinePanel } from "./timeline-panel";
 import { StageContextPanel } from "./stage-context-panel";
 import { ArtifactLineageGraph } from "./artifact-lineage-graph";
 import { RunHistoryList } from "./run-history-list";
+import { OperatorActionsBlock } from "./operator-actions-block";
+import { AuditLogPanel } from "./audit-log-panel";
 import type { WorkflowRun } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
@@ -152,8 +156,11 @@ interface WorkflowViewerScreenProps {
 
 export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreenProps) {
   const [selectedStageName, setSelectedStageName] = useState<string | null>(null);
+  // Incrementing this key triggers a refetch of the audit log and timeline
+  // after any operator action completes.
+  const [refreshKey, setRefreshKey] = useState(0);
 
-  const { events, stages, isLoading, error } = useWorkflowTimeline(runId);
+  const { events, stages, isLoading, error, refetch: refetchTimeline } = useWorkflowTimeline(runId);
 
   // Derive templateId from either the pre-fetched run or the first event's run metadata.
   const templateId = useMemo<string | null>(() => {
@@ -170,6 +177,7 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
     error: historyError,
     reRunError,
     reRun,
+    refetch: refetchHistory,
   } = useRunHistory(templateId);
 
   // Resolve the selected stage object.
@@ -185,6 +193,13 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
     return historyRuns.find((r) => r.id === runId) ?? null;
   }, [run, historyRuns, runId]);
 
+  // Called after any operator action succeeds — refresh timeline, history and audit log.
+  const handleOperatorAction = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+    void refetchTimeline();
+    void refetchHistory();
+  }, [refetchTimeline, refetchHistory]);
+
   return (
     <div className="flex flex-col gap-8" data-testid="workflow-viewer-screen">
       {/* Page header */}
@@ -195,8 +210,18 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
         className="grid grid-cols-12 gap-6 lg:gap-8"
         data-testid="viewer-grid"
       >
-        {/* Left column — timeline + context + lineage */}
+        {/* Left column — operator actions + timeline + context + lineage + audit log */}
         <div className="col-span-12 lg:col-span-9 flex flex-col gap-6">
+          {/* Panel E: Operator actions — only rendered when run is actionable */}
+          {currentRun && (
+            <OperatorActionsBlock
+              runId={runId}
+              status={currentRun.status}
+              onAction={handleOperatorAction}
+              data-testid="operator-actions-block"
+            />
+          )}
+
           {/* Panel A: Timeline */}
           <div
             className="rounded-xl border border-border bg-card p-6"
@@ -224,6 +249,12 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
           <ArtifactLineageGraph
             stages={stages}
             data-testid="artifact-lineage-graph"
+          />
+
+          {/* Panel F: Audit log — only rendered when entries exist */}
+          <AuditLogPanel
+            runId={runId}
+            refreshKey={refreshKey}
           />
         </div>
 

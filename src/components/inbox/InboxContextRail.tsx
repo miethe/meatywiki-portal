@@ -12,7 +12,7 @@
  *   - empty state: "Select an inbox item to see details & actions"
  *
  * All actions and the footer CTA are stubs that console.debug only — no
- * backend flows are wired in v1.5 (per P5-03 spec).
+ * backend flows are wired (per P5-03 spec).
  *
  * Task: P5-03
  * Stitch ref: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
@@ -169,7 +169,7 @@ function buildActions(item: ArtifactCard): ContextRailAction[] {
       label: "Move to Research",
       ariaLabel: "Move this item to the Research workspace",
       hasEndpoint: false,
-      description: "Route this artifact into the Research workflow (v1.6)",
+      description: "Route this artifact into the Research workflow",
       onClick: stub("Move to Research"),
       icon: FlaskConical,
     },
@@ -177,7 +177,7 @@ function buildActions(item: ArtifactCard): ContextRailAction[] {
       label: "Link to Project Nexus",
       ariaLabel: "Link this item to a Project Nexus entry",
       hasEndpoint: false,
-      description: "Associate this artifact with a project (v1.6)",
+      description: "Associate this artifact with a project",
       onClick: stub("Link to Project Nexus"),
       icon: Link2,
     },
@@ -185,7 +185,7 @@ function buildActions(item: ArtifactCard): ContextRailAction[] {
       label: "Add to Synthesis",
       ariaLabel: "Add this item to a Synthesis artifact",
       hasEndpoint: false,
-      description: "Merge into an existing synthesis document (v1.6)",
+      description: "Merge into an existing synthesis document",
       onClick: stub("Add to Synthesis"),
       icon: GitMerge,
     },
@@ -193,7 +193,7 @@ function buildActions(item: ArtifactCard): ContextRailAction[] {
       label: "Start Compilation",
       ariaLabel: "Trigger compilation for this artifact",
       hasEndpoint: false,
-      description: "Begin the compile stage for this artifact (v1.6)",
+      description: "Begin the compile stage for this artifact",
       onClick: stub("Start Compilation"),
       icon: Zap,
     },
@@ -201,7 +201,7 @@ function buildActions(item: ArtifactCard): ContextRailAction[] {
       label: "Request Review",
       ariaLabel: "Request a review for this artifact",
       hasEndpoint: false,
-      description: "Flag this artifact for manual review (v1.6)",
+      description: "Flag this artifact for manual review",
       onClick: stub("Request Review"),
       icon: ClipboardCheck,
     },

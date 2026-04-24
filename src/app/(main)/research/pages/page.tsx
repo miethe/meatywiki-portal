@@ -33,14 +33,14 @@
  *
  * DP4-02c (design-pass Phase 4) — Research Home rich bento per ADR-DPI-004:
  *   - FeaturedTopicsGrid: Featured Topic Cards grid (DP1-06 #1). Skeletons
- *     shown until GET /api/research/featured-topics ships in v1.6.
+ *     shown until GET /api/research/featured-topics ships.
  *   - EvidencePulsePanel: New Evidence + Contradictions feeds (DP1-06 #2).
  *     Skeletons shown until GET /api/research/evidence-pulse/{new,contradictions}
- *     ships in v1.6.
+ *     ships.
  *   - CrossEntitySynthesisTabs: tabbed synthesis feed (DP1-06 #4). Skeletons
- *     shown until GET /api/research/cross-entity-synthesis ships in v1.6.
+ *     shown until GET /api/research/cross-entity-synthesis ships.
  *   - TopicScopeDropdown: topic-scoped filter replacing generic lens filter on
- *     this surface (DP1-06 #6). Disabled until GET /api/topics ships in v1.6.
+ *     this surface (DP1-06 #6). Disabled until GET /api/topics ships.
  *   - Bento panels are inserted above the existing filter/list/pagination section,
  *     kept as a secondary affordance beneath the bento per ADR-DPI-004 §3.
  *   - Missing backend endpoints documented here and in the DP4-02c commit body.
@@ -239,7 +239,7 @@ export default function ResearchPagesPage() {
   const [mounted, setMounted] = useState(false);
 
   // Topic scope state for bento panels (DP4-02c, ADR-DPI-004 DP1-06 #6).
-  // TopicScopeDropdown is disabled until GET /api/topics ships in v1.6; this
+  // TopicScopeDropdown is disabled until GET /api/topics ships; this
   // state will be wired through to bento hooks when the endpoint is available.
   const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
 
@@ -361,8 +361,8 @@ export default function ResearchPagesPage() {
 
           {/*
            * Featured Topics grid (DP1-06 #1, ADR-DPI-004 §6).
-           * Backend: GET /api/research/featured-topics — missing (v1.6).
-           * Renders skeleton cards + notice until endpoint ships.
+           * Backend: GET /api/research/featured-topics — not yet shipped.
+           * Renders skeleton cards until endpoint ships.
            */}
           <FeaturedTopicsGrid />
 
@@ -370,14 +370,14 @@ export default function ResearchPagesPage() {
            * Evidence Pulse panel (DP1-06 #2, ADR-DPI-004 §6).
            * Backend: GET /api/research/evidence-pulse/new
            *          GET /api/research/evidence-pulse/contradictions
-           * Both missing (v1.6). Renders skeleton rows + notices.
+           * Both not yet shipped. Renders skeleton rows.
            */}
           <EvidencePulsePanel topicId={selectedTopicId} />
 
           {/*
            * Cross-Entity Synthesis tabbed feed (DP1-06 #4, ADR-DPI-004 §6).
-           * Backend: GET /api/research/cross-entity-synthesis — missing (v1.6).
-           * Renders skeleton rows + notice until endpoint ships.
+           * Backend: GET /api/research/cross-entity-synthesis — not yet shipped.
+           * Renders skeleton rows until endpoint ships.
            */}
           <CrossEntitySynthesisTabs topicId={selectedTopicId} />
 
@@ -507,9 +507,9 @@ export default function ResearchPagesPage() {
           <WorkflowStatusPanel variant="compact" />
         </div>
 
-        {/* ContextRail — research variant, no artifact selected in v1.          */}
+        {/* ContextRail — research variant, no artifact selected.                */}
         {/* Structural slot per ADR-DPI-002 §1 (Research Workspace Home surface).*/}
-        {/* Item-level wiring (clicking card populates rail) is a v1.6 follow-up.*/}
+        {/* Item-level wiring (clicking card populates rail) is planned.         */}
         <aside
           aria-label="Context rail"
           className="hidden w-72 shrink-0 lg:block"

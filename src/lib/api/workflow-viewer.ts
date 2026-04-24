@@ -5,6 +5,10 @@
  *   GET  /api/workflows/:run_id/timeline  — all events for a run (WorkflowEventDTO[])
  *   GET  /api/workflows/runs?template_id= — run history for a template
  *   POST /api/workflows                   — re-run (enqueue)
+ *   POST /api/workflows/:run_id/pause     — pause a running workflow (P7-03)
+ *   POST /api/workflows/:run_id/resume    — resume a paused workflow (P7-03)
+ *   POST /api/workflows/:run_id/cancel    — cancel a running/paused workflow (P7-03)
+ *   GET  /api/workflows/:run_id/audit-log — operator audit log entries (P7-03)
  *
  * Backend: meatywiki/portal/api/workflows.py (P1.5-2-01).
  * DTO shapes: meatywiki/portal/services/workflow_query.py (WorkflowEventDTO, WorkflowRunDTO).
@@ -95,4 +99,62 @@ export async function reRunWorkflow(templateId: string): Promise<ReRunAccepted> 
       sources: [],
     }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Operator actions — POST /api/workflows/:run_id/{pause,resume,cancel} (P7-03)
+// ---------------------------------------------------------------------------
+
+/** Minimal acknowledgement returned by operator action endpoints. */
+export interface OperatorActionAck {
+  run_id: string;
+  status: string;
+  updated_at: string;
+}
+
+export async function pauseWorkflow(runId: string): Promise<OperatorActionAck> {
+  return apiFetch<OperatorActionAck>(
+    `/workflows/${encodeURIComponent(runId)}/pause`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function resumeWorkflow(runId: string): Promise<OperatorActionAck> {
+  return apiFetch<OperatorActionAck>(
+    `/workflows/${encodeURIComponent(runId)}/resume`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+export async function cancelWorkflow(runId: string): Promise<OperatorActionAck> {
+  return apiFetch<OperatorActionAck>(
+    `/workflows/${encodeURIComponent(runId)}/cancel`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Audit log — GET /api/workflows/:run_id/audit-log (P7-03)
+// ---------------------------------------------------------------------------
+
+/** A single operator audit-log entry returned by the backend. */
+export interface AuditLogEntry {
+  id: string;
+  run_id: string;
+  action: "pause" | "resume" | "cancel" | string;
+  actor?: string | null;
+  created_at: string;
+  meta?: Record<string, unknown> | null;
+}
+
+export async function fetchAuditLog(runId: string): Promise<AuditLogEntry[]> {
+  try {
+    const envelope = await apiFetch<ServiceModeEnvelope<AuditLogEntry>>(
+      `/workflows/${encodeURIComponent(runId)}/audit-log`,
+    );
+    return envelope.data ?? [];
+  } catch {
+    // Audit log is optional surfacing; degrade gracefully if endpoint absent.
+    return [];
+  }
 }

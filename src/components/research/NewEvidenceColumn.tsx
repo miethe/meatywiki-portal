@@ -4,9 +4,9 @@
  * Renders 3–5 skeleton rows with fake timestamp shimmers.
  * Right-inner column on the Research Home editorial layout.
  *
- * P6-03: Research Home editorial scaffold (APIs deferred to v1.6 per OQ-2).
+ * P6-03: Research Home editorial scaffold (APIs deferred per OQ-2).
  *
- * TODO v1.6: wire GET /api/research/evidence-pulse/new to populate real rows.
+ * TODO: wire GET /api/research/evidence-pulse/new to populate real rows.
  */
 
 import { cn } from "@/lib/utils";
@@ -74,14 +74,14 @@ export function NewEvidenceColumn({ className }: NewEvidenceColumnProps) {
         <span
           className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
           role="note"
-          aria-label="Requires v1.6 API"
+          aria-label="Planned feature"
         >
-          v1.6
+          Planned
         </span>
       </div>
 
       {/*
-       * TODO v1.6: Replace skeleton rows with real evidence items from
+       * TODO: Replace skeleton rows with real evidence items from
        * GET /api/research/evidence-pulse/new.
        */}
       <ul

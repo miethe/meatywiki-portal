@@ -41,6 +41,12 @@ const config: Config = {
   // Module name mapper — @/* → src/* mirrors tsconfig.json paths
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
+    // isomorphic-dompurify's Node path pulls in jsdom@29 which has ESM-only
+    // sub-dependencies incompatible with Jest's CJS transform. In the jsdom
+    // test environment, map to the pre-bundled browser build instead — it
+    // wraps DOMPurify directly (no jsdom layer) and works fine with Jest.
+    "^isomorphic-dompurify$":
+      "<rootDir>/node_modules/.pnpm/isomorphic-dompurify@3.10.0/node_modules/isomorphic-dompurify/dist/browser.js",
   },
 
   // Discover tests in tests/**

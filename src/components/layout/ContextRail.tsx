@@ -33,11 +33,11 @@
  * Implemented:
  *   - GET /api/artifacts/:id/edges  — used for Connections + Lineage panels
  *
- * Missing (deferred to v1.6):
+ * Missing (deferred):
  *   - GET /api/artifacts/:id/lineage  — lineage timeline (runs joined)
  *   - GET /api/artifacts/:id/evidence — evidence + contradiction aggregate
  *
- * Panels requiring missing endpoints render a skeleton with "coming in v1.6" copy.
+ * Panels requiring missing endpoints render a skeleton placeholder.
  *
  * ## Responsive
  *
@@ -130,7 +130,6 @@ export interface ContextRailProps {
 
 /**
  * Coming-soon placeholder. Used for panels backed by missing endpoints.
- * Clearly labelled "coming in v1.6" so the user is not confused.
  */
 function ComingSoonPanel({
   label,
@@ -142,7 +141,7 @@ function ComingSoonPanel({
   return (
     <div
       role="status"
-      aria-label={`${label} — coming in v1.6`}
+      aria-label={`${label} — planned`}
       className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed px-3 py-8 text-center"
     >
       <Info aria-hidden="true" className="size-5 text-muted-foreground/50" />
@@ -152,7 +151,7 @@ function ComingSoonPanel({
           {reason}
         </p>
         <p className="mt-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/60">
-          Coming in v1.6
+          Coming soon
         </p>
       </div>
     </div>
@@ -790,7 +789,7 @@ function ResearchLineagePanel({ artifactId }: { artifactId: string | undefined }
         aria-label="Lineage timeline note"
         className="rounded-sm border border-dashed px-2 py-1.5 text-[10px] text-muted-foreground/70"
       >
-        Full lineage timeline (runs joined) — coming in v1.6 via{" "}
+        Full lineage timeline (runs joined) — planned via{" "}
         <code className="font-mono">GET /api/artifacts/:id/lineage</code>.
       </p>
     </div>

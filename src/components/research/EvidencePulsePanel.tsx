@@ -10,7 +10,7 @@
  *   - Contradictions: artifacts with active `contradicts` edges, sorted by
  *     recency of the contradiction edge.
  *
- * v1.5 status: backend aggregate endpoints missing.
+ * Backend aggregate endpoints not yet available.
  *   Missing endpoints:
  *     GET /api/research/evidence-pulse/new
  *       Returns: { data: { items: Array<EvidenceItem> } }
@@ -22,8 +22,8 @@
  *       ContradictionItem: { id, title, subtype, edge_count, updated }
  *       Query params: limit (default 5), topic_id?
  *
- * While endpoints are absent both feeds render skeletons + "coming in v1.6"
- * notice. When endpoints ship replace stub logic with hooks and remove notices.
+ * While endpoints are absent both feeds render skeletons.
+ * When endpoints ship replace stub logic with hooks.
  *
  * WCAG 2.1 AA: feeds are labelled sections; rows are list items.
  *
@@ -172,7 +172,7 @@ function FeedSection({
             className="rounded-sm bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground"
             role="note"
           >
-            v1.6
+            Soon
           </span>
         )}
       </div>
@@ -183,7 +183,7 @@ function FeedSection({
           <code className="rounded bg-muted px-0.5 font-mono text-[9px]">
             {endpointName}
           </code>{" "}
-          — coming in v1.6.
+          — coming soon.
         </p>
       )}
 
@@ -201,7 +201,7 @@ function FeedSection({
 /**
  * EvidencePulsePanel renders two feeds: New Evidence + Contradictions.
  *
- * While backend endpoints are missing (v1.6) renders skeletons + notices.
+ * While backend endpoints are missing renders skeletons.
  * Pass `newEvidence` and `contradictions` props when endpoints ship.
  */
 export function EvidencePulsePanel({

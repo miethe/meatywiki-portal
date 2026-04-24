@@ -10,7 +10,7 @@
  * a hard redirect so the URL is bookmarkable and the sub-nav tab stays active.
  *
  * The legacy SynthesisBuilder form (single-page, P4-02 original) remains at
- * /research/synthesis/legacy for backward compatibility. It may be removed in v1.6.
+ * /research/synthesis/legacy for backward compatibility.
  *
  * Stitch reference: "Synthesis Builder" (P4-02 / DP4-02d scope)
  * ADR: ADR-DPI-005

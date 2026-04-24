@@ -6,17 +6,17 @@
  * Replaces the generic lens filter as the primary scoping control on the
  * Research Home surface (ADR-DPI-004 DP1-06 #6).
  *
- * v1.5: topic list is fetched from GET /api/topics (v1.6 endpoint — missing
- * in v1.5 backend). While the endpoint is unavailable the dropdown renders a
- * "coming in v1.6" affordance so the page does not block.
+ * Topic list is fetched from GET /api/topics (endpoint not yet available).
+ * While the endpoint is unavailable the dropdown renders a disabled placeholder
+ * affordance so the page does not block.
  *
  * Missing endpoint: GET /api/topics
  *   Returns: { data: { items: Array<{ id: string; title: string; article_count: number }> } }
  *   Query params: workspace=research, limit, cursor
  *   Doc ref: docs/project_plans/llm_wiki/portal/ADRs/ADR-DPI-004-research-home-scope.md §6
  *
- * When the endpoint ships (v1.6) replace the hardcoded STUB_TOPICS with a
- * hook call and remove the "coming in v1.6" notice.
+ * When the endpoint ships replace the hardcoded STUB_TOPICS with a
+ * hook call and remove the placeholder notice.
  *
  * WCAG 2.1 AA: select element carries labelled-by association.
  *
@@ -44,13 +44,13 @@ export interface TopicScopeDropdownProps {
 }
 
 // ---------------------------------------------------------------------------
-// v1.5 placeholder — no backend endpoint yet
+// Placeholder — no backend endpoint yet
 // The SELECT is rendered but pre-populated with a notice row rather than
-// live data. Replace with a real hook when GET /api/topics ships in v1.6.
+// live data. Replace with a real hook when GET /api/topics ships.
 // ---------------------------------------------------------------------------
 
 const ENDPOINT_MISSING_NOTICE =
-  "Topic list requires GET /api/topics — shipping in v1.6.";
+  "Topic list requires GET /api/topics — not yet available.";
 
 export function TopicScopeDropdown({
   selectedTopicId,
@@ -92,7 +92,7 @@ export function TopicScopeDropdown({
         >
           <option value="">All topics</option>
           <option value="_placeholder" disabled>
-            — topic list available in v1.6 —
+            — topic list coming soon —
           </option>
         </select>
         <ChevronDown
@@ -101,13 +101,13 @@ export function TopicScopeDropdown({
         />
       </div>
 
-      {/* Coming-in-v1.6 notice */}
+      {/* Placeholder notice */}
       <p className="text-[11px] text-muted-foreground" role="note">
         Topic filter requires{" "}
         <code className="rounded bg-muted px-1 font-mono text-[10px]">
           GET /api/topics
         </code>{" "}
-        — coming in v1.6.
+        — planned feature.
       </p>
     </div>
   );

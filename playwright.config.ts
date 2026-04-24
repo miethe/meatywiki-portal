@@ -14,12 +14,19 @@ const PLAYWRIGHT_BASE_URL =
  * - Accessibility checks via @axe-core/playwright
  * - Mobile viewport tests (responsive design)
  *
+ * PU7-04 adds:
+ * - Visual regression snapshot configuration (snapshotDir, snapshotPathTemplate)
+ * - Snapshots stored under e2e/content-viewer/__snapshots__/ per project
+ *
  * Backend dependency:
  *   Tests require the backend API at MEATYWIKI_PORTAL_API_URL (default:
  *   http://127.0.0.1:8787) and a valid MEATYWIKI_PORTAL_TOKEN. Tests use
  *   the skipIfBackendDown fixture to skip gracefully when the backend is
  *   unreachable, so the suite can run in frontend-only CI environments
  *   without false failures.
+ *
+ *   Content-viewer E2E tests (e2e/content-viewer/) use route interception
+ *   and do NOT require the backend — they run fully offline.
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -36,6 +43,25 @@ export default defineConfig({
     // Record video on first retry so failures can be replayed
     video: "on-first-retry",
   },
+
+  // Visual regression snapshot configuration (PU7-04)
+  // Snapshots are stored alongside the spec file in a __snapshots__ directory.
+  // Template: e2e/content-viewer/__snapshots__/{testFileName}/{snapshotName}-{projectName}.png
+  snapshotPathTemplate:
+    "{testDir}/{testFileDir}/__snapshots__/{testFileName}/{arg}-{projectName}{ext}",
+
+  // Snapshot comparison options — global defaults (per-test can override)
+  expect: {
+    toHaveScreenshot: {
+      // 2% pixel tolerance for font rendering / anti-aliasing differences
+      maxDiffPixelRatio: 0.02,
+      // Threshold for individual pixel colour distance (0-1, default 0.2)
+      threshold: 0.2,
+      // Animate CSS transitions to stable state before snapshot
+      animations: "disabled",
+    },
+  },
+
   projects: [
     {
       name: "chromium",

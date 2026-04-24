@@ -163,6 +163,48 @@ function paginated<T>(items: T[], cursor: string | null = null): PaginatedEnvelo
 }
 
 // ---------------------------------------------------------------------------
+// Contradiction pair stub (P7-02)
+// ---------------------------------------------------------------------------
+
+interface ContradictionArtifactStubItem {
+  id: string;
+  title: string;
+  excerpt: string | null;
+  file_path: string;
+}
+
+interface ContradictionPairStub {
+  id: string;
+  artifact_a: ContradictionArtifactStubItem;
+  artifact_b: ContradictionArtifactStubItem;
+  shared_topic: string;
+  flagged_at: string;
+}
+
+function makeContradictionPair(
+  overrides: Partial<ContradictionPairStub> = {},
+): ContradictionPairStub {
+  return {
+    id: "contra-stub-001",
+    artifact_a: {
+      id: "01HXYZ0000000000000000010",
+      title: "Distributed caching improves throughput",
+      excerpt: "Evidence suggests caching at the edge reduces latency by 40%.",
+      file_path: "wiki/concepts/caching-throughput.md",
+    },
+    artifact_b: {
+      id: "01HXYZ0000000000000000011",
+      title: "Cache invalidation introduces stale reads",
+      excerpt: "Stale reads occur when cache TTLs are misaligned with write frequency.",
+      file_path: "wiki/concepts/cache-invalidation.md",
+    },
+    shared_topic: "Distributed Caching",
+    flagged_at: "2026-04-20T10:00:00Z",
+    ...overrides,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -629,5 +671,126 @@ export const handlers = [
   http.post(`${API_BASE}/api/blog/posts/:id/archive`, ({ params }) => {
     const id = params["id"] as string;
     return HttpResponse.json(makeBlogPost({ artifact_id: id, status: "archived" }));
+  }),
+
+  // ------------------------------------------------------------------
+  // Research — freshness status (GET /api/artifacts/research/freshness-status)
+  // P7-01: Stale Artifacts panel.
+  // Returns a small set of stub freshness items. Tests that need specific
+  // scores, cursors, or empty states should override via server.use().
+  // ------------------------------------------------------------------
+  http.get(`${API_BASE}/api/artifacts/research/freshness-status`, ({ request }) => {
+    const url = new URL(request.url);
+    const cursor = url.searchParams.get("cursor");
+
+    if (cursor === "page2") {
+      // Second page — one item, no further cursor.
+      return HttpResponse.json({
+        data: [
+          {
+            id: "01FRESH000000000000003",
+            title: "Very outdated synthesis",
+            type: "synthesis",
+            subtype: "synthesis",
+            freshness_score: 5,
+            last_synthesis_date: "2025-06-01T00:00:00Z",
+            source_artifact_count: 12,
+            file_path: "wiki/syntheses/outdated.md",
+          },
+        ],
+        cursor: null,
+      });
+    }
+
+    // First page — two items with next cursor.
+    return HttpResponse.json({
+      data: [
+        {
+          id: "01FRESH000000000000001",
+          title: "Stale concept: Distributed Caching",
+          type: "concept",
+          subtype: "concept",
+          freshness_score: 18,
+          last_synthesis_date: "2025-12-01T00:00:00Z",
+          source_artifact_count: 5,
+          file_path: "wiki/concepts/distributed-caching.md",
+        },
+        {
+          id: "01FRESH000000000000002",
+          title: "Aging entity: Redis Architecture",
+          type: "entity",
+          subtype: null,
+          freshness_score: 42,
+          last_synthesis_date: "2026-01-15T00:00:00Z",
+          source_artifact_count: 3,
+          file_path: "wiki/entities/redis-architecture.md",
+        },
+      ],
+      cursor: "page2",
+    });
+  }),
+
+  // ------------------------------------------------------------------
+  // Research — contradictions (GET /api/artifacts/research/contradictions)
+  // P7-02: Contradictions panel.
+  // Returns two stub contradiction pairs on the first page, one on the
+  // second page. Tests that need empty / error states should override
+  // via server.use().
+  // ------------------------------------------------------------------
+  http.get(`${API_BASE}/api/artifacts/research/contradictions`, ({ request }) => {
+    const url = new URL(request.url);
+    const cursor = url.searchParams.get("cursor");
+
+    if (cursor === "contra-page2") {
+      return HttpResponse.json({
+        data: [
+          makeContradictionPair({
+            id: "contra-stub-003",
+            artifact_a: {
+              id: "01HXYZ0000000000000000030",
+              title: "Write-ahead logging guarantees durability",
+              excerpt: "WAL ensures every committed transaction survives a crash.",
+              file_path: "wiki/concepts/wal-durability.md",
+            },
+            artifact_b: {
+              id: "01HXYZ0000000000000000031",
+              title: "WAL overhead degrades write performance",
+              excerpt: "Sequential WAL writes add measurable latency under high-write workloads.",
+              file_path: "wiki/concepts/wal-performance.md",
+            },
+            shared_topic: "Database Reliability",
+            flagged_at: "2026-04-10T08:30:00Z",
+          }),
+        ],
+        cursor: null,
+      });
+    }
+
+    // First page — two pairs, with next cursor.
+    return HttpResponse.json({
+      data: [
+        makeContradictionPair({
+          id: "contra-stub-001",
+        }),
+        makeContradictionPair({
+          id: "contra-stub-002",
+          artifact_a: {
+            id: "01HXYZ0000000000000000020",
+            title: "Eventual consistency enables high availability",
+            excerpt: "Systems that relax consistency constraints can remain available during network partitions.",
+            file_path: "wiki/concepts/eventual-consistency.md",
+          },
+          artifact_b: {
+            id: "01HXYZ0000000000000000021",
+            title: "Strong consistency prevents data anomalies",
+            excerpt: "Linearizability ensures all reads reflect the most recent write.",
+            file_path: "wiki/concepts/strong-consistency.md",
+          },
+          shared_topic: "Consistency Models",
+          flagged_at: "2026-04-18T15:00:00Z",
+        }),
+      ],
+      cursor: "contra-page2",
+    });
   }),
 ];

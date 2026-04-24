@@ -12,9 +12,13 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "e2e": "playwright test",
+    "e2e:content-viewer": "playwright test e2e/content-viewer/",
+    "e2e:update-snapshots": "playwright test e2e/content-viewer/visual-regression.spec.ts --update-snapshots",
+    "measure-bundle": "node scripts/measure-bundle.mjs",
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@miethe/ui": "file:../skillmeat/skillmeat/web/packages/ui",
     "@radix-ui/react-scroll-area": "^1.2.10",
     "@radix-ui/react-separator": "^1.1.8",
     "@tanstack/react-query": "^5.99.0",

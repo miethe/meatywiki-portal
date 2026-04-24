@@ -1,11 +1,11 @@
 /**
  * ResearchWorkspaceEmpty — always-on empty state banner for Research Home.
  *
- * Displayed at the top of the Research Home scaffold until v1.6 APIs ship
+ * Displayed at the top of the Research Home scaffold until research APIs ship
  * and the workspace has real content. Softly styled — informational, not
  * alarming.
  *
- * P6-03: Research Home editorial scaffold (APIs deferred to v1.6 per OQ-2).
+ * P6-03: Research Home editorial scaffold (APIs deferred per OQ-2).
  */
 
 import { FlaskConical } from "lucide-react";

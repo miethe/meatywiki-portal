@@ -4,9 +4,9 @@
  * Displayed in the Research Home editorial layout to surface contradiction signals.
  * Rose-tinted surface tokens: bg-rose-50 / dark:bg-rose-950/20.
  *
- * P6-03: Research Home editorial scaffold (APIs deferred to v1.6 per OQ-2).
+ * P6-03: Research Home editorial scaffold (APIs deferred per OQ-2).
  *
- * TODO v1.6: wire GET /api/research/evidence-pulse/contradictions to populate
+ * TODO: wire GET /api/research/evidence-pulse/contradictions to populate
  * the real contradiction count and item list.
  */
 
@@ -36,7 +36,7 @@ export interface ContradictionsCalloutProps {
 
 /**
  * Rose-tinted callout card for contradiction signals.
- * All content is skeleton until GET /api/research/evidence-pulse/contradictions ships.
+ * All content is skeleton until GET /api/research/evidence-pulse/contradictions is wired.
  */
 export function ContradictionsCallout({ className }: ContradictionsCalloutProps) {
   return (
@@ -63,14 +63,14 @@ export function ContradictionsCallout({ className }: ContradictionsCalloutProps)
         <span
           className="rounded-sm bg-rose-100 px-1.5 py-0.5 text-[10px] font-medium text-rose-600 dark:bg-rose-900/40 dark:text-rose-400"
           role="note"
-          aria-label="Requires v1.6 API"
+          aria-label="Planned feature"
         >
-          v1.6
+          Planned
         </span>
       </div>
 
       {/*
-       * TODO v1.6: Replace skeleton with real contradiction count and items from
+       * TODO: Replace skeleton with real contradiction count and items from
        * GET /api/research/evidence-pulse/contradictions.
        * Shape: { count: number; items: Array<{ id, title, entities, detected_at }> }
        */}

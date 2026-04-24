@@ -2,7 +2,7 @@
  * Legacy Synthesis Builder — the original single-step form (P4-02).
  *
  * Preserved at /research/synthesis/legacy for users who prefer the
- * minimal one-page flow. May be removed in v1.6 once the 2-step wizard
+ * minimal one-page flow. May be removed once the 2-step wizard
  * (ADR-DPI-005) proves stable.
  *
  * Route: /research/synthesis/legacy
