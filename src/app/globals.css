@@ -73,6 +73,29 @@
     /* Editorial quote — light */
     --portal-editorial-quote: 215 16% 35%;
 
+    /* ── ArticleViewer editorial variant CSS-variable contract (PU6-02) ────
+     * Consumed by ArticleViewer when variant="editorial" is passed.
+     * Maps Portal typography tokens → @miethe/ui --cv-editorial-* slots.
+     * See @miethe/ui content-viewer/types.ts VariantTokenShape for full slot list.
+     */
+    --cv-editorial-h1-font: var(--portal-brand-display);
+    --cv-editorial-h1-size: 1.75rem;           /* 28px — matches .text-display-md */
+    --cv-editorial-h2-font: var(--portal-brand-display);
+    --cv-editorial-h2-size: 1.5rem;            /* 24px */
+    --cv-editorial-body-font: var(--font-geist-sans, ui-sans-serif, system-ui, sans-serif);
+    --cv-editorial-body-size: 0.875rem;        /* 14px — matches Portal prose baseline */
+    --cv-editorial-body-line-height: 1.625;    /* relaxed */
+    --cv-editorial-quote-color: hsl(var(--portal-editorial-quote));
+    --cv-editorial-quote-font-style: italic;
+    --cv-editorial-callout-note-accent: hsl(217 91% 60%);     /* blue-400 */
+    --cv-editorial-callout-note-bg: hsl(214 100% 97%);        /* blue-50/60 */
+    --cv-editorial-callout-reference-accent: hsl(263 70% 58%); /* violet-500 */
+    --cv-editorial-callout-reference-bg: hsl(270 100% 98%);   /* violet-50/60 */
+    --cv-editorial-callout-warning-accent: hsl(38 92% 50%);   /* amber-500 */
+    --cv-editorial-callout-warning-bg: hsl(48 100% 96%);      /* amber-50/60 */
+    --cv-editorial-callout-info-accent: hsl(142 71% 45%);     /* emerald-600 */
+    --cv-editorial-callout-info-bg: hsl(152 81% 96%);         /* emerald-50/60 */
+
     /* Radius */
     --radius-editorial: 0.75rem;          /* 12px — hero/featured cards */
 
@@ -107,6 +130,17 @@
 
     /* Editorial quote — dark */
     --portal-editorial-quote: 210 40% 85%;
+
+    /* ── ArticleViewer editorial variant — dark mode overrides (PU6-02) ─── */
+    --cv-editorial-quote-color: hsl(210 40% 85%);
+    --cv-editorial-callout-note-accent: hsl(217 91% 65%);     /* blue-400 brightened */
+    --cv-editorial-callout-note-bg: hsl(214 50% 12%);         /* blue-950/30 */
+    --cv-editorial-callout-reference-accent: hsl(263 70% 70%); /* violet-400 */
+    --cv-editorial-callout-reference-bg: hsl(270 40% 12%);    /* violet-950/30 */
+    --cv-editorial-callout-warning-accent: hsl(38 92% 60%);   /* amber-400 */
+    --cv-editorial-callout-warning-bg: hsl(48 50% 12%);       /* amber-950/30 */
+    --cv-editorial-callout-info-accent: hsl(142 71% 55%);     /* emerald-400 */
+    --cv-editorial-callout-info-bg: hsl(152 40% 10%);         /* emerald-950/30 */
 
     /* Shadow — softened for dark surfaces */
     --portal-shadow-hero: 0 1px 2px rgb(0 0 0 / 0.08), 0 8px 24px -12px rgb(0 0 0 / 0.30);

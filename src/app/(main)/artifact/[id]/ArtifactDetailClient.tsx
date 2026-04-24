@@ -31,12 +31,11 @@
  *
  * Rendering decisions:
  *   - raw_content: displayed in <pre><code> block — no dangerouslySetInnerHTML.
- *   - compiled_content: rendered as raw HTML via dangerouslySetInnerHTML.
- *     Portal is local-only (bearer-token auth), so no DOMPurify needed in v1.
- *     If PORTAL_ALLOW_NETWORK=1 is ever used, add DOMPurify here.
- *   - draft_content: same as compiled_content.
- *   - react-markdown: NOT added. Backend compiled_content is expected to be HTML
- *     from the engine's compile step. Plain markdown fallback uses <pre> block.
+ *   - compiled_content: rendered via ArticleViewer from @miethe/ui (PU6-01).
+ *     ArticleViewer handles HTML sanitization internally (rehype-sanitize).
+ *     No dangerouslySetInnerHTML on any markdown content path.
+ *   - draft_content: same as compiled_content — ArticleViewer with variant="editorial".
+ *   - format="auto": ArticleViewer detects HTML vs markdown automatically.
  *
  * Stitch references:
  *   - "Artifact Detail" (ID: 7b5a1a093d1c454c96c913367c7e60fe)
@@ -77,14 +76,7 @@ import {
   type BacklinkItem,
 } from "@/hooks/useArtifactBacklinks";
 import type { EdgeType } from "@/hooks/useArtifactEdges";
-import dynamic from "next/dynamic";
-// ArtifactBody uses isomorphic-dompurify which loads jsdom on the server;
-// ssr: false prevents the ENOENT crash on jsdom's browser/default-stylesheet.css
-// when Next.js pre-renders the client component shell. (P6-05)
-const ArtifactBody = dynamic(
-  () => import("@/components/artifact/artifact-body").then((m) => ({ default: m.ArtifactBody })),
-  { ssr: false },
-);
+import { ArticleViewer } from "@miethe/ui";
 import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 
@@ -640,22 +632,70 @@ function SourceReader({ content }: { content: string | null | undefined }) {
 }
 
 // ---------------------------------------------------------------------------
-// Knowledge Reader — compiled HTML / markdown output (P4-02)
-// Delegates to ArtifactBody for editorial prose + callout rendering.
+// Knowledge Reader — compiled HTML / markdown output (PU6-01)
+// Uses ArticleViewer from @miethe/ui with variant="editorial".
+// ArticleViewer handles HTML detection (format="auto") and sanitization
+// internally via rehype-sanitize. No dangerouslySetInnerHTML on this path.
 // ---------------------------------------------------------------------------
 
 function KnowledgeReader({ content }: { content: string | null | undefined }) {
-  return <ArtifactBody content={content} variant="knowledge" />;
+  if (!content) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-12 text-center"
+      >
+        <p className="text-sm text-muted-foreground">No compiled content yet.</p>
+        <p className="text-xs text-muted-foreground/60">
+          Run Compile to generate the knowledge reader output.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <ArticleViewer
+      content={content}
+      format="auto"
+      variant="editorial"
+      frontmatter="hide"
+      sanitize={true}
+      generateHeadingIds={true}
+      className="rounded-md border bg-card p-6"
+    />
+  );
 }
 
 // ---------------------------------------------------------------------------
-// Draft Reader — synthesis/draft content (P4-02)
-// Delegates to ArtifactBody for editorial prose + callout rendering.
+// Draft Reader — synthesis/draft content (PU6-01)
+// Uses ArticleViewer from @miethe/ui with variant="editorial".
 // DP3-02 #7: Draft uses same typography ruleset as Knowledge to avoid drift.
 // ---------------------------------------------------------------------------
 
 function DraftReader({ content }: { content: string | null | undefined }) {
-  return <ArtifactBody content={content} variant="draft" />;
+  if (!content) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-12 text-center"
+      >
+        <p className="text-sm text-muted-foreground">No draft content</p>
+        <p className="text-xs text-muted-foreground/60">
+          Draft content appears here for synthesis and staged artifacts.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <ArticleViewer
+      content={content}
+      format="auto"
+      variant="editorial"
+      frontmatter="hide"
+      sanitize={true}
+      generateHeadingIds={true}
+      className="rounded-md border bg-card p-6"
+    />
+  );
 }
 
 // WorkflowOSPlaceholder removed — replaced by WorkflowOSTab (P4-10).
