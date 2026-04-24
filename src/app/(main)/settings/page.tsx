@@ -13,11 +13,15 @@
  *   - #2 Token rotation button: tooltip updated (no v1 API contract).
  *   - #3 Reconcile button: tooltip clarified (P4 stub, accept-code-canonical).
  *
+ * FE-05: Inbox Directory config section (client island).
+ * FE-07: Auto-compile toggle (client island).
+ *
  * Stitch reference: "System Settings & Configuration" (ID: 5fbbc5d4b18748c084f251638932b513)
  * Shell: Standard Archival
  */
 
 import Link from "next/link";
+import { SettingsConfigClient } from "./settings-config-client";
 
 export default function SettingsPage() {
   return (
@@ -105,6 +109,9 @@ export default function SettingsPage() {
           </p>
         </div>
       </section>
+
+      {/* FE-05 + FE-07: Config sections (client island) */}
+      <SettingsConfigClient />
 
       {/* Workflow Templates section */}
       <section aria-labelledby="settings-templates-heading">
