@@ -14,7 +14,7 @@
  *   "Concept ↔ Entity" — syntheses bridging concept + entity subtypes
  *   "Concept ↔ Topic"  — syntheses bridging concept + topic subtypes
  *
- * v1.5 status: backend aggregate endpoint missing.
+ * Backend aggregate endpoint not yet available.
  *   Missing endpoint: GET /api/research/cross-entity-synthesis
  *     Returns: { data: { items: Array<SynthesisItem> } }
  *     SynthesisItem:
@@ -22,9 +22,8 @@
  *     Query params: scope? ("concept_entity" | "concept_topic" | "entity_entity"),
  *                   limit (default 10), topic_id?, cursor?
  *
- * While the endpoint is absent all tabs render skeletons + "coming in v1.6"
- * notice. When the endpoint ships replace stub logic with a hook call
- * (e.g. useCrossEntitySynthesis) and remove notices.
+ * While the endpoint is absent all tabs render skeletons. When the endpoint
+ * ships replace stub logic with a hook call (e.g. useCrossEntitySynthesis).
  *
  * WCAG 2.1 AA: tab list + tabpanel with aria-controls / aria-selected pattern.
  *
@@ -169,7 +168,7 @@ function EmptyFeed({ tabLabel }: { tabLabel: string }) {
 /**
  * CrossEntitySynthesisTabs renders a tabbed feed of cross-entity synthesis artifacts.
  *
- * While backend endpoint is missing (v1.6) renders skeletons + notice.
+ * While backend endpoint is missing renders skeletons.
  * Pass `items` prop when endpoint ships — filtering by tab scope is applied
  * client-side against `item.scope` (replace with server-side when backend supports it).
  */
@@ -206,7 +205,7 @@ export function CrossEntitySynthesisTabs({
             className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
             role="note"
           >
-            v1.6
+            Planned
           </span>
         )}
       </div>
@@ -217,7 +216,7 @@ export function CrossEntitySynthesisTabs({
           <code className="rounded bg-muted px-1 font-mono text-[10px]">
             GET /api/research/cross-entity-synthesis
           </code>{" "}
-          — coming in v1.6.
+          — coming soon.
         </p>
       )}
 

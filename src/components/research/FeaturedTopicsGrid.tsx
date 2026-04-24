@@ -5,7 +5,7 @@
  *
  * ADR-DPI-004 DP1-06 #1: Featured Topic Cards grid.
  *
- * v1.5 status: backend aggregate endpoint missing.
+ * Backend aggregate endpoint not yet available.
  *   Missing endpoint: GET /api/research/featured-topics
  *   Expected response:
  *     { data: { items: Array<FeaturedTopic> } }
@@ -14,9 +14,9 @@
  *       ranking_score: number; updated: string; snippet?: string }
  *   Query params: limit (default 6), topic_id (optional scope filter)
  *
- * While the endpoint is absent the grid renders skeletons + a "coming in v1.6"
- * notice. When GET /api/research/featured-topics ships replace `MOCK_LOADING`
- * with a hook call (e.g. useFeaturedTopics) and remove the notice.
+ * While the endpoint is absent the grid renders skeletons. When
+ * GET /api/research/featured-topics ships replace `MOCK_LOADING`
+ * with a hook call (e.g. useFeaturedTopics) and remove the placeholder.
  *
  * Layout: responsive 2–3 column grid; each card links to /artifact/:id.
  * Cards reuse the portal design token palette (slate base, primary accent).
@@ -155,7 +155,7 @@ function EmptyState() {
 /**
  * FeaturedTopicsGrid renders a grid of ranked research topics.
  *
- * While backend endpoint is missing (v1.6) renders skeletons + notice.
+ * While backend endpoint is missing renders skeletons.
  * Pass `topics` prop to override with live or SSR data when endpoint ships.
  */
 export function FeaturedTopicsGrid({
@@ -163,7 +163,7 @@ export function FeaturedTopicsGrid({
   isLoading = false,
   className,
 }: FeaturedTopicsGridProps) {
-  // v1.5: backend endpoint missing — always show skeletons + notice
+  // Backend endpoint missing — always show skeletons until wired
   const endpointMissing = topics === undefined;
   const loading = isLoading || endpointMissing;
 
@@ -181,7 +181,7 @@ export function FeaturedTopicsGrid({
             className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
             role="note"
           >
-            v1.6
+            Planned
           </span>
         )}
       </div>
@@ -192,7 +192,7 @@ export function FeaturedTopicsGrid({
           <code className="rounded bg-muted px-1 font-mono text-[10px]">
             GET /api/research/featured-topics
           </code>{" "}
-          — coming in v1.6.
+          — coming soon.
         </p>
       )}
 

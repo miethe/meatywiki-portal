@@ -4,9 +4,9 @@
  * SmartTriageButton — OQ-6 stub (P5-04).
  *
  * Renders an outline button with a Wand2 icon in the sidebar footer, below
- * Quick Add. On click, opens a lightweight "Coming in v1.6" explainer modal.
+ * Quick Add. On click, opens a lightweight explainer modal about Smart Triage.
  *
- * No backend wiring. When v1.6 ships the real triage workflow, swap the
+ * No backend wiring yet. When the real triage workflow ships, swap the
  * modal body for a route push or workflow-dispatch call.
  *
  * Design: ghost/outline button sized to match the sidebar footer, full-width
@@ -14,7 +14,7 @@
  * Dark-mode: inherits Tailwind CSS variable tokens — no hard-coded colours.
  *
  * Accessibility:
- *   - aria-label="Smart Triage (coming in v1.6)" on the button trigger.
+ *   - aria-label="Smart Triage" on the button trigger.
  *   - Modal: role="dialog", aria-modal="true", aria-labelledby wired via the
  *     shared Dialog primitive from @/components/ui/dialog.
  *   - "Got it" button auto-focuses on open (Dialog primitive handles focus trap).
@@ -61,13 +61,13 @@ function SmartTriageModal({
               className="size-5 text-primary"
             />
           </div>
-          <DialogTitle>Smart Triage — Coming in v1.6</DialogTitle>
+          <DialogTitle>Smart Triage</DialogTitle>
         </DialogHeader>
 
         <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
-          Automated classification of inbox items is on the v1.6 roadmap. For
+          Automated classification of inbox items is not yet available. For
           now, categorize items manually using the rail actions above, or tag
-          them so v1.6 can re-process.
+          them for later bulk processing.
         </p>
 
         <div className="flex items-center justify-between gap-3">
@@ -84,7 +84,7 @@ function SmartTriageModal({
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
             )}
           >
-            View v1.6 roadmap
+            View roadmap
           </button>
 
           {/* Primary: dismiss */}
@@ -122,7 +122,7 @@ export function SmartTriageButton({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label="Smart Triage (coming in v1.6)"
+        aria-label="Smart Triage"
         className={cn(
           // Base
           "inline-flex items-center justify-center rounded-md",

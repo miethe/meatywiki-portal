@@ -2,11 +2,11 @@
  * WorkspaceHealthGauge — circular skeleton gauge for the ContextRail.
  *
  * Renders an SVG circle skeleton animating with `animate-pulse` until
- * the Workspace Health endpoint ships in v1.6.
+ * the Workspace Health endpoint ships.
  *
- * P6-03: Research Home editorial scaffold (APIs deferred to v1.6 per OQ-2).
+ * P6-03: Research Home editorial scaffold (APIs deferred per OQ-2).
  *
- * TODO v1.6: wire GET /api/research/workspace-health to populate the gauge
+ * TODO: wire GET /api/research/workspace-health to populate the gauge
  * with a real score (0–100) and delta value.
  */
 
@@ -17,7 +17,7 @@ export interface WorkspaceHealthGaugeProps {
 }
 
 /**
- * Circular skeleton gauge for workspace health.
+ * Circular skeleton gauge for workspace health (planned feature).
  * Replace with real gauge when GET /api/research/workspace-health ships.
  */
 export function WorkspaceHealthGauge({ className }: WorkspaceHealthGaugeProps) {
@@ -36,14 +36,14 @@ export function WorkspaceHealthGauge({ className }: WorkspaceHealthGaugeProps) {
         <span
           className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
           role="note"
-          aria-label="Requires v1.6 API"
+          aria-label="Planned feature"
         >
-          v1.6
+          Planned
         </span>
       </div>
 
       {/*
-       * TODO v1.6: Replace skeleton circle with a real SVG arc gauge driven by
+       * TODO: Replace skeleton circle with a real SVG arc gauge driven by
        * GET /api/research/workspace-health.
        * Shape: { score: number; delta: number; label: string }
        * Score 94%, delta +1.2% — design reference from Stitch §4.3.

@@ -10,8 +10,8 @@
  *
  * DP4-02b — context rail (ADR-DPI-002 Option A.1):
  *   Mounts ContextRail in research variant at the page level (right column, lg+).
- *   In v1 no artifact is pre-selected; the rail shows empty/deferred states.
- *   Item-level rail wiring (selecting an item populates the rail) is a v1.6 follow-up
+ *   No artifact is pre-selected; the rail shows empty/deferred states.
+ *   Item-level rail wiring (selecting an item populates the rail) is planned
  *   once the row-selection interaction pattern is designed.
  *
  * Gate types emitted in V1:
@@ -44,8 +44,8 @@ export default function QueuePage() {
           <ReviewQueue />
         </div>
 
-        {/* ContextRail — research variant, no artifact selected in v1.          */}
-        {/* Structural slot per ADR-DPI-002 §1. Item-level wiring is v1.6.       */}
+        {/* ContextRail — research variant, no artifact selected.                */}
+        {/* Structural slot per ADR-DPI-002 §1. Item-level wiring is planned.    */}
         {/* — DP1-04 #2 (Review Queue metadata strip) is owned by DP4-02e, not  */}
         {/*   this file. Touch only the rail slot here to avoid merge conflicts. */}
         <aside

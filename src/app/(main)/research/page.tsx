@@ -4,7 +4,7 @@
  * Research Home — editorial layout with live panels.
  *
  * Layout structure:
- *   - Empty state banner (top, always-on until v1.6 APIs ship broadly)
+ *   - Empty state banner (top, always-on until aggregate APIs ship)
  *   - Page heading + workspace selector dropdown (skeleton)
  *   - Two-column area:
  *       Left/main:
@@ -24,8 +24,8 @@
  * P7-02: ContradictionsPanel wired to GET /api/artifacts/research/contradictions.
  *        Replaces ContradictionsCallout skeleton placeholder.
  *
- * OQ-2 resolution: APIs deferred to v1.6 (Topics, Synthesis, Workspace Health)
- *   — Freshness (P7-01) and Contradictions (P7-02) endpoints ship in v1.6.
+ * OQ-2 resolution: APIs deferred (Topics, Synthesis, Workspace Health).
+ *   Freshness (P7-01) and Contradictions (P7-02) endpoints are live.
  *
  * Stitch reference: "Research Home" (ID: 0cf6fb7b27d9459e8b5bebfea66915c5)
  * Design spec §4.3.
@@ -56,25 +56,25 @@ function Shimmer({ className }: { className?: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// WorkspaceSelector — skeleton dropdown (no functionality in v1.5)
+// WorkspaceSelector — skeleton dropdown (not yet wired)
 // ---------------------------------------------------------------------------
 
 /**
  * Skeleton workspace selector dropdown.
- * Displays "All Entities" label. Not interactive until v1.6.
+ * Displays "All Entities" label. Not interactive until topic scope API ships.
  *
- * TODO v1.6: wire GET /api/topics to populate dropdown options.
- *            Replace with a real <Select> component bound to topic scope state.
+ * TODO: wire GET /api/topics to populate dropdown options.
+ *       Replace with a real <Select> component bound to topic scope state.
  */
 function WorkspaceSelector() {
   return (
     <button
       type="button"
       disabled
-      aria-label="Workspace selector — All Entities (available in v1.6)"
+      aria-label="Workspace selector — All Entities (planned)"
       aria-disabled="true"
       aria-haspopup="listbox"
-      title="Topic scope selector — coming in v1.6"
+      title="Topic scope selector — coming soon"
       className={cn(
         "inline-flex h-8 items-center gap-1.5 rounded-md border bg-card px-3",
         "text-xs font-medium text-muted-foreground",
@@ -95,7 +95,7 @@ function WorkspaceSelector() {
 /**
  * Skeleton rows for "Recent Syntheses" rail section.
  *
- * TODO v1.6: wire GET /api/research/recent-syntheses to populate real rows.
+ * TODO: wire GET /api/research/recent-syntheses to populate real rows.
  */
 function RecentSynthesesSkeleton() {
   return (
@@ -113,8 +113,8 @@ function RecentSynthesesSkeleton() {
 /**
  * Skeleton card for "Archive Intelligence" rail section.
  *
- * TODO v1.6: wire Archive Intelligence signals endpoint to populate this card.
- *            Design reference: dark promo card from Stitch §4.3 ContextRail.
+ * TODO: wire Archive Intelligence signals endpoint to populate this card.
+ *       Design reference: dark promo card from Stitch §4.3 ContextRail.
  */
 function ArchiveIntelligenceSkeleton() {
   return (
@@ -142,7 +142,7 @@ const RESEARCH_HOME_RAIL_TABS = [
     label: "Health",
     renderContent: () => (
       <div className="flex flex-col gap-4 pt-2">
-        {/* TODO v1.6: wire GET /api/research/workspace-health */}
+        {/* TODO: wire GET /api/research/workspace-health */}
         <WorkspaceHealthGauge />
       </div>
     ),
@@ -152,7 +152,7 @@ const RESEARCH_HOME_RAIL_TABS = [
     label: "Syntheses",
     renderContent: () => (
       <div className="flex flex-col gap-3 pt-2">
-        {/* TODO v1.6: wire GET /api/research/recent-syntheses */}
+        {/* TODO: wire GET /api/research/recent-syntheses */}
         <RecentSynthesesSkeleton />
       </div>
     ),
@@ -162,7 +162,7 @@ const RESEARCH_HOME_RAIL_TABS = [
     label: "Intelligence",
     renderContent: () => (
       <div className="flex flex-col gap-3 pt-2">
-        {/* TODO v1.6: wire Archive Intelligence signals endpoint */}
+        {/* TODO: wire Archive Intelligence signals endpoint */}
         <ArchiveIntelligenceSkeleton />
       </div>
     ),
@@ -178,7 +178,7 @@ export default function ResearchHomePage() {
     <div className="flex flex-col gap-5">
       {/* ------------------------------------------------------------------ */}
       {/* Empty state banner                                                  */}
-      {/* Always-on until v1.6 APIs ship and workspace has real content.      */}
+      {/* Always-on until aggregate APIs ship and workspace has real content. */}
       {/* ------------------------------------------------------------------ */}
       <ResearchWorkspaceEmpty />
 
@@ -194,7 +194,7 @@ export default function ResearchHomePage() {
         </div>
 
         {/*
-         * TODO v1.6: wire GET /api/topics to populate dropdown options.
+         * TODO: wire GET /api/topics to populate dropdown options.
          * Replace WorkspaceSelector with a real Select bound to topic scope.
          */}
         <WorkspaceSelector />
@@ -212,7 +212,7 @@ export default function ResearchHomePage() {
 
           {/* Priority Topics 2×2 grid */}
           {/*
-           * TODO v1.6: wire GET /api/research/priority-topics.
+           * TODO: wire GET /api/research/priority-topics.
            * PriorityTopicsGrid renders skeletons + disabled Add New Entity slot.
            */}
           <PriorityTopicsGrid />
@@ -225,7 +225,7 @@ export default function ResearchHomePage() {
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {/* New Evidence — skeleton rows */}
             {/*
-             * TODO v1.6: wire GET /api/research/evidence-pulse/new.
+             * TODO: wire GET /api/research/evidence-pulse/new.
              * NewEvidenceColumn renders skeleton items with timestamp shimmers.
              */}
             <NewEvidenceColumn />
@@ -238,7 +238,7 @@ export default function ResearchHomePage() {
 
           {/* Synthesis Narrative — skeleton pull-quote + 3-col breakdown */}
           {/*
-           * TODO v1.6: wire GET /api/research/synthesis-narrative.
+           * TODO: wire GET /api/research/synthesis-narrative.
            * SynthesisNarrative renders italic skeleton pull-quote and 3-col grid.
            */}
           <SynthesisNarrative />

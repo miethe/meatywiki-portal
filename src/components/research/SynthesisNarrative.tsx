@@ -4,9 +4,9 @@
  * The pull-quote is an italic placeholder. The 3-col breakdown shows
  * skeleton cells for the three synthesis dimension slots.
  *
- * P6-03: Research Home editorial scaffold (APIs deferred to v1.6 per OQ-2).
+ * P6-03: Research Home editorial scaffold (APIs deferred per OQ-2).
  *
- * TODO v1.6: wire GET /api/research/synthesis-narrative to populate the
+ * TODO: wire GET /api/research/synthesis-narrative to populate the
  * pull-quote text and the three breakdown columns.
  */
 
@@ -50,14 +50,14 @@ export function SynthesisNarrative({ className }: SynthesisNarrativeProps) {
         <span
           className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
           role="note"
-          aria-label="Requires v1.6 API"
+          aria-label="Planned feature"
         >
-          v1.6
+          Planned
         </span>
       </div>
 
       {/*
-       * TODO v1.6: Replace skeleton pull-quote with real synthesis narrative text from
+       * TODO: Replace skeleton pull-quote with real synthesis narrative text from
        * GET /api/research/synthesis-narrative.
        * Shape: { text: string; sources: string[]; breakdown: Array<{ label, value }> }
        */}

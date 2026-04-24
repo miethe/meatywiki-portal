@@ -23,7 +23,7 @@
  *   - Total Runs     = all.length
  *   - Success Rate   = complete / total * 100
  *   - Avg Duration   = mean(completed_at - started_at) for completed runs
- *   - Resource Intensity = 68% placeholder (TODO v1.6: wire telemetry endpoint)
+ *   - Resource Intensity = 68% placeholder (TODO: wire telemetry endpoint when available)
  *
  * SSE pool cleanup on route leave (Stage Tracker manifest §2.4).
  *
@@ -449,12 +449,12 @@ function WorkflowsRailContent({ allRuns }: WorkflowsRailContentProps) {
       <MetricsPanel metrics={metrics} orientation="stack" />
 
       {/* Resource Intensity gauge
-          TODO v1.6: replace 68% placeholder with real telemetry endpoint.
+          TODO: replace 68% placeholder with real telemetry endpoint.
           OQ-5: /workflows/metrics endpoint not shipped. Using fixed placeholder. */}
       <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
         <ResourceIntensityGauge value={68} />
         <p className="mt-2 text-[10px] text-muted-foreground/60">
-          Placeholder — telemetry endpoint coming in v1.6
+          Placeholder — telemetry endpoint planned
         </p>
       </div>
 

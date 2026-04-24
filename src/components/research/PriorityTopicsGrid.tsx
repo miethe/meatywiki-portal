@@ -1,12 +1,12 @@
 /**
  * PriorityTopicsGrid — 2×2 skeleton grid of priority topic cards.
  *
- * All cells are skeleton placeholders until v1.6 APIs ship.
+ * All cells are skeleton placeholders until the priority-topics API ships.
  * The final cell is an "Add New Entity" slot (dashed border, disabled).
  *
- * P6-03: Research Home editorial scaffold (APIs deferred to v1.6 per OQ-2).
+ * P6-03: Research Home editorial scaffold (APIs deferred per OQ-2).
  *
- * TODO v1.6: wire GET /api/research/priority-topics to populate real cards.
+ * TODO: wire GET /api/research/priority-topics to populate real cards.
  */
 
 import { Plus } from "lucide-react";
@@ -69,9 +69,9 @@ function AddEntitySlot() {
     <button
       type="button"
       disabled
-      aria-label="Add new entity (available in v1.6)"
+      aria-label="Add new entity (planned feature)"
       aria-disabled="true"
-      title="Entity creation available in v1.6"
+      title="Entity creation — planned feature"
       className={cn(
         "flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed",
         "bg-transparent p-4 text-muted-foreground/50",
@@ -81,7 +81,7 @@ function AddEntitySlot() {
     >
       <Plus aria-hidden="true" className="size-6" />
       <span className="text-xs font-medium">Add New Entity</span>
-      <span className="text-[10px] opacity-70">v1.6</span>
+      <span className="text-[10px] opacity-70">Soon</span>
     </button>
   );
 }
@@ -111,14 +111,14 @@ export function PriorityTopicsGrid({ className }: PriorityTopicsGridProps) {
         <span
           className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
           role="note"
-          aria-label="Requires v1.6 API"
+          aria-label="Planned feature"
         >
-          v1.6
+          Planned
         </span>
       </div>
 
       {/*
-       * TODO v1.6: Replace skeletons with real data from Topics API.
+       * TODO: Replace skeletons with real data from Topics API.
        * Replace <SkeletonTopicCard /> with <TopicCard topic={t} /> per item.
        * Replace <AddEntitySlot /> with an interactive entity-creation trigger.
        */}
