@@ -54,6 +54,7 @@ import {
   Link2,
   CheckSquare,
   FileText,
+  Loader2,
   ArrowDownLeft,
   ArrowUpRight,
   ChevronDown,
@@ -79,6 +80,7 @@ import type { EdgeType } from "@/hooks/useArtifactEdges";
 import { ArticleViewer } from "@miethe/ui";
 import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
+import { useCompileArtifact } from "@/hooks/useCompileArtifact";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -705,50 +707,6 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 // Migrated from header row to ContextRail action column.
 // ---------------------------------------------------------------------------
 
-/**
- * Rail-owned action buttons (P4-03 reskin).
- * - Verb-first labels per Stitch spec §4.2
- * - shadcn outline button pattern with leading lucide icon
- * - Buttons without onClick stubs log console.debug (no-op per P4-03 scope)
- * - No new backend flows invented here; existing endpoint stubs preserved
- */
-const RAIL_ACTIONS: ContextRailAction[] = [
-  {
-    label: "Add Note",
-    ariaLabel: "Add a note to this artifact",
-    hasEndpoint: false,
-    description: "Note creation — deferred to v1.5 write path",
-    icon: StickyNote,
-  },
-  {
-    label: "Promote to Archive",
-    ariaLabel: "Promote artifact to archive lifecycle stage",
-    hasEndpoint: true,
-    description: "POST /api/artifacts/:id/promote — wired in a future P3 task",
-    icon: Archive,
-  },
-  {
-    label: "Link Related",
-    ariaLabel: "Link this artifact to a related artifact",
-    hasEndpoint: true,
-    description: "POST /api/artifacts/:id/link — wired in a future P3 task",
-    icon: Link2,
-  },
-  {
-    label: "Request Review",
-    ariaLabel: "Add this artifact to the review queue",
-    hasEndpoint: true,
-    description: "POST /api/artifacts/:id/review — wired in a future P3 task",
-    icon: CheckSquare,
-  },
-  {
-    label: "Compile Now",
-    ariaLabel: "Trigger compilation workflow for this artifact",
-    hasEndpoint: false,
-    description: "Engine trigger — wired in P3-07",
-    icon: FileText,
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Props
@@ -767,6 +725,25 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const [activeTab, setActiveTab] = useState<TabId>("Source");
   const { artifact, isLoading, isError, error, isNotFound, refetch } =
     useArtifact(id);
+
+  // Compile success feedback: auto-clears after 3 seconds (FE-03).
+  const [compileSuccess, setCompileSuccess] = useState(false);
+
+  const { compile, isCompiling, error: compileError } = useCompileArtifact({
+    artifactId: id,
+    onSuccess: () => {
+      setCompileSuccess(true);
+      // Invalidate artifact detail so Knowledge tab refreshes
+      refetch();
+    },
+  });
+
+  // Auto-clear success message after 3s
+  useEffect(() => {
+    if (!compileSuccess) return;
+    const timer = setTimeout(() => setCompileSuccess(false), 3000);
+    return () => clearTimeout(timer);
+  }, [compileSuccess]);
 
   // Deep-link: if ?tab=derivatives is present AND the artifact is a source type,
   // activate the Derivatives tab on mount / when the artifact loads.
@@ -808,6 +785,61 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const visibleTabs: TabId[] = showDerivativesTab
     ? [...BASE_TABS, "Derivatives"]
     : [...BASE_TABS];
+
+  // FE-03: Compile Now is only shown when status is "needs_review" or "inbox".
+  // The status field is typed as ArtifactStatus ("draft"|"active"|"archived"|"stale")
+  // but the backend may return "needs_review" before the type is widened — treat
+  // it as a runtime string comparison for forward-compatibility.
+  const artifactStatus = artifact.status as string;
+  const showCompileAction =
+    artifactStatus === "needs_review" || artifactStatus === "inbox";
+
+  // Build rail actions dynamically so Compile Now can have a real onClick
+  // and can be conditionally excluded for statuses that don't need it.
+  const railActions: ContextRailAction[] = [
+    {
+      label: "Add Note",
+      ariaLabel: "Add a note to this artifact",
+      hasEndpoint: false,
+      description: "Note creation — deferred to v1.5 write path",
+      icon: StickyNote,
+    },
+    {
+      label: "Promote to Archive",
+      ariaLabel: "Promote artifact to archive lifecycle stage",
+      hasEndpoint: true,
+      description: "POST /api/artifacts/:id/promote — wired in a future P3 task",
+      icon: Archive,
+    },
+    {
+      label: "Link Related",
+      ariaLabel: "Link this artifact to a related artifact",
+      hasEndpoint: true,
+      description: "POST /api/artifacts/:id/link — wired in a future P3 task",
+      icon: Link2,
+    },
+    {
+      label: "Request Review",
+      ariaLabel: "Add this artifact to the review queue",
+      hasEndpoint: true,
+      description: "POST /api/artifacts/:id/review — wired in a future P3 task",
+      icon: CheckSquare,
+    },
+    ...(showCompileAction
+      ? [
+          {
+            label: isCompiling ? "Compiling..." : "Compile Now",
+            ariaLabel: isCompiling
+              ? "Compilation in progress"
+              : "Trigger compilation workflow for this artifact",
+            hasEndpoint: true,
+            description: "POST /api/artifacts/:id/compile (FE-03)",
+            onClick: isCompiling ? undefined : compile,
+            icon: isCompiling ? Loader2 : FileText,
+          } satisfies ContextRailAction,
+        ]
+      : []),
+  ];
 
   return (
     <div className="flex flex-col gap-4">
@@ -965,11 +997,39 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           aria-label="Context rail"
           className="hidden w-72 shrink-0 lg:block"
         >
+          {/* FE-03: Compile feedback — success + error shown above the rail */}
+          {compileSuccess && (
+            <div
+              role="status"
+              aria-live="polite"
+              aria-label="Compilation queued successfully"
+              className={cn(
+                "mb-2 flex items-center gap-2 rounded-md border border-emerald-500/30",
+                "bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700",
+                "dark:border-emerald-500/20 dark:bg-emerald-950/30 dark:text-emerald-400",
+              )}
+            >
+              <span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />
+              Compile job queued
+            </div>
+          )}
+          {compileError && !compileSuccess && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className={cn(
+                "mb-2 rounded-md border border-destructive/30 bg-destructive/5",
+                "px-3 py-2 text-xs text-destructive",
+              )}
+            >
+              {compileError}
+            </div>
+          )}
           <ContextRail
             variant="generic"
             artifactId={artifact.id}
             artifact={artifact}
-            actions={RAIL_ACTIONS}
+            actions={railActions}
             ariaLabel="Artifact context"
           />
         </aside>

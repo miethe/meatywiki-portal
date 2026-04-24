@@ -16,6 +16,12 @@
  *     <InboxContextRail> renders in the right column with item properties and
  *     stub action buttons. First item auto-selected on mount when data is
  *     available. Selection is keyboard-accessible (Enter/Space on focused card).
+ *   - Compile action (FE-04): items in the NEEDS COMPILE group show a Compile
+ *     button. Each item's button owns its own useCompileArtifact state via the
+ *     CompileButton sub-component. On success the item status is optimistically
+ *     updated to "stale" (→ NEEDS DESTINATION group) so the item moves groups
+ *     without a network roundtrip. On error, inline error text appears below
+ *     the item row and auto-clears after 5 s.
  *
  * Design aesthetic: clean archival/editorial — slate palette, subtle
  * monospaced accents for timestamps, generous whitespace. Matches the
@@ -28,6 +34,7 @@
  *        reused from src/components/ui/status-group-section.tsx).
  * P5-02: UrgencyBadge per item + per-item urgency derivation.
  * P5-03: Item selection state + ContextRail right column.
+ * FE-04: Compile action button on inbox list items (needs_compile group).
  *
  * Stitch reference: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
  * WCAG 2.1 AA: preserved from scaffold; focusable interactive elements have
@@ -51,13 +58,14 @@
  * default since compilation is reversible and low-risk.
  */
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { StatusGroupSection } from "@/components/ui/status-group-section";
 import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
 import { InboxContextRail } from "@/components/inbox/InboxContextRail";
 import { useInboxArtifacts } from "@/hooks/useInboxArtifacts";
+import { useCompileArtifact } from "@/hooks/useCompileArtifact";
 import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
@@ -91,6 +99,8 @@ const STATUS_TO_GROUP: Record<string, InboxGroup> = {
   new: "new",
   needs_compile: "needs_compile",
   needs_destination: "needs_destination",
+  // FE-04: forward-compat for needs_review status (maps to compile group)
+  needs_review: "needs_compile",
 };
 
 const GROUP_ORDER: InboxGroup[] = ["new", "needs_compile", "needs_destination"];
@@ -288,6 +298,122 @@ function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
 }
 
 // ---------------------------------------------------------------------------
+// CompileButton — FE-04
+// ---------------------------------------------------------------------------
+
+/**
+ * CompileButton owns its own useCompileArtifact state so each inbox item
+ * can be independently compiling without lifting all compile state to the
+ * parent. This is Option (a) from the FE-04 task spec.
+ *
+ * Lifecycle:
+ *   idle      → "Compile" button shown
+ *   compiling → spinner + "Compiling…" label, button disabled
+ *   success   → "Compiled ✓" shown for 3 s, then reverts to idle
+ *               (parent also receives onSuccess callback to trigger optimistic update)
+ *   error     → parent receives onError callback; button reverts to idle
+ *
+ * Accessibility:
+ *   - aria-busy on the button during in-flight request
+ *   - aria-label includes artifact title for screen-reader context
+ *   - pointer-events-auto: sits inside the ArtifactCard stretch-link overlay,
+ *     so onClick must stopPropagation to prevent navigation.
+ */
+interface CompileButtonProps {
+  artifactId: string;
+  artifactTitle: string;
+  onSuccess: () => void;
+  onError: (msg: string) => void;
+}
+
+function CompileButton({
+  artifactId,
+  artifactTitle,
+  onSuccess,
+  onError,
+}: CompileButtonProps) {
+  const [showSuccess, setShowSuccess] = useState(false);
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { compile, isCompiling } = useCompileArtifact({
+    artifactId,
+    onSuccess: () => {
+      setShowSuccess(true);
+      // Auto-clear success label after 3 s
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => setShowSuccess(false), 3000);
+      onSuccess();
+    },
+    onError,
+  });
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
+  const label = isCompiling ? "Compiling…" : showSuccess ? "Compiled ✓" : "Compile";
+  const ariaLabel = isCompiling
+    ? `Compilation in progress for ${artifactTitle}`
+    : showSuccess
+    ? `Compilation queued for ${artifactTitle}`
+    : `Compile ${artifactTitle}`;
+
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-busy={isCompiling}
+      disabled={isCompiling}
+      onClick={(e) => {
+        // Prevent the ArtifactCard stretch link from navigating
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isCompiling && !showSuccess) {
+          compile();
+        }
+      }}
+      className={cn(
+        "pointer-events-auto inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5",
+        "text-xs font-medium transition-colors",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isCompiling || showSuccess
+          ? "cursor-not-allowed opacity-70 text-muted-foreground border-border"
+          : "text-foreground hover:bg-accent hover:text-accent-foreground",
+        showSuccess && "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
+      )}
+    >
+      {isCompiling && (
+        // Inline spinner — CSS animation, no extra dependency
+        <svg
+          aria-hidden="true"
+          className="size-3 animate-spin"
+          fill="none"
+          viewBox="0 0 24 24"
+        >
+          <circle
+            className="opacity-25"
+            cx="12"
+            cy="12"
+            r="10"
+            stroke="currentColor"
+            strokeWidth="4"
+          />
+          <path
+            className="opacity-75"
+            fill="currentColor"
+            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+          />
+        </svg>
+      )}
+      {label}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // SelectableCardWrapper — thin a11y wrapper (P5-03)
 // ---------------------------------------------------------------------------
 
@@ -298,6 +424,10 @@ function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
  *
  * Selected state adds a primary ring so the selected item is unmistakable
  * without relying on colour alone (WCAG 1.4.1).
+ *
+ * FE-04: compileButton is rendered as a sibling below the card (not inside
+ * the button) to keep the DOM valid (no interactive content inside <button>).
+ * The error message is also rendered as a sibling below the card row.
  */
 interface SelectableCardWrapperProps {
   artifact: ArtifactCardType;
@@ -306,6 +436,10 @@ interface SelectableCardWrapperProps {
   urgencyMinutesAgo: number;
   isSelected: boolean;
   onSelect: (artifact: ArtifactCardType) => void;
+  /** FE-04: when provided, rendered as an action overlay on the card row */
+  compileSlot?: React.ReactNode;
+  /** FE-04: inline error text shown below the card row */
+  compileError?: string | null;
 }
 
 function SelectableCardWrapper({
@@ -315,27 +449,136 @@ function SelectableCardWrapper({
   urgencyMinutesAgo,
   isSelected,
   onSelect,
+  compileSlot,
+  compileError,
 }: SelectableCardWrapperProps) {
   return (
-    <button
-      type="button"
-      aria-pressed={isSelected}
-      aria-label={`Select inbox item: ${artifact.title}`}
-      onClick={() => onSelect(artifact)}
-      className={cn(
-        "w-full text-left rounded-md transition-all",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-        isSelected ? "ring-2 ring-primary ring-offset-1" : "ring-0",
+    <div className="flex flex-col gap-0.5">
+      <div className="relative">
+        <button
+          type="button"
+          aria-pressed={isSelected}
+          aria-label={`Select inbox item: ${artifact.title}`}
+          onClick={() => onSelect(artifact)}
+          className={cn(
+            "w-full text-left rounded-md transition-all",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            isSelected ? "ring-2 ring-primary ring-offset-1" : "ring-0",
+          )}
+        >
+          <ArtifactCard
+            artifact={artifact}
+            variant="list"
+            inboxGroup={inboxGroup}
+            urgencyLevel={urgencyLevel}
+            urgencyMinutesAgo={urgencyMinutesAgo}
+          />
+        </button>
+
+        {/*
+         * FE-04: CompileButton slot — positioned over the card's right cluster
+         * at the same vertical center as the existing CTA button. We use
+         * absolute positioning + pointer-events-auto so the compile button
+         * sits on top of the card without breaking the card's stretch-link.
+         *
+         * The slot replaces the stub CTA for needs_compile items, so we
+         * overlay it in the same position as the existing CTA button lives
+         * inside ArtifactCard (right edge, vertically centred).
+         */}
+        {compileSlot && (
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3"
+            aria-hidden="true"
+          >
+            <div className="pointer-events-auto flex items-center gap-2">
+              {compileSlot}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* FE-04: Inline compile error — shown below card row, auto-cleared by parent */}
+      {compileError && (
+        <p
+          role="alert"
+          aria-live="assertive"
+          className="px-3 text-xs text-destructive"
+        >
+          {compileError}
+        </p>
       )}
-    >
-      <ArtifactCard
-        artifact={artifact}
-        variant="list"
-        inboxGroup={inboxGroup}
-        urgencyLevel={urgencyLevel}
-        urgencyMinutesAgo={urgencyMinutesAgo}
-      />
-    </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// InboxItemWithCompile — FE-04
+// ---------------------------------------------------------------------------
+
+/**
+ * Thin wrapper that combines SelectableCardWrapper with CompileButton for
+ * items in the needs_compile group. Owns the per-item compile error state
+ * and the 5 s auto-clear timer for it.
+ *
+ * Separate component so the error state is isolated per item — one item's
+ * error doesn't pollute others. The optimistic status update is bubbled up
+ * via onCompileSuccess so InboxClient can mutate the shared artifacts list.
+ */
+interface InboxItemWithCompileProps {
+  artifact: ArtifactCardType;
+  inboxGroup: InboxGroup;
+  urgencyLevel: UrgencyLevel;
+  urgencyMinutesAgo: number;
+  isSelected: boolean;
+  onSelect: (artifact: ArtifactCardType) => void;
+  onCompileSuccess: (artifactId: string) => void;
+}
+
+function InboxItemWithCompile({
+  artifact,
+  inboxGroup,
+  urgencyLevel,
+  urgencyMinutesAgo,
+  isSelected,
+  onSelect,
+  onCompileSuccess,
+}: InboxItemWithCompileProps) {
+  const [itemError, setItemError] = useState<string | null>(null);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleError = useCallback((msg: string) => {
+    setItemError(msg);
+    // Auto-clear after 5 s
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => setItemError(null), 5000);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    };
+  }, []);
+
+  const compileSlot = (
+    <CompileButton
+      artifactId={artifact.id}
+      artifactTitle={artifact.title}
+      onSuccess={() => onCompileSuccess(artifact.id)}
+      onError={handleError}
+    />
+  );
+
+  return (
+    <SelectableCardWrapper
+      artifact={artifact}
+      inboxGroup={inboxGroup}
+      urgencyLevel={urgencyLevel}
+      urgencyMinutesAgo={urgencyMinutesAgo}
+      isSelected={isSelected}
+      onSelect={onSelect}
+      compileSlot={compileSlot}
+      compileError={itemError}
+    />
   );
 }
 
@@ -357,9 +600,8 @@ export function InboxClient({ initialData }: InboxClientProps) {
   // P5-03: selected item state — null until data loads, then auto-selects first.
   const [selectedItem, setSelectedItem] = useState<ArtifactCardType | null>(null);
 
-  const { artifacts, hasMore, isLoading, error, loadMore } = useInboxArtifacts({
-    initialData,
-  });
+  const { artifacts, hasMore, isLoading, error, loadMore, optimisticUpdateArtifact } =
+    useInboxArtifacts({ initialData });
 
   // P5-01: Group artifacts by inbox status. Recalculates only when the
   // artifacts array reference changes (load-more appends a new array).
@@ -377,6 +619,22 @@ export function InboxClient({ initialData }: InboxClientProps) {
   const handleSelectItem = useCallback((artifact: ArtifactCardType) => {
     setSelectedItem(artifact);
   }, []);
+
+  /**
+   * FE-04: Optimistically move an artifact from needs_compile → needs_destination
+   * after a successful compile trigger. We use "stale" since that maps to
+   * needs_destination in STATUS_TO_GROUP (matches the compile→destination flow).
+   *
+   * This gives instant visual feedback (item moves groups) without a network
+   * roundtrip. If the backend returns a different status on next page load that
+   * is fine — the data will reconcile on refresh.
+   */
+  const handleCompileSuccess = useCallback(
+    (artifactId: string) => {
+      optimisticUpdateArtifact(artifactId, { status: "stale" });
+    },
+    [optimisticUpdateArtifact],
+  );
 
   return (
     <>
@@ -446,6 +704,7 @@ export function InboxClient({ initialData }: InboxClientProps) {
              * P5-01: Render one StatusGroupSection per non-empty group.
              * P5-02: Pass per-item urgency data into ArtifactCard.
              * P5-03: Items wrapped in SelectableCardWrapper for click selection.
+             * FE-04: needs_compile items use InboxItemWithCompile for compile button.
              * Order: NEW → NEEDS COMPILE → NEEDS DESTINATION.
              */
             <div className="flex flex-col gap-6">
@@ -469,14 +728,31 @@ export function InboxClient({ initialData }: InboxClientProps) {
                         const { level, minutesAgo } = deriveItemUrgency(artifact);
                         return (
                           <li key={artifact.id}>
-                            <SelectableCardWrapper
-                              artifact={artifact}
-                              inboxGroup={groupKey}
-                              urgencyLevel={level}
-                              urgencyMinutesAgo={minutesAgo}
-                              isSelected={selectedItem?.id === artifact.id}
-                              onSelect={handleSelectItem}
-                            />
+                            {/*
+                             * FE-04: needs_compile group gets InboxItemWithCompile
+                             * (includes compile button + per-item error state).
+                             * All other groups get the plain SelectableCardWrapper.
+                             */}
+                            {groupKey === "needs_compile" ? (
+                              <InboxItemWithCompile
+                                artifact={artifact}
+                                inboxGroup={groupKey}
+                                urgencyLevel={level}
+                                urgencyMinutesAgo={minutesAgo}
+                                isSelected={selectedItem?.id === artifact.id}
+                                onSelect={handleSelectItem}
+                                onCompileSuccess={handleCompileSuccess}
+                              />
+                            ) : (
+                              <SelectableCardWrapper
+                                artifact={artifact}
+                                inboxGroup={groupKey}
+                                urgencyLevel={level}
+                                urgencyMinutesAgo={minutesAgo}
+                                isSelected={selectedItem?.id === artifact.id}
+                                onSelect={handleSelectItem}
+                              />
+                            )}
                           </li>
                         );
                       })}

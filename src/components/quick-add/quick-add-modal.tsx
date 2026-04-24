@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * QuickAddModal — three-tab intake modal (Note, URL, Audio).
+ * QuickAddModal — four-tab intake modal (Note, URL, Audio, File).
  *
  * P3-04: Full submission wiring.
  *   - Note tab: textarea + optional comma-separated tags
@@ -29,6 +29,14 @@
  *   - On success (202): transitions to "audio_queued" phase with transcription note.
  *   - Client-side 25 MB guard in AudioRecorder; server also enforces HTTP 413.
  *
+ * FE-02 additions:
+ *   - File tab with FileDropZone component.
+ *   - On file selected + submit, calls submitUpload(file as Blob, file.type).
+ *   - Offline queued path → "queued" phase (same as other tabs).
+ *   - On success (202 with run_id): transitions to "ingesting" phase with SSE.
+ *   - On success (202 without run_id, e.g. async transcription): "audio_queued" phase.
+ *   - Optional tags input matching the Note tab pattern.
+ *
  * Design spec §5 (POST /api/intake/{note,url,upload}), §3.2 row 4.
  * SSE event types: SSEWorkflowEvent from @/lib/sse/types
  *   terminal completion event: WorkflowCompletedEvent { type: "workflow_completed", artifact_id? }
@@ -43,6 +51,7 @@ import { useSSE } from "@/hooks/useSSE";
 import { submitNote, submitUrl, submitUpload, parseTagString, isQueuedResponse } from "@/lib/api/intake";
 import { useOfflineQueue } from "@/hooks/use-offline-queue";
 import { AudioRecorder } from "@/components/quick-add/audio-recorder";
+import { FileDropZone } from "@/components/quick-add/file-drop-zone";
 import type { WorkflowRunStatus } from "@/types/artifact";
 import type { SSEWorkflowEvent, WorkflowCompletedEvent } from "@/lib/sse/types";
 
@@ -50,7 +59,7 @@ import type { SSEWorkflowEvent, WorkflowCompletedEvent } from "@/lib/sse/types";
 // Internal types
 // ---------------------------------------------------------------------------
 
-type Tab = "note" | "url" | "audio";
+type Tab = "note" | "url" | "audio" | "file";
 
 /** Modal display phase. */
 type ModalPhase =
@@ -58,7 +67,7 @@ type ModalPhase =
   | "ingesting"     // POST accepted, SSE streaming
   | "complete"      // SSE workflow_completed received
   | "queued"        // offline: stored in IndexedDB
-  | "audio_queued"  // audio upload accepted (transcription pending)
+  | "audio_queued"  // audio/file upload accepted (transcription/processing pending)
   | "error";        // POST error or SSE workflow_failed
 
 interface CompletedRun {
@@ -233,6 +242,20 @@ function QueueBadge({ queuedCount, failedCount, onRetryFailed }: QueueBadgeProps
 }
 
 // ---------------------------------------------------------------------------
+// Tab label helpers
+// ---------------------------------------------------------------------------
+
+/** Human-readable label for each tab. */
+function tabLabel(tab: Tab): string {
+  switch (tab) {
+    case "note":  return "Note";
+    case "url":   return "URL";
+    case "audio": return "Audio";
+    case "file":  return "File";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main modal
 // ---------------------------------------------------------------------------
 
@@ -244,6 +267,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
   const urlValueId = `${baseId}-url-value`;
   const urlTitleId = `${baseId}-url-title`;
   const urlTagsId  = `${baseId}-url-tags`;
+  const fileTagsId = `${baseId}-file-tags`;
 
   // Form state
   const [activeTab, setActiveTab]   = useState<Tab>("note");
@@ -257,6 +281,10 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
   const [audioBlob, setAudioBlob]         = useState<Blob | null>(null);
   const [audioMimeType, setAudioMimeType] = useState<string>("");
   const [audioError, setAudioError]       = useState<string | null>(null);
+
+  // File state (FE-02)
+  const [fileFile, setFileFile] = useState<File | null>(null);
+  const [fileTags, setFileTags] = useState("");
 
   // Flow state
   const [phase, setPhase]             = useState<ModalPhase>("form");
@@ -336,6 +364,8 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
     setAudioBlob(null);
     setAudioMimeType("");
     setAudioError(null);
+    setFileFile(null);
+    setFileTags("");
     setActiveTab("note");
   }
 
@@ -390,8 +420,9 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
 
   function isSubmitDisabled(): boolean {
     if (isSubmitting) return true;
-    if (activeTab === "note") return !isNoteValid();
+    if (activeTab === "note")  return !isNoteValid();
     if (activeTab === "audio") return audioBlob === null;
+    if (activeTab === "file")  return fileFile === null;
     return !isUrlValid();
   }
 
@@ -427,6 +458,29 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
         }
 
         // Audio accepted — transcription pending (backend stub returns [transcript pending])
+        setPhase("audio_queued");
+        return;
+      } else if (activeTab === "file") {
+        // FE-02: file upload — same path as audio, routes through intakeFetch
+        if (!fileFile) return;
+        response = await submitUpload(fileFile as Blob, fileFile.type);
+
+        // Offline queued
+        if (isQueuedResponse(response)) {
+          setPhase("queued");
+          return;
+        }
+
+        // If the backend returns a run_id, wire up SSE tracking
+        if ("run_id" in response && response.run_id) {
+          setRunId(response.run_id);
+          setWorkflowStatus("pending");
+          setCurrentStage(0);
+          setPhase("ingesting");
+          return;
+        }
+
+        // No run_id — processing is async (e.g. large file, transcription queue)
         setPhase("audio_queued");
         return;
       } else {
@@ -470,6 +524,42 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
   // ---------------------------------------------------------------------------
 
   if (!open) return null;
+
+  // ---------------------------------------------------------------------------
+  // Submit button label
+  // ---------------------------------------------------------------------------
+
+  function submitButtonLabel(): React.ReactNode {
+    if (isSubmitting) {
+      return (
+        <span className="flex items-center gap-1.5">
+          <svg
+            aria-hidden="true"
+            className="size-3.5 animate-spin"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+            />
+          </svg>
+          {activeTab === "audio" || activeTab === "file" ? "Uploading…" : "Submitting…"}
+        </span>
+      );
+    }
+    if (activeTab === "audio" || activeTab === "file") return "Upload";
+    return "Add";
+  }
 
   // ---------------------------------------------------------------------------
   // Render
@@ -520,7 +610,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                 : phase === "queued"
                 ? "Queued"
                 : phase === "audio_queued"
-                ? "Audio submitted"
+                ? activeTab === "file" ? "File submitted" : "Audio submitted"
                 : "Quick Add"}
             </h2>
             {/* P4-02: offline queue badge */}
@@ -562,7 +652,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
           <>
             {/* Tab bar */}
             <div role="tablist" aria-label="Intake type" className="flex border-b">
-              {(["note", "url", "audio"] as const).map((tab) => (
+              {(["note", "url", "audio", "file"] as const).map((tab) => (
                 <button
                   key={tab}
                   role="tab"
@@ -579,7 +669,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                       : "border-transparent text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {tab === "note" ? "Note" : tab === "url" ? "URL" : "Audio"}
+                  {tabLabel(tab)}
                 </button>
               ))}
             </div>
@@ -756,6 +846,26 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                   )}
                 </div>
 
+                {/* File panel — FE-02 */}
+                <div
+                  role="tabpanel"
+                  id="quick-add-file-panel"
+                  aria-labelledby="quick-add-file-tab"
+                  hidden={activeTab !== "file"}
+                  className="flex flex-col gap-3"
+                >
+                  <FileDropZone
+                    disabled={isSubmitting}
+                    onFile={(file) => setFileFile(file)}
+                  />
+                  <TagInput
+                    id={fileTagsId}
+                    value={fileTags}
+                    onChange={setFileTags}
+                    disabled={isSubmitting}
+                  />
+                </div>
+
                 {/* POST error banner */}
                 {submitError && (
                   <div
@@ -810,35 +920,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                     "disabled:pointer-events-none disabled:opacity-50",
                   )}
                 >
-                  {isSubmitting ? (
-                    <span className="flex items-center gap-1.5">
-                      <svg
-                        aria-hidden="true"
-                        className="size-3.5 animate-spin"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                        />
-                      </svg>
-                      {activeTab === "audio" ? "Uploading…" : "Submitting…"}
-                    </span>
-                  ) : activeTab === "audio" ? (
-                    "Submit"
-                  ) : (
-                    "Add"
-                  )}
+                  {submitButtonLabel()}
                 </button>
               </div>
             </form>
@@ -925,7 +1007,7 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
           </div>
         )}
 
-        {/* --- AUDIO QUEUED PHASE (P4-03) --- */}
+        {/* --- AUDIO / FILE QUEUED PHASE (P4-03 / FE-02) --- */}
         {phase === "audio_queued" && (
           <div className="p-5">
             <div
@@ -933,22 +1015,41 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
               className="rounded-lg border border-sky-200 bg-sky-50 dark:border-sky-800 dark:bg-sky-950/30 p-4"
             >
               <div className="mb-3 flex items-center gap-2">
-                <svg
-                  aria-hidden="true"
-                  className="size-5 text-sky-600 dark:text-sky-400"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <rect x="9" y="2" width="6" height="12" rx="3" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-                  <path strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8" />
-                </svg>
+                {activeTab === "file" ? (
+                  <svg
+                    aria-hidden="true"
+                    className="size-5 text-sky-600 dark:text-sky-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414A1 1 0 0121 9.414V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    aria-hidden="true"
+                    className="size-5 text-sky-600 dark:text-sky-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <rect x="9" y="2" width="6" height="12" rx="3" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                    <path strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" d="M19 10a7 7 0 01-14 0M12 19v3M8 22h8" />
+                  </svg>
+                )}
                 <p className="text-sm font-semibold text-sky-800 dark:text-sky-200">
-                  Audio uploaded successfully
+                  {activeTab === "file" ? "File uploaded successfully" : "Audio uploaded successfully"}
                 </p>
               </div>
               <p className="text-sm text-sky-800/80 dark:text-sky-200/80">
-                Transcription pending — artifact will appear in Inbox once processing is complete.
+                {activeTab === "file"
+                  ? "Processing pending — artifact will appear in Inbox once ingestion is complete."
+                  : "Transcription pending — artifact will appear in Inbox once processing is complete."}
               </p>
             </div>
             <div className="mt-4 flex justify-end gap-2">

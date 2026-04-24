@@ -10,9 +10,14 @@
  * Data-fetching: native fetch via `listArtifacts` (no TanStack Query / SWR
  * installed; matches package.json as of 2026-04-16).
  *
+ * FE-04: Added `optimisticUpdateArtifact` — allows InboxClient to apply
+ * optimistic status mutations (e.g. after compile success) without a full
+ * network refetch. Caller passes a partial update that is merged into the
+ * matching artifact by ID.
+ *
  * Usage:
- *   const { artifacts, cursor, isLoading, error, loadMore, hasMore } =
- *     useInboxArtifacts({ initialData });
+ *   const { artifacts, cursor, isLoading, error, loadMore, hasMore,
+ *           optimisticUpdateArtifact } = useInboxArtifacts({ initialData });
  */
 
 import { useCallback, useState } from "react";
@@ -44,6 +49,12 @@ export interface UseInboxArtifactsResult {
   error: string | null;
   /** Fetch and append the next page. No-op if loading or no more pages. */
   loadMore: () => Promise<void>;
+  /**
+   * FE-04: Optimistically apply a partial update to a single artifact by ID.
+   * The update is merged (Object.assign semantics) into the existing item.
+   * Use after compile success to reflect the new status without a full refetch.
+   */
+  optimisticUpdateArtifact: (id: string, patch: Partial<ArtifactCard>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -88,5 +99,16 @@ export function useInboxArtifacts({
     }
   }, [cursor, hasMore, isLoading, limit]);
 
-  return { artifacts, cursor, hasMore, isLoading, error, loadMore };
+  // FE-04: Optimistic update — merge patch into the matching artifact by ID.
+  // Produces a new array so React sees the reference change and re-renders.
+  const optimisticUpdateArtifact = useCallback(
+    (id: string, patch: Partial<ArtifactCard>) => {
+      setArtifacts((prev) =>
+        prev.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      );
+    },
+    [],
+  );
+
+  return { artifacts, cursor, hasMore, isLoading, error, loadMore, optimisticUpdateArtifact };
 }
