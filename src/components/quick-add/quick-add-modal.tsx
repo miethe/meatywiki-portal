@@ -45,6 +45,7 @@
  */
 
 import { useState, useCallback, useId } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { StageTracker } from "@/components/workflow/stage-tracker";
 import { useSSE } from "@/hooks/useSSE";
@@ -260,6 +261,8 @@ function tabLabel(tab: Tab): string {
 // ---------------------------------------------------------------------------
 
 export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
+  const queryClient = useQueryClient();
+
   // Stable IDs for ARIA wiring
   const baseId = useId();
   const noteTextId = `${baseId}-note-text`;
@@ -324,6 +327,10 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
         });
         setWorkflowStatus("complete");
         setPhase("complete");
+        // Invalidate all artifact list queries so the library (and any other
+        // artifact-list surface) picks up the newly ingested artifact without
+        // requiring a manual page refresh.
+        void queryClient.invalidateQueries({ queryKey: ["artifacts"] });
       }
     } else if (lastEvent.type === "workflow_failed") {
       if (phase === "ingesting") {
