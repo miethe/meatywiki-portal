@@ -7,25 +7,29 @@
  *   - customTabs: single "Properties" tab showing inbox-item metadata
  *     (type, source, intake date, content length derived from raw_content /
  *     frontmatter_jsonb.word_count)
- *   - actions: five stub action buttons (verb-first, lucide icons)
+ *   - actions: five action buttons (verb-first, lucide icons)
  *   - footer: "Finalize Entry" primary CTA (stub)
  *   - empty state: "Select an inbox item to see details & actions"
  *
- * All actions and the footer CTA are stubs that console.debug only — no
- * backend flows are wired (per P5-03 spec).
+ * "Request Review" calls POST /api/artifacts/:id/review (P3-03).
+ * All other actions and the footer CTA are stubs that console.debug only.
  *
- * Task: P5-03
+ * Task: P5-03, P3-03
  * Stitch ref: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
  */
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FlaskConical,
   Link2,
   GitMerge,
   Zap,
   ClipboardCheck,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { requestReview } from "@/lib/api/artifacts";
 import {
   ContextRail,
   type ContextRailTab,
@@ -156,10 +160,65 @@ function InboxPropertiesPanel({ item }: InboxPropertiesPanelProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Action stubs
+// Inline toast (no external lib — project has no toast dependency in v1)
 // ---------------------------------------------------------------------------
 
-function buildActions(item: ArtifactCard): ContextRailAction[] {
+type ToastVariant = "success" | "error";
+
+interface ToastState {
+  message: string;
+  variant: ToastVariant;
+}
+
+function InlineToast({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastState;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex items-center gap-2 rounded-md border px-3 py-2 text-xs shadow-sm",
+        toast.variant === "success"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-300"
+          : "border-destructive/30 bg-destructive/10 text-destructive",
+      )}
+    >
+      {toast.variant === "success" ? (
+        <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : (
+        <XCircle className="size-3.5 shrink-0" aria-hidden="true" />
+      )}
+      <span className="flex-1">{toast.message}</span>
+      <button
+        type="button"
+        aria-label="Dismiss notification"
+        onClick={onDismiss}
+        className="ml-1 opacity-60 hover:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Action builders — stubs + wired Request Review
+// ---------------------------------------------------------------------------
+
+interface BuildActionsOptions {
+  reviewState: "idle" | "loading" | "done";
+  onRequestReview: () => void;
+}
+
+function buildActions(
+  item: ArtifactCard,
+  { reviewState, onRequestReview }: BuildActionsOptions,
+): ContextRailAction[] {
   const stub = (label: string) => () => {
     console.debug("[inbox-rail] action:", label, item.id);
   };
@@ -198,11 +257,17 @@ function buildActions(item: ArtifactCard): ContextRailAction[] {
       icon: Zap,
     },
     {
-      label: "Request Review",
-      ariaLabel: "Request a review for this artifact",
-      hasEndpoint: false,
+      label: reviewState === "done" ? "Review Requested" : "Request Review",
+      ariaLabel:
+        reviewState === "done"
+          ? "Review already requested for this artifact"
+          : reviewState === "loading"
+            ? "Requesting review…"
+            : "Request a review for this artifact",
+      hasEndpoint: true,
       description: "Flag this artifact for manual review",
-      onClick: stub("Request Review"),
+      onClick: reviewState === "idle" ? onRequestReview : () => undefined,
+      disabled: reviewState !== "idle",
       icon: ClipboardCheck,
     },
   ];
@@ -266,7 +331,10 @@ export interface InboxContextRailProps {
 
 /**
  * InboxContextRail wires a selected inbox item into the shared <ContextRail>
- * with inbox-specific tabs (Properties) and suggested action stubs.
+ * with inbox-specific tabs (Properties) and suggested actions.
+ *
+ * "Request Review" is wired to POST /api/artifacts/:id/review (P3-03).
+ * All other actions and the footer CTA are stubs.
  *
  * A "Finalize Entry" primary CTA sits below the rail for direct promotion.
  *
@@ -281,6 +349,43 @@ export function InboxContextRail({
   selectedItem,
   className,
 }: InboxContextRailProps) {
+  // Per-item review state — reset when selected item changes.
+  const [reviewState, setReviewState] = useState<"idle" | "loading" | "done">(
+    "idle",
+  );
+  const [toast, setToast] = useState<ToastState | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset review state when a different item is selected.
+  const prevItemId = useRef<string | null>(null);
+  useEffect(() => {
+    if (selectedItem?.id !== prevItemId.current) {
+      prevItemId.current = selectedItem?.id ?? null;
+      setReviewState("idle");
+      setToast(null);
+    }
+  }, [selectedItem?.id]);
+
+  // Dismiss toast after 4 s automatically.
+  const showToast = useCallback((message: string, variant: ToastVariant) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ message, variant });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  }, []);
+
+  const handleRequestReview = useCallback(async () => {
+    if (!selectedItem || reviewState !== "idle") return;
+    setReviewState("loading");
+    try {
+      await requestReview(selectedItem.id);
+      setReviewState("done");
+      showToast("Review requested", "success");
+    } catch {
+      setReviewState("idle");
+      showToast("Failed to request review", "error");
+    }
+  }, [selectedItem, reviewState, showToast]);
+
   if (!selectedItem) {
     return (
       <div className={cn("flex flex-col gap-3", className)}>
@@ -290,7 +395,10 @@ export function InboxContextRail({
   }
 
   const customTabs = buildCustomTabs(selectedItem);
-  const actions = buildActions(selectedItem);
+  const actions = buildActions(selectedItem, {
+    reviewState,
+    onRequestReview: handleRequestReview,
+  });
 
   const handleFinalize = () => {
     console.debug("[inbox-rail] action: Finalize Entry", selectedItem.id);
@@ -298,6 +406,11 @@ export function InboxContextRail({
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
+      {/* Inline toast notification */}
+      {toast && (
+        <InlineToast toast={toast} onDismiss={() => setToast(null)} />
+      )}
+
       {/* Rail: actions + Properties tab */}
       <ContextRail
         customTabs={customTabs}

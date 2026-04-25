@@ -106,6 +106,13 @@ export interface ContextRailAction {
   onClick?: () => void;
   /** Leading icon component (lucide-react). Renders left of label. */
   icon?: React.ComponentType<{ className?: string }>;
+  /**
+   * When true the button is rendered in a disabled / muted state and
+   * ignores clicks. Distinct from `!onClick` (un-wired stubs) — use
+   * `disabled` for actions that are intentionally blocked at runtime
+   * (e.g. already-submitted, in-flight).
+   */
+  disabled?: boolean;
 }
 
 export interface ContextRailProps {
@@ -973,27 +980,32 @@ export function ContextRail({
           aria-label="Artifact actions"
           className="flex flex-col gap-1.5"
         >
-          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick, icon: Icon }) => (
+          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick, icon: Icon, disabled }) => (
             <button
               key={label}
               type="button"
               aria-label={btnAriaLabel}
-              aria-disabled={!onClick ? "true" : undefined}
+              aria-disabled={(disabled || !onClick) ? "true" : undefined}
+              disabled={disabled}
               title={description}
               onClick={
-                onClick
-                  ? onClick
-                  : () => {
-                      console.debug(`[ContextRail] Action stub: "${label}" — ${description}`);
-                    }
+                disabled
+                  ? undefined
+                  : onClick
+                    ? onClick
+                    : () => {
+                        console.debug(`[ContextRail] Action stub: "${label}" — ${description}`);
+                      }
               }
               className={cn(
                 // shadcn Button variant="outline" pattern
                 "inline-flex h-8 w-full items-center justify-start gap-2 rounded-md border bg-background px-3 text-xs font-medium",
                 "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                onClick
-                  ? "hover:bg-accent hover:text-accent-foreground"
-                  : "cursor-default text-muted-foreground hover:bg-muted/50",
+                disabled
+                  ? "cursor-not-allowed text-muted-foreground opacity-60"
+                  : onClick
+                    ? "hover:bg-accent hover:text-accent-foreground"
+                    : "cursor-default text-muted-foreground hover:bg-muted/50",
               )}
             >
               {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
