@@ -73,7 +73,7 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
 
   return (
     <MobileNavContext.Provider value={{ isOpen: mobileNavOpen, toggle, close }}>
-      <div className="flex min-h-screen bg-background">
+      <div className="flex h-screen overflow-hidden bg-background">
         {/* ---------------------------------------------------------------- */}
         {/* Desktop sidebar — hidden on mobile, shown md+                    */}
         {/* ---------------------------------------------------------------- */}
