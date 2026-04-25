@@ -70,6 +70,7 @@ import {
   Link2,
   BookOpen,
   GitMerge,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/ui/type-badge";
@@ -80,6 +81,7 @@ import {
   type EdgeType,
 } from "@/hooks/useArtifactEdges";
 import { useLineage } from "@/hooks/useLineage";
+import { useRecentSyntheses } from "@/hooks/useRecentSyntheses";
 import type { SynthesisLineageNode } from "@/lib/api/research";
 import type { ArtifactDetail } from "@/types/artifact";
 
@@ -979,6 +981,98 @@ function ResearchMetadataPanel({ artifact }: { artifact: Artifact | undefined })
 }
 
 // ---------------------------------------------------------------------------
+// Panel: Syntheses (research variant) — recent synthesis artifacts list
+// Backed by GET /api/research/recent-syntheses (P4-01).
+// ---------------------------------------------------------------------------
+
+/**
+ * Compact row for a single synthesis artifact.
+ * Renders the title linked to the detail page plus a relative updated_at time.
+ */
+function SynthesisRow({ id, title, updated }: { id: string; title: string; updated: string | null }) {
+  return (
+    <li className="flex flex-col gap-0.5 rounded-md border bg-card px-2.5 py-2 text-xs">
+      <Link
+        href={`/artifact/${id}`}
+        className={cn(
+          "truncate font-medium text-foreground",
+          "hover:underline underline-offset-2",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+        )}
+      >
+        {title}
+      </Link>
+      {updated && (
+        <time
+          dateTime={updated}
+          className="text-[10px] text-muted-foreground/70"
+        >
+          <RelativeTime iso={updated} />
+        </time>
+      )}
+    </li>
+  );
+}
+
+function SynthesesPanel() {
+  const { syntheses, isLoading, isError, error } = useRecentSyntheses({ limit: 10 });
+
+  if (isLoading) {
+    return (
+      <div aria-busy="true" aria-label="Loading recent syntheses" className="flex flex-col gap-2">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div
+            key={i}
+            aria-hidden="true"
+            className="flex animate-pulse flex-col gap-1 rounded-md border bg-card px-2.5 py-2"
+          >
+            <div className="h-3 w-3/4 rounded bg-muted" />
+            <div className="h-2.5 w-1/3 rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (isError && error) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-4 text-center"
+      >
+        <AlertCircle aria-hidden="true" className="size-4 text-destructive" />
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+      </div>
+    );
+  }
+
+  if (syntheses.length === 0) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center gap-2 rounded-md border border-dashed px-3 py-6 text-center"
+      >
+        <FileText aria-hidden="true" className="size-5 text-muted-foreground/40" />
+        <p className="text-xs font-medium text-foreground">No recent syntheses.</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul role="list" aria-label="Recent syntheses" className="flex flex-col gap-1">
+      {syntheses.map((item) => (
+        <SynthesisRow
+          key={item.id}
+          id={item.id}
+          title={item.title}
+          updated={item.updated}
+        />
+      ))}
+    </ul>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab sets
 // ---------------------------------------------------------------------------
 
@@ -1017,6 +1111,11 @@ const RESEARCH_TABS: ContextRailTab[] = [
     id: "lineage",
     label: "Lineage",
     renderContent: (artifactId) => <ResearchLineagePanel artifactId={artifactId} />,
+  },
+  {
+    id: "syntheses",
+    label: "Syntheses",
+    renderContent: () => <SynthesesPanel />,
   },
   {
     id: "metadata",

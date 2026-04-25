@@ -1,12 +1,12 @@
 import React from "react";
 import { render, type RenderOptions, type RenderResult } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 /**
  * Test render utilities for MeatyWiki Portal.
  *
- * `renderWithProviders` wraps the component under test with any app-level
- * context providers. Kept minimal in Batch 1 — expand in Batch 3 as
- * providers are added (e.g., auth context, theme, query client).
+ * `renderWithProviders` wraps the component under test with all app-level
+ * context providers: QueryClientProvider (TanStack Query).
  *
  * Usage:
  *
@@ -28,13 +28,20 @@ import { render, type RenderOptions, type RenderResult } from "@testing-library/
 /**
  * Root wrapper applied to every renderWithProviders call.
  *
- * Currently a passthrough. Add providers here as they are introduced:
- * - QueryClientProvider (React Query, if adopted)
- * - AuthProvider (if a React context is needed client-side)
- * - ThemeProvider (if added in later phases)
+ * Includes:
+ * - QueryClientProvider (TanStack Query v5) with a fresh per-render client
+ *   (retries disabled so tests fail fast; gcTime=0 to prevent stale state)
  */
 function AllProviders({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <>{children}</>;
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: 0 },
+      mutations: { retry: false },
+    },
+  });
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
 }
 
 // ---------------------------------------------------------------------------

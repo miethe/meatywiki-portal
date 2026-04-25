@@ -5,52 +5,28 @@
  *
  * ADR-DPI-004 DP1-06 #1: Featured Topic Cards grid.
  *
- * Backend aggregate endpoint not yet available.
- *   Missing endpoint: GET /api/research/featured-topics
- *   Expected response:
- *     { data: { items: Array<FeaturedTopic> } }
- *   FeaturedTopic shape:
- *     { id: string; title: string; subtype?: string; article_count: number;
- *       ranking_score: number; updated: string; snippet?: string }
- *   Query params: limit (default 6), topic_id (optional scope filter)
- *
- * While the endpoint is absent the grid renders skeletons. When
- * GET /api/research/featured-topics ships replace `MOCK_LOADING`
- * with a hook call (e.g. useFeaturedTopics) and remove the placeholder.
+ * Wires GET /api/research/featured-topics via useFeaturedTopics hook.
+ * Each card shows an activity bar proportional to the topic's activity_score
+ * relative to the maximum score in the returned list.
  *
  * Layout: responsive 2–3 column grid; each card links to /artifact/:id.
  * Cards reuse the portal design token palette (slate base, primary accent).
  *
  * WCAG 2.1 AA: grid role="list"; cards are role="listitem" + focusable link.
+ * Activity bar has aria-label with numeric value; colour is not the sole
+ * differentiator (score printed in text alongside the bar).
  *
  * Stitch reference: Research Home (0cf6fb7b…) — Featured Topic Cards section.
+ *
+ * Portal v1.7 Phase 4 (P4-04).
  */
 
 import Link from "next/link";
 import { BookOpen, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/ui/type-badge";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export interface FeaturedTopic {
-  id: string;
-  title: string;
-  subtype?: string | null;
-  article_count: number;
-  ranking_score?: number | null;
-  updated?: string | null;
-  snippet?: string | null;
-}
-
-export interface FeaturedTopicsGridProps {
-  /** Override data for testing / SSR; when undefined the component self-fetches. */
-  topics?: FeaturedTopic[];
-  isLoading?: boolean;
-  className?: string;
-}
+import { useFeaturedTopics } from "@/hooks/useFeaturedTopics";
+import type { FeaturedTopicItem } from "@/lib/api/research";
 
 // ---------------------------------------------------------------------------
 // Skeleton card
@@ -77,14 +53,51 @@ function SkeletonCard() {
 }
 
 // ---------------------------------------------------------------------------
+// Activity score bar
+// ---------------------------------------------------------------------------
+
+interface ActivityBarProps {
+  score: number;
+  /** 0–1 proportion of the bar to fill. */
+  proportion: number;
+}
+
+function ActivityBar({ score, proportion }: ActivityBarProps) {
+  const pct = Math.round(proportion * 100);
+  return (
+    <div className="mt-auto flex flex-col gap-1">
+      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+        <span>Activity</span>
+        <span className="tabular-nums">{score}</span>
+      </div>
+      <div
+        role="meter"
+        aria-label={`Activity score: ${score}`}
+        aria-valuenow={score}
+        aria-valuemin={0}
+        className="h-1 w-full overflow-hidden rounded-full bg-muted"
+      >
+        <div
+          aria-hidden="true"
+          className="h-full rounded-full bg-primary transition-[width]"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Single topic card
 // ---------------------------------------------------------------------------
 
 interface TopicCardProps {
-  topic: FeaturedTopic;
+  topic: FeaturedTopicItem;
+  /** Proportion (0–1) of the activity bar to fill relative to list max. */
+  proportion: number;
 }
 
-function TopicCard({ topic }: TopicCardProps) {
+function TopicCard({ topic, proportion }: TopicCardProps) {
   return (
     <li
       role="listitem"
@@ -95,10 +108,10 @@ function TopicCard({ topic }: TopicCardProps) {
     >
       <div className="flex items-start justify-between gap-2">
         {topic.subtype && <TypeBadge type={topic.subtype} />}
-        {topic.ranking_score != null && topic.ranking_score > 0.7 && (
+        {topic.activity_score > 0 && (
           <span
             aria-label="Trending topic"
-            title="High ranking score"
+            title="Recently active topic"
             className="ml-auto inline-flex items-center gap-1 rounded-sm bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
           >
             <TrendingUp aria-hidden="true" className="size-2.5" />
@@ -118,16 +131,7 @@ function TopicCard({ topic }: TopicCardProps) {
         {topic.title}
       </Link>
 
-      {topic.snippet && (
-        <p className="line-clamp-2 text-xs text-muted-foreground">
-          {topic.snippet}
-        </p>
-      )}
-
-      <div className="mt-auto flex items-center gap-1 text-[11px] text-muted-foreground">
-        <BookOpen aria-hidden="true" className="size-3" />
-        <span>{topic.article_count} article{topic.article_count !== 1 ? "s" : ""}</span>
-      </div>
+      <ActivityBar score={topic.activity_score} proportion={proportion} />
     </li>
   );
 }
@@ -143,7 +147,7 @@ function EmptyState() {
       className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-10 text-center"
     >
       <BookOpen aria-hidden="true" className="size-6 text-muted-foreground" />
-      <p className="text-xs text-muted-foreground">No featured topics yet.</p>
+      <p className="text-xs text-muted-foreground">No featured topics.</p>
     </div>
   );
 }
@@ -152,20 +156,21 @@ function EmptyState() {
 // Main component
 // ---------------------------------------------------------------------------
 
+export interface FeaturedTopicsGridProps {
+  className?: string;
+}
+
 /**
- * FeaturedTopicsGrid renders a grid of ranked research topics.
- *
- * While backend endpoint is missing renders skeletons.
- * Pass `topics` prop to override with live or SSR data when endpoint ships.
+ * FeaturedTopicsGrid self-fetches from GET /api/research/featured-topics via
+ * useFeaturedTopics. Shows loading skeletons, an error alert, an empty state,
+ * or a live grid of topic cards with relative activity bars.
  */
-export function FeaturedTopicsGrid({
-  topics,
-  isLoading = false,
-  className,
-}: FeaturedTopicsGridProps) {
-  // Backend endpoint missing — always show skeletons until wired
-  const endpointMissing = topics === undefined;
-  const loading = isLoading || endpointMissing;
+export function FeaturedTopicsGrid({ className }: FeaturedTopicsGridProps) {
+  const { topics, isLoading, isError, error } = useFeaturedTopics();
+
+  // Compute max score once for proportional bar widths.
+  const maxScore =
+    topics.length > 0 ? Math.max(...topics.map((t) => t.activity_score)) : 0;
 
   return (
     <section aria-labelledby="featured-topics-heading" className={className}>
@@ -176,27 +181,18 @@ export function FeaturedTopicsGrid({
         >
           Featured Topics
         </h2>
-        {endpointMissing && (
+        {!isLoading && !isError && topics.length > 0 && (
           <span
-            className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-            role="note"
+            className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-muted-foreground"
+            aria-label={`${topics.length} featured topics`}
           >
-            Planned
+            {topics.length}
           </span>
         )}
       </div>
 
-      {endpointMissing && (
-        <p className="mb-3 text-[11px] text-muted-foreground" role="note">
-          Requires{" "}
-          <code className="rounded bg-muted px-1 font-mono text-[10px]">
-            GET /api/research/featured-topics
-          </code>{" "}
-          — coming soon.
-        </p>
-      )}
-
-      {loading ? (
+      {/* Loading */}
+      {isLoading && (
         <ul
           role="list"
           aria-busy="true"
@@ -207,16 +203,39 @@ export function FeaturedTopicsGrid({
             <SkeletonCard key={i} />
           ))}
         </ul>
-      ) : topics && topics.length === 0 ? (
-        <EmptyState />
-      ) : (
+      )}
+
+      {/* Error */}
+      {!isLoading && isError && (
+        <div
+          role="alert"
+          className="flex flex-col gap-1 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-xs text-muted-foreground"
+        >
+          <span className="font-medium text-destructive">
+            Failed to load featured topics.
+          </span>
+          {error?.message && (
+            <span className="text-[10px] opacity-70">{error.message}</span>
+          )}
+        </div>
+      )}
+
+      {/* Empty */}
+      {!isLoading && !isError && topics.length === 0 && <EmptyState />}
+
+      {/* Populated grid */}
+      {!isLoading && !isError && topics.length > 0 && (
         <ul
           role="list"
           aria-label="Featured research topics"
           className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
         >
-          {(topics ?? []).map((topic) => (
-            <TopicCard key={topic.id} topic={topic} />
+          {topics.map((topic) => (
+            <TopicCard
+              key={topic.id}
+              topic={topic}
+              proportion={maxScore > 0 ? topic.activity_score / maxScore : 0}
+            />
           ))}
         </ul>
       )}
