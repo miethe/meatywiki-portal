@@ -1014,8 +1014,19 @@ function SynthesisRow({ id, title, updated }: { id: string; title: string; updat
   );
 }
 
-function SynthesesPanel() {
-  const { syntheses, isLoading, isError, error } = useRecentSyntheses({ limit: 10 });
+/**
+ * Exported variant of SynthesesPanel that accepts an optional topicId scope.
+ * Used by Research Home when the user selects a topic in the WorkspaceSelector.
+ */
+export function ResearchSynthesesPanel({ topicId }: { topicId?: string }) {
+  return <SynthesesPanel topicId={topicId} />;
+}
+
+function SynthesesPanel({ topicId }: { topicId?: string } = {}) {
+  const { syntheses, isLoading, isError, error } = useRecentSyntheses({
+    limit: 10,
+    ...(topicId ? { topic_id: topicId } : {}),
+  });
 
   if (isLoading) {
     return (

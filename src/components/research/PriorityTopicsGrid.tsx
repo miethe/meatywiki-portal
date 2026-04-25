@@ -210,6 +210,8 @@ function TopicCard({ topic }: TopicCardProps) {
 
 export interface PriorityTopicsGridProps {
   className?: string;
+  /** Optional topic filter forwarded to the API. */
+  topicId?: string;
 }
 
 /**
@@ -222,8 +224,10 @@ export interface PriorityTopicsGridProps {
  * Error: inline error message.
  * Populated: TopicCard per item + AddEntitySlot appended.
  */
-export function PriorityTopicsGrid({ className }: PriorityTopicsGridProps) {
-  const { topics, isLoading, isError, error } = usePriorityTopics();
+export function PriorityTopicsGrid({ className, topicId }: PriorityTopicsGridProps) {
+  const { topics, isLoading, isError, error } = usePriorityTopics(
+    topicId ? { topic_id: topicId } : undefined,
+  );
 
   // ---------------------------------------------------------------------------
   // Grid content
