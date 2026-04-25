@@ -402,3 +402,132 @@ export async function patchArtifactLens(
     { method: "PATCH", body: JSON.stringify(body) },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Promote (Portal v1.5 FR-1.5-21 / P3-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * Response body for POST /api/artifacts/:id/promote.
+ *
+ * ``lifecycle_stage`` is the new stage after promotion
+ * (raw → classified → compiled → reviewed → published).
+ * Returns the current stage unchanged if already at ``published``.
+ */
+export interface PromoteArtifactResponse {
+  artifact_id: string;
+  lifecycle_stage: string;
+}
+
+/**
+ * Promote an artifact's lifecycle stage.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/promote
+ * Calls EngineAdapter.promote_artifact() which advances vault frontmatter
+ * ``lifecycle_stage`` one step along the linear order.
+ *
+ * Throws ``ApiError`` with status 404 when the artifact is not found in the
+ * vault, or 500 on engine adapter error.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-07).
+ */
+export async function promoteArtifact(
+  artifactId: string,
+): Promise<PromoteArtifactResponse> {
+  return apiFetch<PromoteArtifactResponse>(
+    `/artifacts/${encodeURIComponent(artifactId)}/promote`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Link (Portal v1.5 / P3-07)
+// ---------------------------------------------------------------------------
+
+/**
+ * Request body for POST /api/artifacts/:id/link.
+ *
+ * ``edge_type`` must be one of the ArtifactEdgeType enum values
+ * (derived_from, supports, relates_to, supersedes, contradicts, contains,
+ * generated_by, handoff_from, handoff_to). Defaults to ``relates_to``.
+ */
+export interface LinkArtifactRequest {
+  target_id: string;
+  edge_type?: string;
+}
+
+/**
+ * Create a directed edge between two artifacts.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/link (201 Created)
+ * Calls EngineAdapter.link() and mirrors the edge into the Postgres overlay.
+ * Returns ``{"status": "linked"}`` on success.
+ *
+ * Throws ``ApiError`` with status 400 on invalid edge_type or unknown artifact,
+ * or 500 on engine adapter error.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-07).
+ */
+export async function linkArtifact(
+  artifactId: string,
+  data: LinkArtifactRequest,
+): Promise<void> {
+  await apiFetch<{ status: string }>(
+    `/artifacts/${encodeURIComponent(artifactId)}/link`,
+    { method: "POST", body: JSON.stringify(data) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Request Review (Portal v1.6 / P3-01 / P3-03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Request body for POST /api/artifacts/:id/review.
+ *
+ * ``review_type`` must be one of: lint, verification, promotion, freshness,
+ * contradiction. ``notes`` is optional free-text context.
+ */
+export interface ReviewRequest {
+  review_type: string;
+  notes?: string | null;
+}
+
+/**
+ * Add an artifact to the review queue.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/review (201 Created)
+ * Portal-only operation — creates a ReviewItem row in Postgres with
+ * state=open. No engine call is made.
+ *
+ * Throws ``ApiError`` with status 422 when ``review_type`` is invalid.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-03).
+ */
+export async function requestReview(
+  artifactId: string,
+  data?: ReviewRequest,
+): Promise<void> {
+  const body: ReviewRequest = data ?? { review_type: "verification" };
+  await apiFetch<{ id: number }>(
+    `/artifacts/${encodeURIComponent(artifactId)}/review`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// fetchRoutingRecommendation alias (P3-01 / P3-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch the routing recommendation for an artifact.
+ *
+ * Alias for ``getRoutingRecommendation`` — exposes the ``fetch*`` naming
+ * convention used in Phase 3 component wiring (P3-04).
+ *
+ * Backend: GET /api/artifacts/{artifact_id}/routing-recommendation
+ * Throws ``ApiError`` with status 404 when the artifact is not in the overlay.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-04).
+ */
+export { getRoutingRecommendation as fetchRoutingRecommendation };

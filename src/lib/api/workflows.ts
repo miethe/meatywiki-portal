@@ -154,3 +154,84 @@ export async function listWorkflows(
 
   return apiFetch<ServiceModeEnvelope<WorkflowRun>>(path);
 }
+
+// ---------------------------------------------------------------------------
+// Operator control actions — pause / resume / cancel (Portal v1.6 P3-04/05/06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Response body for operator control actions (pause, resume, cancel).
+ *
+ * Mirrors backend WorkflowOperatorActionResponse.
+ *   run_id   — ULID of the affected workflow run.
+ *   state    — Current WorkflowRunState after the action.
+ *   timestamp — UTC ISO-8601 timestamp when the response was generated.
+ */
+export interface WorkflowOperatorActionResponse {
+  run_id: string;
+  state: WorkflowRunStatus;
+  timestamp: string;
+}
+
+/**
+ * Pause a running workflow run.
+ *
+ * Backend: POST /api/workflows/{run_id}/pause
+ * Returns the current state after the pause action.
+ *
+ * Throws ``ApiError`` with status 404 when the run is not found, or 409 when
+ * the run is in a terminal or incompatible state.
+ *
+ * Gated by ``PORTAL_ENABLE_OPERATOR_CONTROL`` feature flag on the backend;
+ * returns 404 when the flag is off.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-05).
+ */
+export async function pauseWorkflow(runId: string): Promise<void> {
+  await apiFetch<WorkflowOperatorActionResponse>(
+    `/workflows/${encodeURIComponent(runId)}/pause`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+/**
+ * Resume a paused workflow run.
+ *
+ * Backend: POST /api/workflows/{run_id}/resume
+ * Returns the current state after the resume action.
+ *
+ * Throws ``ApiError`` with status 404 when the run is not found, or 409 when
+ * the run is in a terminal or incompatible state.
+ *
+ * Gated by ``PORTAL_ENABLE_OPERATOR_CONTROL`` feature flag on the backend;
+ * returns 404 when the flag is off.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-05).
+ */
+export async function resumeWorkflow(runId: string): Promise<void> {
+  await apiFetch<WorkflowOperatorActionResponse>(
+    `/workflows/${encodeURIComponent(runId)}/resume`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+/**
+ * Cancel a running or paused workflow run.
+ *
+ * Backend: POST /api/workflows/{run_id}/cancel
+ * Returns the current state after the cancel action.
+ *
+ * Throws ``ApiError`` with status 404 when the run is not found, or 409 when
+ * the run is already in the COMPLETED terminal state.
+ *
+ * Gated by ``PORTAL_ENABLE_OPERATOR_CONTROL`` feature flag on the backend;
+ * returns 404 when the flag is off.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-05).
+ */
+export async function cancelWorkflow(runId: string): Promise<void> {
+  await apiFetch<WorkflowOperatorActionResponse>(
+    `/workflows/${encodeURIComponent(runId)}/cancel`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
