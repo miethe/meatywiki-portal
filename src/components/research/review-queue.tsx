@@ -11,9 +11,10 @@
  * Other gate types (coverage, completeness, relevance) are schema-present
  * but not yet emitted — this component renders them gracefully if they appear.
  *
- * Action buttons (Promote / Archive / Link) are stubbed in v1 — they render
- * as disabled with ARIA labels explaining the v1.5 target, satisfying
- * the accessibility requirement without misleading the user.
+ * Action buttons:
+ *   - Promote: wired to POST /api/artifacts/:id/promote (P3-08).
+ *   - Link: wired to POST /api/artifacts/:id/link via dialog (P3-08).
+ *   - Archive: no backend endpoint yet — disabled with accurate tooltip.
  *
  * DP4-02e (ADR-DPI-008 Option C):
  *   - Priority badge (HIGH / ROUTINE / CRITICAL) per row.
@@ -30,6 +31,7 @@
  * WCAG 2.1 AA: all interactive elements have labels; colour + text, not colour-only.
  */
 
+import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -38,8 +40,17 @@ import {
   LinkIcon,
   ArrowUpDown,
   Filter,
+  Loader2,
+  XCircle,
+  X,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  promoteArtifact,
+  linkArtifact,
+  type LinkArtifactRequest,
+} from "@/lib/api/artifacts";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { StageTracker } from "@/components/workflow/stage-tracker";
 import { TypeBadge } from "@/components/ui/type-badge";
@@ -358,36 +369,212 @@ function ReviewQueueRowSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// Action buttons — stubbed for v1
+// Inline toast (same pattern as ArtifactDetailClient)
 // ---------------------------------------------------------------------------
 
-const STUB_TOOLTIP = "This action is available in Portal v1.5";
+type ToastVariant = "success" | "error";
 
-interface StubActionButtonProps {
-  label: string;
-  icon: React.ReactNode;
-  ariaLabel: string;
+interface ToastState {
+  message: string;
+  variant: ToastVariant;
 }
 
-function StubActionButton({ label, icon, ariaLabel }: StubActionButtonProps) {
+function InlineToast({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastState;
+  onDismiss: () => void;
+}) {
   return (
-    <button
-      type="button"
-      disabled
-      aria-label={`${ariaLabel} — ${STUB_TOOLTIP}`}
-      title={STUB_TOOLTIP}
+    <div
+      role="status"
+      aria-live="polite"
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium",
-        "text-muted-foreground",
-        "disabled:pointer-events-none disabled:opacity-40",
-        "transition-colors",
+        "flex items-center gap-2 rounded-md border px-3 py-2 text-xs shadow-sm",
+        toast.variant === "success"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-300"
+          : "border-destructive/30 bg-destructive/10 text-destructive",
       )}
     >
-      <span aria-hidden="true" className="size-3.5">
-        {icon}
-      </span>
-      {label}
-    </button>
+      {toast.variant === "success" ? (
+        <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : (
+        <XCircle className="size-3.5 shrink-0" aria-hidden="true" />
+      )}
+      <span className="flex-1">{toast.message}</span>
+      <button
+        type="button"
+        aria-label="Dismiss notification"
+        onClick={onDismiss}
+        className="ml-1 opacity-60 hover:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <X className="size-3" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Link dialog — same implementation as ArtifactDetailClient (P3-07 pattern)
+// ---------------------------------------------------------------------------
+
+const EDGE_TYPE_OPTIONS = [
+  { value: "relates_to", label: "Relates to" },
+  { value: "derived_from", label: "Derived from" },
+  { value: "supports", label: "Supports" },
+  { value: "supersedes", label: "Supersedes" },
+  { value: "contradicts", label: "Contradicts" },
+  { value: "contains", label: "Contains" },
+] as const;
+
+interface LinkDialogProps {
+  open: boolean;
+  isSubmitting: boolean;
+  onCancel: () => void;
+  onConfirm: (data: LinkArtifactRequest) => void;
+}
+
+function LinkDialog({ open, isSubmitting, onCancel, onConfirm }: LinkDialogProps) {
+  const [targetId, setTargetId] = useState("");
+  const [edgeType, setEdgeType] = useState("relates_to");
+
+  useEffect(() => {
+    if (open) {
+      setTargetId("");
+      setEdgeType("relates_to");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = targetId.trim();
+    if (!trimmed) return;
+    onConfirm({ target_id: trimmed, edge_type: edgeType });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="rq-link-dialog-title"
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-black/40"
+        onClick={isSubmitting ? undefined : onCancel}
+      />
+      <form
+        onSubmit={handleSubmit}
+        className={cn(
+          "relative z-10 flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-background p-5 shadow-lg",
+          "focus:outline-none",
+        )}
+      >
+        <div className="flex items-center justify-between">
+          <h2 id="rq-link-dialog-title" className="text-sm font-semibold text-foreground">
+            Link to artifact
+          </h2>
+          <button
+            type="button"
+            aria-label="Close dialog"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            className="text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="rq-link-target-id"
+            className="text-xs font-medium text-muted-foreground"
+          >
+            Target artifact ID
+          </label>
+          <input
+            id="rq-link-target-id"
+            type="text"
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+            placeholder="e.g. abc123"
+            required
+            disabled={isSubmitting}
+            autoFocus
+            className={cn(
+              "h-8 rounded-md border bg-background px-2.5 text-xs text-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="rq-link-edge-type"
+            className="text-xs font-medium text-muted-foreground"
+          >
+            Edge type
+          </label>
+          <div className="relative">
+            <select
+              id="rq-link-edge-type"
+              value={edgeType}
+              onChange={(e) => setEdgeType(e.target.value)}
+              disabled={isSubmitting}
+              className={cn(
+                "h-8 w-full appearance-none rounded-md border bg-background pl-2.5 pr-7 text-xs text-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              {EDGE_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            className={cn(
+              "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium",
+              "transition-colors hover:bg-accent hover:text-accent-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || !targetId.trim()}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground",
+              "transition-colors hover:bg-primary/90",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          >
+            {isSubmitting && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+            {isSubmitting ? "Linking..." : "Link"}
+          </button>
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -395,11 +582,16 @@ function StubActionButton({ label, icon, ariaLabel }: StubActionButtonProps) {
 // Review queue row
 // ---------------------------------------------------------------------------
 
+const ARCHIVE_TOOLTIP = "Archive endpoint not yet available";
+
 interface ReviewQueueRowProps {
   item: ReviewItem;
+  onPromote: (artifactId: string) => Promise<void>;
+  onLink: (artifactId: string) => void;
+  isPromoting: boolean;
 }
 
-function ReviewQueueRow({ item }: ReviewQueueRowProps) {
+function ReviewQueueRow({ item, onPromote, onLink, isPromoting }: ReviewQueueRowProps) {
   const { artifact, gateType, reviewedAt, priority, confidenceScore, activeRun } = item;
   const relativeTime = formatRelativeTime(reviewedAt);
 
@@ -481,21 +673,56 @@ function ReviewQueueRow({ item }: ReviewQueueRowProps) {
         role="group"
         aria-label={`Actions for ${artifact.title}`}
       >
-        <StubActionButton
-          label="Promote"
-          ariaLabel={`Promote ${artifact.title}`}
-          icon={<CheckCircle2 aria-hidden="true" className="size-3.5" />}
-        />
-        <StubActionButton
-          label="Archive"
-          ariaLabel={`Archive ${artifact.title}`}
-          icon={<ArchiveIcon aria-hidden="true" className="size-3.5" />}
-        />
-        <StubActionButton
-          label="Link"
-          ariaLabel={`Link ${artifact.title}`}
-          icon={<LinkIcon aria-hidden="true" className="size-3.5" />}
-        />
+        {/* Promote — wired to POST /api/artifacts/:id/promote (P3-08) */}
+        <button
+          type="button"
+          onClick={() => { void onPromote(artifact.id); }}
+          disabled={isPromoting}
+          aria-label={isPromoting ? `Promoting ${artifact.title}` : `Promote ${artifact.title}`}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium",
+            "transition-colors hover:bg-accent hover:text-accent-foreground",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            "disabled:pointer-events-none disabled:opacity-50",
+          )}
+        >
+          {isPromoting
+            ? <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+            : <CheckCircle2 aria-hidden="true" className="size-3.5" />
+          }
+          {isPromoting ? "Promoting…" : "Promote"}
+        </button>
+
+        {/* Archive — no backend endpoint; disabled with accurate tooltip */}
+        <button
+          type="button"
+          disabled
+          aria-label={`Archive ${artifact.title} — ${ARCHIVE_TOOLTIP}`}
+          title={ARCHIVE_TOOLTIP}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium",
+            "text-muted-foreground",
+            "disabled:pointer-events-none disabled:opacity-40",
+          )}
+        >
+          <ArchiveIcon aria-hidden="true" className="size-3.5" />
+          Archive
+        </button>
+
+        {/* Link — wired to POST /api/artifacts/:id/link via dialog (P3-08) */}
+        <button
+          type="button"
+          onClick={() => onLink(artifact.id)}
+          aria-label={`Link ${artifact.title} to another artifact`}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium",
+            "transition-colors hover:bg-accent hover:text-accent-foreground",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          )}
+        >
+          <LinkIcon aria-hidden="true" className="size-3.5" />
+          Link
+        </button>
       </div>
     </li>
   );
@@ -598,7 +825,8 @@ function LoadingState() {
  * Research workspace pages.
  *
  * DP4-02e additions: filter/sort controls, priority badge, metadata strip.
- * Action buttons (Promote / Archive / Link) remain disabled stubs in v1.5.
+ * P3-08: Promote and Link action buttons wired to live endpoints.
+ *        Archive remains disabled — no backend endpoint yet.
  */
 export function ReviewQueue() {
   const {
@@ -612,6 +840,55 @@ export function ReviewQueue() {
     setPriorityFilter,
     setGateFilter,
   } = useReviewQueue();
+
+  // ---------------------------------------------------------------------------
+  // Action state — shared toast + per-action in-flight tracking
+  // ---------------------------------------------------------------------------
+
+  const [actionToast, setActionToast] = useState<ToastState | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((toast: ToastState) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setActionToast(toast);
+    toastTimerRef.current = setTimeout(() => setActionToast(null), 4000);
+  }, []);
+
+  // Track which artifact ID is currently being promoted (null = idle)
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+
+  const handlePromote = useCallback(async (artifactId: string) => {
+    if (promotingId) return;
+    setPromotingId(artifactId);
+    try {
+      const result = await promoteArtifact(artifactId);
+      showToast({ message: `Promoted to ${result.lifecycle_stage}`, variant: "success" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Promote failed";
+      showToast({ message: msg, variant: "error" });
+    } finally {
+      setPromotingId(null);
+    }
+  }, [promotingId, showToast]);
+
+  // Link dialog — tracks which artifact is being linked
+  const [linkTarget, setLinkTarget] = useState<string | null>(null);
+  const [isLinking, setIsLinking] = useState(false);
+
+  const handleLinkConfirm = useCallback(async (data: LinkArtifactRequest) => {
+    if (!linkTarget || isLinking) return;
+    setIsLinking(true);
+    try {
+      await linkArtifact(linkTarget, data);
+      setLinkTarget(null);
+      showToast({ message: "Link created successfully", variant: "success" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Link failed";
+      showToast({ message: msg, variant: "error" });
+    } finally {
+      setIsLinking(false);
+    }
+  }, [linkTarget, isLinking, showToast]);
 
   if (isLoading) {
     return <LoadingState />;
@@ -627,11 +904,26 @@ export function ReviewQueue() {
 
   return (
     <section aria-label="Artifacts in review">
+      {/* Link dialog — portal-root level, above page content */}
+      <LinkDialog
+        open={linkTarget !== null}
+        isSubmitting={isLinking}
+        onCancel={() => setLinkTarget(null)}
+        onConfirm={handleLinkConfirm}
+      />
+
       {/* Count summary */}
       <p className="mb-3 text-xs text-muted-foreground">
         {items.length} artifact{items.length !== 1 ? "s" : ""} flagged for
         review
       </p>
+
+      {/* Action toast feedback */}
+      {actionToast && (
+        <div className="mb-3">
+          <InlineToast toast={actionToast} onDismiss={() => setActionToast(null)} />
+        </div>
+      )}
 
       {/* Filter / sort controls — DP4-02e (ADR-DPI-008 Option C) */}
       <FilterSortBar
@@ -644,22 +936,19 @@ export function ReviewQueue() {
         onGateChange={setGateFilter}
       />
 
-      {/* V1 action scope note */}
-      <p
-        role="note"
-        className="mb-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900/40 dark:bg-amber-900/20 dark:text-amber-300"
-      >
-        Actions (Promote, Archive, Link) are available in Portal v1.5.
-        Rows are read-only in this release.
-      </p>
-
       <ul
         role="list"
         aria-label="Review queue"
         className="flex flex-col gap-3"
       >
         {items.map((item) => (
-          <ReviewQueueRow key={item.artifact.id} item={item} />
+          <ReviewQueueRow
+            key={item.artifact.id}
+            item={item}
+            onPromote={handlePromote}
+            onLink={(id) => setLinkTarget(id)}
+            isPromoting={promotingId === item.artifact.id}
+          />
         ))}
       </ul>
     </section>
