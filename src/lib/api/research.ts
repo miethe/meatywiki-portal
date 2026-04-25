@@ -251,3 +251,450 @@ export async function fetchSynthesisLineage(
 
   return apiFetch<SynthesisLineage>(path, { method: "GET" });
 }
+
+// ---------------------------------------------------------------------------
+// P4-01: Research aggregate API client functions
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Topics (GET /api/topics)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lens Badge metadata sub-object embedded in artifact cards.
+ */
+export interface ArtifactMetadataCard {
+  fidelity: string | null;
+  freshness: string | null;
+  verification_state: string | null;
+}
+
+/**
+ * Minimal artifact card projection returned by list endpoints.
+ * Mirrors backend ArtifactCard from portal.api.schemas.core.
+ */
+export interface ArtifactCard {
+  id: string;
+  workspace: string;
+  type: string;
+  subtype: string | null;
+  title: string;
+  status: string;
+  schema_version: string | null;
+  created: string | null;
+  updated: string | null;
+  file_path: string;
+  metadata: ArtifactMetadataCard | null;
+  priority: number | null;
+}
+
+/**
+ * Topic artifact card with a computed priority score in [0, 1].
+ * Returned by GET /api/topics.
+ */
+export interface TopicItem extends ArtifactCard {
+  priority: number | null;
+}
+
+export interface TopicsEnvelope {
+  data: TopicItem[];
+  cursor: string | null;
+  etag?: string | null;
+}
+
+/**
+ * Fetch a cursor-paginated list of topic_note artifacts.
+ *
+ * Backend: GET /api/topics
+ * Ordered by updated_at DESC, id DESC (most-recently updated first).
+ * ``priority`` is computed per-page from derivative count and freshness score.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchTopics(options?: {
+  limit?: number;
+  cursor?: string;
+  topic_id?: string;
+}): Promise<TopicsEnvelope> {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.cursor) query.set("cursor", options.cursor);
+  if (options?.topic_id) query.set("topic_id", options.topic_id);
+
+  const qs = query.toString();
+  const path = `/topics${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<TopicsEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Recent syntheses (GET /api/research/recent-syntheses)
+// ---------------------------------------------------------------------------
+
+/**
+ * Synthesis artifact card for the research workspace recent-syntheses list.
+ * Structurally identical to ArtifactCard; typed separately for clarity.
+ */
+export type RecentSynthesisItem = ArtifactCard;
+
+export interface RecentSynthesesEnvelope {
+  data: RecentSynthesisItem[];
+  cursor: string | null;
+  etag?: string | null;
+}
+
+/**
+ * Fetch a cursor-paginated list of recently-updated synthesis artifacts.
+ *
+ * Backend: GET /api/research/recent-syntheses
+ * Ordered by updated_at DESC. Optionally filtered by topic_id.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchRecentSyntheses(options?: {
+  limit?: number;
+  cursor?: string;
+  topic_id?: string;
+}): Promise<RecentSynthesesEnvelope> {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.cursor) query.set("cursor", options.cursor);
+  if (options?.topic_id) query.set("topic_id", options.topic_id);
+
+  const qs = query.toString();
+  const path = `/research/recent-syntheses${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<RecentSynthesesEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Evidence pulse — new (GET /api/research/evidence-pulse/new)
+// ---------------------------------------------------------------------------
+
+/**
+ * Evidence artifact card for the research workspace evidence-pulse list.
+ * Structurally identical to ArtifactCard; typed separately for clarity.
+ */
+export type EvidencePulseNewItem = ArtifactCard;
+
+export interface EvidencePulseNewEnvelope {
+  data: EvidencePulseNewItem[];
+  cursor: string | null;
+  etag?: string | null;
+}
+
+/**
+ * Fetch cursor-paginated evidence artifacts created within the last N days.
+ *
+ * Backend: GET /api/research/evidence-pulse/new
+ * Ordered by created_at DESC. days=0 returns an empty list immediately.
+ * Optionally filtered by topic_id.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchEvidencePulseNew(options?: {
+  days?: number;
+  limit?: number;
+  cursor?: string;
+  topic_id?: string;
+}): Promise<EvidencePulseNewEnvelope> {
+  const query = new URLSearchParams();
+  if (options?.days !== undefined) query.set("days", String(options.days));
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.cursor) query.set("cursor", options.cursor);
+  if (options?.topic_id) query.set("topic_id", options.topic_id);
+
+  const qs = query.toString();
+  const path = `/research/evidence-pulse/new${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<EvidencePulseNewEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Workspace health (GET /api/research/workspace-health)
+// ---------------------------------------------------------------------------
+
+/**
+ * Breakdown of artifact counts by lifecycle status.
+ */
+export interface ArtifactStatusBreakdown {
+  draft: number;
+  active: number;
+  stale: number;
+  archived: number;
+}
+
+/**
+ * Distribution of artifacts across freshness bands.
+ */
+export interface FreshnessDistribution {
+  current: number;
+  stale: number;
+  outdated: number;
+}
+
+/**
+ * Aggregate health statistics for the research workspace.
+ * Returned by GET /api/research/workspace-health.
+ */
+export interface WorkspaceHealthSummary {
+  total_artifacts: number;
+  by_status: ArtifactStatusBreakdown;
+  freshness_distribution: FreshnessDistribution;
+  contradiction_count: number;
+  review_queue_depth: number;
+}
+
+export interface WorkspaceHealthEnvelope {
+  data: WorkspaceHealthSummary;
+  etag?: string | null;
+}
+
+/**
+ * Fetch aggregate health statistics for the research workspace.
+ *
+ * Backend: GET /api/research/workspace-health
+ * Returns a singleton WorkspaceHealthSummary (not a paginated list).
+ * Returns an ETag for conditional GET caching.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchWorkspaceHealth(): Promise<WorkspaceHealthEnvelope> {
+  return apiFetch<WorkspaceHealthEnvelope>("/research/workspace-health", { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Priority topics (GET /api/research/priority-topics)
+// ---------------------------------------------------------------------------
+
+/**
+ * Topic artifact card enriched with operator-control priority signals.
+ * Returned by GET /api/research/priority-topics.
+ */
+export interface PriorityTopicItem extends ArtifactCard {
+  priority_score: number;
+  derivative_count: number;
+  stale_count: number;
+  contradiction_count: number;
+}
+
+export interface PriorityTopicsEnvelope {
+  data: PriorityTopicItem[];
+  cursor: string | null;
+  etag?: string | null;
+}
+
+/**
+ * Fetch up to 20 topic_note artifacts ranked by composite priority score.
+ *
+ * Backend: GET /api/research/priority-topics
+ * No cursor pagination — fixed limit of 20 per PRD.
+ * Optionally filtered to a single topic via topic_id.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchPriorityTopics(options?: {
+  limit?: number;
+  topic_id?: string;
+}): Promise<PriorityTopicsEnvelope> {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.topic_id) query.set("topic_id", options.topic_id);
+
+  const qs = query.toString();
+  const path = `/research/priority-topics${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<PriorityTopicsEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Featured topics (GET /api/research/featured-topics)
+// ---------------------------------------------------------------------------
+
+/**
+ * Topic artifact card with an activity score for featured-topic surfaces.
+ * Returned by GET /api/research/featured-topics.
+ */
+export interface FeaturedTopicItem extends ArtifactCard {
+  activity_score: number;
+}
+
+export interface FeaturedTopicsEnvelope {
+  data: FeaturedTopicItem[];
+  cursor: string | null;
+  etag?: string | null;
+}
+
+/**
+ * Fetch up to 8 topic_note artifacts ordered by recent derivative activity.
+ *
+ * Backend: GET /api/research/featured-topics
+ * No cursor pagination — fixed limit of 8 per PRD.
+ * activity_score is the count of recently-updated derivatives within the
+ * given days window.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchFeaturedTopics(options?: {
+  days?: number;
+  limit?: number;
+}): Promise<FeaturedTopicsEnvelope> {
+  const query = new URLSearchParams();
+  if (options?.days !== undefined) query.set("days", String(options.days));
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+
+  const qs = query.toString();
+  const path = `/research/featured-topics${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<FeaturedTopicsEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Synthesis narrative (GET /api/research/synthesis-narrative)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal artifact reference embedded in SynthesisNarrativeSummary.
+ */
+export interface NarrativeArtifactRef {
+  /** ULID of the artifact. */
+  id: string;
+  title: string;
+}
+
+/**
+ * Corpus-level synthesis narrative summary.
+ * Returned by GET /api/research/synthesis-narrative as a singleton.
+ */
+export interface SynthesisNarrativeSummary {
+  total_syntheses: number;
+  average_source_count: number;
+  /** Fraction of active topics with at least one linked synthesis. [0, 1] */
+  coverage_ratio: number;
+  /** Most active topic; null when no syntheses exist. */
+  most_active_topic: ArtifactCard | null;
+  /** Most recently updated synthesis; null when no syntheses exist. */
+  recent_synthesis: ArtifactCard | null;
+}
+
+export interface SynthesisNarrativeEnvelope {
+  data: SynthesisNarrativeSummary;
+  etag?: string | null;
+}
+
+/**
+ * Fetch corpus-level synthesis narrative statistics.
+ *
+ * Backend: GET /api/research/synthesis-narrative
+ * Returns a singleton SynthesisNarrativeSummary (not a paginated list).
+ * An empty corpus returns a zeroed summary — never a 404.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchSynthesisNarrative(): Promise<SynthesisNarrativeEnvelope> {
+  return apiFetch<SynthesisNarrativeEnvelope>("/research/synthesis-narrative", { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Cross-entity synthesis (GET /api/research/cross-entity-synthesis)
+// ---------------------------------------------------------------------------
+
+/**
+ * One entry grouping synthesis artifacts by their associated entity.
+ * Returned by GET /api/research/cross-entity-synthesis.
+ */
+export interface CrossEntitySynthesisEntry {
+  entity: ArtifactCard;
+  syntheses: ArtifactCard[];
+}
+
+export interface CrossEntitySynthesisEnvelope {
+  data: CrossEntitySynthesisEntry[];
+  cursor: string | null;
+  etag?: string | null;
+}
+
+/**
+ * Fetch cursor-paginated synthesis artifacts grouped by entity.
+ *
+ * Backend: GET /api/research/cross-entity-synthesis
+ * Each entry contains an entity card and up to 5 syntheses (most-recently
+ * updated first). Entities are sorted title ASC for stable pagination.
+ * An empty corpus returns data: [] — never a 404.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchCrossEntitySynthesis(options?: {
+  cursor?: string;
+  limit?: number;
+}): Promise<CrossEntitySynthesisEnvelope> {
+  const query = new URLSearchParams();
+  if (options?.cursor) query.set("cursor", options.cursor);
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+
+  const qs = query.toString();
+  const path = `/research/cross-entity-synthesis${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<CrossEntitySynthesisEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Evidence pulse — contradictions (GET /api/research/evidence-pulse/contradictions)
+// ---------------------------------------------------------------------------
+
+/**
+ * A single detected contradiction between two evidence artifacts.
+ */
+export interface EvidenceContradictionPair {
+  artifact_a: ArtifactCard;
+  artifact_b: ArtifactCard;
+}
+
+/**
+ * Rolling 7-day trend for evidence-pulse contradiction counts.
+ */
+export interface EvidencePulseContradictionsTrend {
+  last_7_days: number;
+  prior_7_days: number;
+}
+
+/**
+ * Response envelope item for the evidence-pulse contradictions endpoint.
+ * data[0] carries the current page of pairs plus corpus-level aggregates.
+ */
+export interface EvidencePulseContradictionsResponse {
+  contradictions: EvidenceContradictionPair[];
+  total_count: number;
+  trend: EvidencePulseContradictionsTrend;
+}
+
+export interface EvidencePulseContradictionsEnvelope {
+  /** Contains a single EvidencePulseContradictionsResponse per page. */
+  data: EvidencePulseContradictionsResponse[];
+  cursor: string | null;
+  etag?: string | null;
+}
+
+/**
+ * Fetch cursor-paginated contradiction pairs with aggregate trend data.
+ *
+ * Backend: GET /api/research/evidence-pulse/contradictions
+ * data[0].total_count reflects the full corpus count.
+ * data[0].trend provides the 7-day rolling delta for the pulse badge.
+ * An empty corpus returns a zeroed response — never a 404.
+ *
+ * Portal v1.7 Phase 4 (P4-01).
+ */
+export async function fetchEvidencePulseContradictions(options?: {
+  limit?: number;
+  cursor?: string;
+}): Promise<EvidencePulseContradictionsEnvelope> {
+  const query = new URLSearchParams();
+  if (options?.limit !== undefined) query.set("limit", String(options.limit));
+  if (options?.cursor) query.set("cursor", options.cursor);
+
+  const qs = query.toString();
+  const path = `/research/evidence-pulse/contradictions${qs ? `?${qs}` : ""}`;
+
+  return apiFetch<EvidencePulseContradictionsEnvelope>(path, { method: "GET" });
+}
