@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Nine research aggregate endpoints wired to frontend** — Research workspace now displays live data from workspace-health, priority-topics, featured-topics, evidence-pulse/new, evidence-pulse/contradictions, synthesis-narrative, cross-entity-synthesis, recent-syntheses, and topics endpoints.
+- **Fifteen research components transitioned from skeleton to live data** — WorkspaceHealth, PriorityTopics, FeaturedTopics, EvidencePulseNew, EvidencePulseContradictions, SynthesisNarrative, CrossEntitySynthesis, RecentSyntheses, and TopicCards now fetch and render live artifact data.
+- **Topic scoping for workspace selector** — Workspace selector now allows filtering research context by topic priority and activity.
+
+### Changed
+
+- **ResearchWorkspaceEmpty banner conditionally hidden** — Banner is now only displayed when no artifacts exist in the research workspace; hidden once artifacts are present.
+
 ## [1.6.0] - 2026-04-24
 
 ### Changed
