@@ -420,10 +420,33 @@ describe("CrossEntitySynthesisTabs", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Hook mock — useTopics (TopicScopeDropdown)
+// ---------------------------------------------------------------------------
+
+jest.mock("@/hooks/useTopics");
+
+import { useTopics } from "@/hooks/useTopics";
+const mockUseTopics = useTopics as jest.MockedFunction<typeof useTopics>;
+
+// ---------------------------------------------------------------------------
 // TopicScopeDropdown tests
 // ---------------------------------------------------------------------------
 
 describe("TopicScopeDropdown", () => {
+  beforeEach(() => {
+    // Default: idle/empty state — topics loaded but none returned
+    mockUseTopics.mockReturnValue({
+      topics: [],
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("renders the topic label", () => {
     const onChange = jest.fn();
     renderWithProviders(
@@ -432,15 +455,61 @@ describe("TopicScopeDropdown", () => {
     expect(screen.getByLabelText(/filter by topic/i)).toBeInTheDocument();
   });
 
-  it("select is disabled with coming-in-v1.6 notice", () => {
+  it("select is enabled when topics load successfully", () => {
+    const onChange = jest.fn();
+    renderWithProviders(
+      <TopicScopeDropdown onChange={onChange} />,
+    );
+    const select = screen.getByRole("combobox", { name: /filter by topic/i });
+    // When hook returns successfully (even empty), select is not disabled
+    expect(select).not.toBeDisabled();
+  });
+
+  it("select is disabled while loading", () => {
+    mockUseTopics.mockReturnValue({
+      topics: [],
+      isLoading: true,
+      isError: false,
+      error: null,
+    });
     const onChange = jest.fn();
     renderWithProviders(
       <TopicScopeDropdown onChange={onChange} />,
     );
     const select = screen.getByRole("combobox", { name: /filter by topic/i });
     expect(select).toBeDisabled();
-    expect(
-      screen.getByText(/GET \/api\/topics/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/loading topics/i)).toBeInTheDocument();
+  });
+
+  it("select is disabled on error and shows failure notice", () => {
+    mockUseTopics.mockReturnValue({
+      topics: [],
+      isLoading: false,
+      isError: true,
+      error: new Error("Network error"),
+    });
+    const onChange = jest.fn();
+    renderWithProviders(
+      <TopicScopeDropdown onChange={onChange} />,
+    );
+    const select = screen.getByRole("combobox", { name: /filter by topic/i });
+    expect(select).toBeDisabled();
+    expect(screen.getByText(/failed to load topics/i)).toBeInTheDocument();
+  });
+
+  it("renders topic options when hook returns topics", () => {
+    mockUseTopics.mockReturnValue({
+      topics: [
+        { id: "topic-01", title: "Quantum Computing", workspace: "wiki", type: "artifact", subtype: "topic_note", status: "compiled", created: null, updated: null, file_path: "/wiki/topics/quantum.md", schema_version: null, metadata: null, priority: null },
+      ],
+      isLoading: false,
+      isError: false,
+      error: null,
+    });
+    const onChange = jest.fn();
+    renderWithProviders(
+      <TopicScopeDropdown onChange={onChange} />,
+    );
+    expect(screen.getByRole("option", { name: /quantum computing/i })).toBeInTheDocument();
   });
 });
