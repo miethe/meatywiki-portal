@@ -566,6 +566,53 @@ export async function patchArtifact(
   return { data, etag: responseEtag };
 }
 
+/**
+ * Fetch the current ETag for an artifact without consuming the body.
+ *
+ * Performs a raw GET against the artifact detail endpoint and reads the
+ * `ETag` response header before discarding the body.  Used to initialise
+ * the ETag state in ArtifactDetailClient so the first inline-edit PATCH
+ * has a valid `If-Match` value.
+ *
+ * Returns the ETag string, or `""` when the server omits the header.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}
+ * Portal v1.8 Phase 2 (P2-06).
+ */
+export async function fetchArtifactEtag(id: string): Promise<string> {
+  const url = `${getApiBase()}/artifacts/${encodeURIComponent(id)}`;
+
+  const headers = new Headers();
+  headers.set("Accept", "application/json");
+
+  if (typeof window === "undefined") {
+    try {
+      const { cookies } = await import("next/headers");
+      const cookieStore = await cookies();
+      const sessionCookie = cookieStore.get("portal_session");
+      if (sessionCookie?.value) {
+        headers.set("Authorization", `Bearer ${sessionCookie.value}`);
+      } else {
+        const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+        if (envToken) headers.set("Authorization", `Bearer ${envToken}`);
+      }
+    } catch {
+      const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+      if (envToken) headers.set("Authorization", `Bearer ${envToken}`);
+    }
+  }
+
+  try {
+    const response = await fetch(url, { method: "GET", headers });
+    const etag = response.headers.get("ETag") ?? "";
+    // Discard body — we only needed the header.
+    await response.body?.cancel();
+    return etag;
+  } catch {
+    return "";
+  }
+}
+
 export async function patchArtifactLens(
   id: string,
   body: LensPatchRequest,

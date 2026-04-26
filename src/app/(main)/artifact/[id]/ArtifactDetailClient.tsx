@@ -29,6 +29,12 @@
  *     and transparent client-side fallback on 404/network error.
  *   - Optional edge_type filter dropdown in Backlinks tab.
  *
+ * P2-06 additions (v1.8 inline editing):
+ *   - All 12 editable fields wired with inline-edit components.
+ *   - ETag state initialised from GET response header via fetchArtifactEtag.
+ *   - Optimistic TanStack Query cache updates with rollback on error.
+ *   - Minimal in-component toast notifications (no external library).
+ *
  * Rendering decisions:
  *   - raw_content: displayed in <pre><code> block — no dangerouslySetInnerHTML.
  *   - compiled_content: rendered via ArticleViewer from @miethe/ui (PU6-01).
@@ -45,9 +51,10 @@
  * aria-disabled; copy button with aria-live announcement.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   StickyNote,
   Archive,
@@ -58,13 +65,15 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   ChevronDown,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { WorkspaceBadge } from "@/components/ui/workspace-badge";
 import { WorkflowOSTab } from "@/components/workflow/workflow-os-tab";
-import { useArtifact } from "@/hooks/useArtifact";
+import { useArtifact, artifactQueryKey } from "@/hooks/useArtifact";
 import { useDerivatives } from "@/hooks/useDerivatives";
 import { DerivativesList } from "@/components/workflow/derivatives-list";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
@@ -81,6 +90,20 @@ import { ArticleViewer } from "@miethe/ui";
 import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import {
+  InlineTextField,
+  InlineTextarea,
+  InlineSelect,
+  InlineChipEditor,
+} from "@/components/inline-edit";
+import {
+  patchArtifact,
+  fetchArtifactEtag,
+  ETagMismatchError,
+  ArtifactValidationError,
+  type ArtifactPatchFields,
+} from "@/lib/api/artifacts";
+import type { ArtifactDetail } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -150,6 +173,115 @@ function tabPanelId(tab: TabId) {
 }
 function tabButtonId(tab: TabId) {
   return `artifact-tab-btn-${tab.toLowerCase().replace(/\s+/g, "-")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Inline-edit select options (enum values from backend schemas/core.py)
+// ---------------------------------------------------------------------------
+
+const STATUS_OPTIONS = [
+  { value: "active", label: "Active" },
+  { value: "archived", label: "Archived" },
+  { value: "superseded", label: "Superseded" },
+];
+
+const WORKSPACE_OPTIONS = [
+  { value: "inbox", label: "Inbox" },
+  { value: "library", label: "Library" },
+  { value: "research", label: "Research" },
+  { value: "blog", label: "Blog" },
+  { value: "projects", label: "Projects" },
+];
+
+const FRESHNESS_CLASS_OPTIONS = [
+  { value: "current", label: "Current" },
+  { value: "aging", label: "Aging" },
+  { value: "stale", label: "Stale" },
+];
+
+const VERIFICATION_STATUS_OPTIONS = [
+  { value: "unverified", label: "Unverified" },
+  { value: "human_review_pending", label: "Human Review Pending" },
+  { value: "human_reviewed", label: "Human Reviewed" },
+  { value: "machine_verified", label: "Machine Verified" },
+];
+
+const PUBLISH_STATE_OPTIONS = [
+  { value: "internal", label: "Internal" },
+  { value: "draft", label: "Draft" },
+  { value: "review", label: "Review" },
+  { value: "published", label: "Published" },
+];
+
+// ---------------------------------------------------------------------------
+// Minimal toast system — no external library; shows up to one message at a time
+// ---------------------------------------------------------------------------
+
+type ToastKind = "success" | "error";
+
+interface ToastMessage {
+  id: number;
+  kind: ToastKind;
+  text: string;
+}
+
+let toastSeq = 0;
+
+function useToast() {
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const show = useCallback((kind: ToastKind, text: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setToast({ id: ++toastSeq, kind, text });
+    timerRef.current = setTimeout(() => setToast(null), 3000);
+  }, []);
+
+  const dismiss = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setToast(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  return { toast, show, dismiss };
+}
+
+function ToastBanner({ toast, onDismiss }: { toast: ToastMessage; onDismiss: () => void }) {
+  const isSuccess = toast.kind === "success";
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={toast.text}
+      className={cn(
+        "fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm font-medium shadow-lg",
+        "transition-all duration-200",
+        isSuccess
+          ? "border-emerald-500/30 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-950/80 dark:text-emerald-300"
+          : "border-destructive/30 bg-destructive/5 text-destructive",
+      )}
+    >
+      {isSuccess ? (
+        <CheckCircle2 aria-hidden="true" className="h-4 w-4 shrink-0" />
+      ) : (
+        <XCircle aria-hidden="true" className="h-4 w-4 shrink-0" />
+      )}
+      <span>{toast.text}</span>
+      <button
+        type="button"
+        aria-label="Dismiss notification"
+        onClick={onDismiss}
+        className="ml-1 rounded p-0.5 opacity-60 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 rotate-[270deg]" />
+      </button>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -709,6 +841,211 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 
 
 // ---------------------------------------------------------------------------
+// Editable metadata section (P2-06)
+//
+// Groups the 12 inline-editable fields in a labelled two-column grid
+// below the badge row. Non-editable system fields (id, type, subtype,
+// lifecycle_stage, created, updated, schema_version, lens_* badge fields,
+// compile_*, content_hash, file_path) are NOT included here — they remain
+// as plain-text in ArtifactTitleBlock and ContextRail.
+// ---------------------------------------------------------------------------
+
+interface EditableMetadataSectionProps {
+  artifact: ArtifactDetail;
+  onSave: (field: keyof ArtifactPatchFields, value: unknown) => Promise<void>;
+}
+
+/**
+ * A single metadata row: label + inline-edit widget.
+ */
+function MetaRow({
+  label,
+  htmlFor,
+  children,
+}: {
+  label: string;
+  htmlFor?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span
+        id={htmlFor ? `${htmlFor}-label` : undefined}
+        className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70"
+      >
+        {label}
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionProps) {
+  // Tags and owners have special diff semantics — their onSave wrappers handle
+  // the tags_add / tags_remove transformation so the generic handler isn't used.
+  const currentTags = (artifact.frontmatter_jsonb?.["tags"] as string[] | null) ?? [];
+  const currentOwners = (artifact.frontmatter_jsonb?.["owners"] as string[] | null) ?? [];
+
+  const handleTagsSave = useCallback(
+    async (newTags: string[]) => {
+      const tagsAdd = newTags.filter((t) => !currentTags.includes(t));
+      const tagsRemove = currentTags.filter((t) => !newTags.includes(t));
+      await onSave("tags_add", { tags_add: tagsAdd, tags_remove: tagsRemove });
+    },
+    [currentTags, onSave],
+  );
+
+  const handleOwnersSave = useCallback(
+    async (newOwners: string[]) => {
+      await onSave("owners", newOwners);
+    },
+    [onSave],
+  );
+
+  return (
+    <section
+      aria-label="Editable artifact metadata"
+      className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-md border bg-card/50 p-4 sm:grid-cols-2"
+    >
+      {/* 1. title */}
+      <MetaRow label="Title">
+        <InlineTextField
+          value={artifact.title ?? ""}
+          onSave={(v) => onSave("title", v)}
+          label="Title"
+          maxLength={200}
+          placeholder="Artifact title"
+        />
+      </MetaRow>
+
+      {/* 2. description */}
+      <MetaRow label="Description">
+        <InlineTextarea
+          value={artifact.frontmatter_jsonb?.["description"] as string ?? ""}
+          onSave={(v) => onSave("description", v)}
+          label="Description"
+          rows={2}
+          placeholder="Brief description…"
+        />
+      </MetaRow>
+
+      {/* 3. status */}
+      <MetaRow label="Status">
+        <InlineSelect
+          value={artifact.status ?? ""}
+          options={STATUS_OPTIONS}
+          onSave={(v) => onSave("status", v)}
+          label="Status"
+          placeholder="Select status"
+        />
+      </MetaRow>
+
+      {/* 4. workspace */}
+      <MetaRow label="Workspace">
+        <InlineSelect
+          value={artifact.workspace ?? ""}
+          options={WORKSPACE_OPTIONS}
+          onSave={(v) => onSave("workspace", v)}
+          label="Workspace"
+          placeholder="Select workspace"
+        />
+      </MetaRow>
+
+      {/* 5. tags */}
+      <MetaRow label="Tags">
+        <InlineChipEditor
+          values={currentTags}
+          onSave={handleTagsSave}
+          label="Tags"
+          placeholder="Add tag…"
+        />
+      </MetaRow>
+
+      {/* 6. domain */}
+      <MetaRow label="Domain">
+        <InlineTextField
+          value={artifact.frontmatter_jsonb?.["domain"] as string ?? ""}
+          onSave={(v) => onSave("domain", v)}
+          label="Domain"
+          placeholder="e.g. philosophy, engineering"
+        />
+      </MetaRow>
+
+      {/* 7. project */}
+      <MetaRow label="Project">
+        <InlineTextField
+          value={artifact.frontmatter_jsonb?.["project"] as string ?? ""}
+          onSave={(v) => onSave("project", v)}
+          label="Project"
+          placeholder="Project name"
+        />
+      </MetaRow>
+
+      {/* 8. freshness_class */}
+      <MetaRow label="Freshness">
+        <InlineSelect
+          value={
+            (artifact.frontmatter_jsonb?.["freshness_class"] as string) ??
+            ""
+          }
+          options={FRESHNESS_CLASS_OPTIONS}
+          onSave={(v) => onSave("freshness_class", v)}
+          label="Freshness class"
+          placeholder="Select freshness"
+        />
+      </MetaRow>
+
+      {/* 9. verification_status */}
+      <MetaRow label="Verification">
+        <InlineSelect
+          value={
+            (artifact.frontmatter_jsonb?.["verification_status"] as string) ??
+            ""
+          }
+          options={VERIFICATION_STATUS_OPTIONS}
+          onSave={(v) => onSave("verification_status", v)}
+          label="Verification status"
+          placeholder="Select verification"
+        />
+      </MetaRow>
+
+      {/* 10. series */}
+      <MetaRow label="Series">
+        <InlineTextField
+          value={artifact.frontmatter_jsonb?.["series"] as string ?? ""}
+          onSave={(v) => onSave("series", v)}
+          label="Series"
+          placeholder="Series name"
+        />
+      </MetaRow>
+
+      {/* 11. publish_state */}
+      <MetaRow label="Publish State">
+        <InlineSelect
+          value={
+            (artifact.frontmatter_jsonb?.["publish_state"] as string) ?? ""
+          }
+          options={PUBLISH_STATE_OPTIONS}
+          onSave={(v) => onSave("publish_state", v)}
+          label="Publish state"
+          placeholder="Select publish state"
+        />
+      </MetaRow>
+
+      {/* 12. owners */}
+      <MetaRow label="Owners">
+        <InlineChipEditor
+          values={currentOwners}
+          onSave={handleOwnersSave}
+          label="Owners"
+          placeholder="Add owner…"
+        />
+      </MetaRow>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
 
@@ -725,6 +1062,114 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const [activeTab, setActiveTab] = useState<TabId>("Source");
   const { artifact, isLoading, isError, error, isNotFound, refetch } =
     useArtifact(id);
+
+  // ---- TanStack Query client for optimistic cache updates ----
+  const queryClient = useQueryClient();
+
+  // ---- ETag state for If-Match header (P2-06) ----
+  // Initialised from the GET /artifacts/:id response header on mount.
+  // Updated after every successful PATCH from the response ETag header.
+  const [etag, setEtag] = useState<string>("");
+
+  useEffect(() => {
+    // Fetch the current ETag once the artifact ID is known.
+    // Fire-and-forget; if it fails etag stays "" and patchArtifact will surface
+    // a 400 which maps to the generic "Save failed" toast path.
+    void fetchArtifactEtag(id).then((e) => {
+      if (e) setEtag(e);
+    });
+  }, [id]);
+
+  // ---- Toast notifications (P2-06) ----
+  const { toast: activeToast, show: showToast, dismiss: dismissToast } = useToast();
+
+  // ---- Per-field save handler ----
+  // For tags: the value is already a { tags_add, tags_remove } object —
+  // the EditableMetadataSection's handleTagsSave wrapper builds it.
+  // For owners: value is the full string[].
+  // For all other fields: value is the new scalar value.
+  const handleFieldSave = useCallback(
+    async (
+      field: keyof ArtifactPatchFields,
+      value: unknown,
+    ) => {
+      // Build the patch payload. Tags are a special case where the value object
+      // already contains tags_add and tags_remove keys (assembled by
+      // EditableMetadataSection.handleTagsSave); spread it directly.
+      let patch: Partial<ArtifactPatchFields>;
+      if (field === "tags_add") {
+        // value is { tags_add: string[], tags_remove: string[] } here
+        patch = value as Partial<ArtifactPatchFields>;
+      } else {
+        patch = { [field]: value } as Partial<ArtifactPatchFields>;
+      }
+
+      // Snapshot current artifact for rollback
+      const prevData = queryClient.getQueryData<ArtifactDetail>(
+        artifactQueryKey(id),
+      );
+
+      // Optimistic cache update — apply scalar fields to the cached artifact.
+      // Tags are applied via tags_add/tags_remove so skip direct optimistic
+      // update for those (the canonical replacement after success handles them).
+      if (field !== "tags_add") {
+        queryClient.setQueryData<ArtifactDetail>(
+          artifactQueryKey(id),
+          (old) => {
+            if (!old) return old;
+            // For top-level fields on ArtifactDetail (title, status, workspace)
+            // update them directly. For frontmatter-backed fields, also update
+            // the frontmatter_jsonb snapshot so display stays consistent.
+            const updated: ArtifactDetail = { ...old };
+            if (field === "title") updated.title = value as string;
+            if (field === "status") updated.status = value as ArtifactDetail["status"];
+            if (field === "workspace") updated.workspace = value as ArtifactDetail["workspace"];
+            // frontmatter-backed fields
+            const fmFields: Array<keyof ArtifactPatchFields> = [
+              "description",
+              "domain",
+              "project",
+              "freshness_class",
+              "verification_status",
+              "series",
+              "publish_state",
+              "owners",
+            ];
+            if (fmFields.includes(field)) {
+              updated.frontmatter_jsonb = {
+                ...(old.frontmatter_jsonb ?? {}),
+                [field]: value,
+              };
+            }
+            return updated;
+          },
+        );
+      }
+
+      try {
+        const { data, etag: newEtag } = await patchArtifact(id, patch, etag);
+        setEtag(newEtag);
+        // Canonical replacement with server response
+        queryClient.setQueryData<ArtifactDetail>(artifactQueryKey(id), data);
+        showToast("success", "Saved");
+      } catch (err) {
+        // Rollback optimistic update
+        if (prevData) {
+          queryClient.setQueryData<ArtifactDetail>(artifactQueryKey(id), prevData);
+        }
+        if (err instanceof ETagMismatchError) {
+          showToast("error", "Edited elsewhere — refresh to continue");
+        } else if (err instanceof ArtifactValidationError) {
+          showToast("error", `Invalid value: ${err.field}`);
+        } else {
+          showToast("error", "Save failed");
+        }
+        // Re-throw so the inline-edit component stays in edit mode
+        throw err;
+      }
+    },
+    [id, etag, queryClient, showToast],
+  );
 
   // Compile success feedback: auto-clears after 3 seconds (FE-03).
   const [compileSuccess, setCompileSuccess] = useState(false);
@@ -881,6 +1326,17 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* Stages inferred from artifact lifecycle state (no new endpoint).   */}
       {/* ------------------------------------------------------------------ */}
       <HandoffChainRibbon artifact={artifact} />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Inline-editable metadata section (P2-06)                           */}
+      {/* 12 fields: title, description, status, workspace, tags, domain,    */}
+      {/* project, freshness_class, verification_status, series,             */}
+      {/* publish_state, owners.                                             */}
+      {/* Non-editable fields (id, type, subtype, lifecycle_stage, created,  */}
+      {/* updated, schema_version, lens badges, compile_*, content_hash,     */}
+      {/* file_path) are rendered read-only in TitleBlock and ContextRail.   */}
+      {/* ------------------------------------------------------------------ */}
+      <EditableMetadataSection artifact={artifact} onSave={handleFieldSave} />
 
       {/* ------------------------------------------------------------------ */}
       {/* Tab bar                                                             */}
@@ -1042,6 +1498,13 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* plan Notes). HistoryPanel in rail keeps its graceful empty state.  */}
       {/* ------------------------------------------------------------------ */}
       <ActivityTimeline artifactId={artifact.id} />
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Toast notification (P2-06) — fixed bottom-right, auto-dismissing   */}
+      {/* ------------------------------------------------------------------ */}
+      {activeToast && (
+        <ToastBanner toast={activeToast} onDismiss={dismissToast} />
+      )}
     </div>
   );
 }
