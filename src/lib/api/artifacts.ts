@@ -34,6 +34,7 @@
  */
 
 import { apiFetch } from "./client";
+import { getApiBase } from "./config";
 import type {
   ArtifactCard,
   ArtifactDetail,
@@ -393,6 +394,225 @@ export async function getQualityGates(
  *
  * Portal v1.5 Phase 1 (P1.5-1-03 backend, P1.5-1-04 frontend).
  */
+// ---------------------------------------------------------------------------
+// Inline field editing — PATCH /api/artifacts/:id (Portal v1.8 P2-05)
+// ---------------------------------------------------------------------------
+
+/**
+ * Custom error thrown when the server returns 412 Precondition Failed.
+ *
+ * Indicates another client has modified the artifact since the caller last
+ * fetched it.  The caller should re-fetch, discard local edits, and retry.
+ *
+ * ``currentEtag`` is the ETag from the 412 response body when the backend
+ * includes it; undefined otherwise.
+ */
+export class ETagMismatchError extends Error {
+  constructor(public currentEtag?: string) {
+    super("ETag mismatch — artifact was edited elsewhere");
+    this.name = "ETagMismatchError";
+  }
+}
+
+/**
+ * Custom error thrown when the server returns 422 Unprocessable Entity.
+ *
+ * ``field`` is the first erroring field name extracted from the FastAPI
+ * validation detail array.  ``detail`` is the human-readable message.
+ */
+export class ArtifactValidationError extends Error {
+  constructor(
+    public field: string,
+    public detail: string,
+  ) {
+    super(`Invalid value for ${field}: ${detail}`);
+    this.name = "ArtifactValidationError";
+  }
+}
+
+/**
+ * Editable fields for a single artifact.
+ *
+ * Mirrors ``ArtifactPatchRequest`` in the backend
+ * (portal/api/schemas/core.py).  All fields are optional; omit a field to
+ * leave it unchanged.
+ *
+ * Note on tags: the backend uses ``tags_add`` / ``tags_remove`` for
+ * additive tag mutation rather than a full replacement ``tags`` array.
+ * Use ``owners`` as a full replacement list.
+ */
+export interface ArtifactPatchFields {
+  title?: string | null;
+  description?: string | null;
+  status?: string | null;
+  workspace?: string | null;
+  /** Tags to add (backend: tags_add) */
+  tags_add?: string[] | null;
+  /** Tags to remove (backend: tags_remove) */
+  tags_remove?: string[] | null;
+  domain?: string | null;
+  project?: string | null;
+  freshness_class?: string | null;
+  verification_status?: string | null;
+  series?: string | null;
+  publish_state?: string | null;
+  owners?: string[] | null;
+}
+
+/**
+ * PATCH a single artifact's editable fields.
+ *
+ * Sends ``If-Match: <etag>`` (required by the backend — missing header returns
+ * 400; stale ETag returns 412).  Returns the updated ``ArtifactDetail`` and
+ * the new ETag from the response ``ETag`` header.
+ *
+ * Uses a raw fetch path rather than ``apiFetch`` because ``apiFetch`` does not
+ * expose response headers — the ETag must be read before the body is consumed.
+ *
+ * Throws:
+ *   - ``ETagMismatchError``       on 412 (optimistic-concurrency conflict)
+ *   - ``ArtifactValidationError`` on 422 (field-level validation failure)
+ *   - ``ApiError``                on any other non-2xx status
+ *
+ * Backend: PATCH /api/artifacts/{artifact_id}
+ * Portal v1.8 Phase 2 (P2-05).
+ */
+export async function patchArtifact(
+  id: string,
+  fields: Partial<ArtifactPatchFields>,
+  etag: string,
+): Promise<{ data: ArtifactDetail; etag: string }> {
+  const { ApiError } = await import("./client");
+
+  const url = `${getApiBase()}/artifacts/${encodeURIComponent(id)}`;
+
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  headers.set("If-Match", etag);
+
+  // Server-side: attach bearer token (mirrors apiFetch auth logic).
+  if (typeof window === "undefined") {
+    try {
+      const { cookies } = await import("next/headers");
+      const cookieStore = await cookies();
+      const sessionCookie = cookieStore.get("portal_session");
+      if (sessionCookie?.value) {
+        headers.set("Authorization", `Bearer ${sessionCookie.value}`);
+      } else {
+        const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+        if (envToken) headers.set("Authorization", `Bearer ${envToken}`);
+      }
+    } catch {
+      const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+      if (envToken) headers.set("Authorization", `Bearer ${envToken}`);
+    }
+  }
+
+  const response = await fetch(url, {
+    method: "PATCH",
+    headers,
+    body: JSON.stringify(fields),
+  });
+
+  if (response.status === 412) {
+    // Try to extract current ETag from the response body if the backend sends it.
+    let currentEtag: string | undefined;
+    try {
+      const body = await response.json();
+      currentEtag =
+        (body as { etag?: string })?.etag ??
+        response.headers.get("ETag") ??
+        undefined;
+    } catch {
+      // body not parseable — leave currentEtag undefined
+    }
+    throw new ETagMismatchError(currentEtag);
+  }
+
+  if (response.status === 422) {
+    // FastAPI validation errors: { detail: [{ loc: [...], msg: string, type: string }] }
+    let field = "unknown";
+    let detail = "Validation error";
+    try {
+      const body = (await response.json()) as {
+        detail?: Array<{ loc?: string[]; msg?: string }>;
+      };
+      const first = body.detail?.[0];
+      if (first) {
+        // loc is ["body", "field_name"] — take the last element as the field name
+        field = first.loc?.at(-1) ?? "unknown";
+        detail = first.msg ?? "Validation error";
+      }
+    } catch {
+      // keep defaults
+    }
+    throw new ArtifactValidationError(field, detail);
+  }
+
+  if (!response.ok) {
+    const raw = await response.text();
+    let body: unknown = raw;
+    try {
+      body = raw ? JSON.parse(raw) : raw;
+    } catch {
+      // keep raw text
+    }
+    throw new ApiError(response.status, body);
+  }
+
+  const responseEtag = response.headers.get("ETag") ?? etag;
+  const data = (await response.json()) as ArtifactDetail;
+
+  return { data, etag: responseEtag };
+}
+
+/**
+ * Fetch the current ETag for an artifact without consuming the body.
+ *
+ * Performs a raw GET against the artifact detail endpoint and reads the
+ * `ETag` response header before discarding the body.  Used to initialise
+ * the ETag state in ArtifactDetailClient so the first inline-edit PATCH
+ * has a valid `If-Match` value.
+ *
+ * Returns the ETag string, or `""` when the server omits the header.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}
+ * Portal v1.8 Phase 2 (P2-06).
+ */
+export async function fetchArtifactEtag(id: string): Promise<string> {
+  const url = `${getApiBase()}/artifacts/${encodeURIComponent(id)}`;
+
+  const headers = new Headers();
+  headers.set("Accept", "application/json");
+
+  if (typeof window === "undefined") {
+    try {
+      const { cookies } = await import("next/headers");
+      const cookieStore = await cookies();
+      const sessionCookie = cookieStore.get("portal_session");
+      if (sessionCookie?.value) {
+        headers.set("Authorization", `Bearer ${sessionCookie.value}`);
+      } else {
+        const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+        if (envToken) headers.set("Authorization", `Bearer ${envToken}`);
+      }
+    } catch {
+      const envToken = process.env.MEATYWIKI_PORTAL_TOKEN;
+      if (envToken) headers.set("Authorization", `Bearer ${envToken}`);
+    }
+  }
+
+  try {
+    const response = await fetch(url, { method: "GET", headers });
+    const etag = response.headers.get("ETag") ?? "";
+    // Discard body — we only needed the header.
+    await response.body?.cancel();
+    return etag;
+  } catch {
+    return "";
+  }
+}
+
 export async function patchArtifactLens(
   id: string,
   body: LensPatchRequest,
