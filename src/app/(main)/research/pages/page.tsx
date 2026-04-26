@@ -379,7 +379,7 @@ export default function ResearchPagesPage() {
            * Backend: GET /api/research/cross-entity-synthesis — not yet shipped.
            * Renders skeleton rows until endpoint ships.
            */}
-          <CrossEntitySynthesisTabs topicId={selectedTopicId} />
+          <CrossEntitySynthesisTabs />
 
           {/* Divider between bento and artifact list secondary affordance */}
           <div className="flex items-center gap-3">

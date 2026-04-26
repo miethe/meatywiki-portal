@@ -155,7 +155,7 @@ export async function submitUrl(
 /**
  * POST /api/intake/upload
  *
- * Uploads a file (audio, document, image) as a Blob.
+ * Uploads a file (audio, document, image) via multipart/form-data.
  * Returns 202 Accepted with run_id.
  *
  * When offline (and PWA enabled), stores the Blob in IndexedDB and returns
@@ -167,10 +167,31 @@ export async function submitUrl(
 export async function submitUpload(
   blob: Blob,
   contentType: string,
+  filename?: string,
 ): Promise<IntakeResponse> {
+  const mimeToExt: Record<string, string> = {
+    "audio/webm": ".webm",
+    "audio/ogg": ".ogg",
+    "audio/mp4": ".mp4",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/mpeg": ".mp4",
+    "audio/mp4a-latm": ".m4a",
+    "application/pdf": ".pdf",
+    "text/plain": ".txt",
+    "text/markdown": ".md",
+  };
+
+  const resolvedName =
+    filename ??
+    (blob instanceof File ? blob.name : undefined) ??
+    `upload${mimeToExt[contentType] ?? ""}`;
+
+  const form = new FormData();
+  form.append("file", blob, resolvedName);
+
   return intakeFetch<IntakeResponse>("/intake/upload", {
     method: "POST",
-    body: blob,
-    headers: { "Content-Type": contentType },
+    body: form,
   });
 }

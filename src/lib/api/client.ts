@@ -80,7 +80,9 @@ export async function apiFetch<T = unknown>(
     }
   }
 
-  headers.set("Content-Type", "application/json");
+  if (!(fetchInit.body instanceof FormData)) {
+    headers.set("Content-Type", "application/json");
+  }
 
   const response = await fetch(url, { ...fetchInit, headers });
 

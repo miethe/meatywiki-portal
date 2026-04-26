@@ -36,6 +36,7 @@
 import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { OPERATOR_CONTROL_ENABLED } from "@/lib/env";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
 import { useWorkflowTimeline } from "@/hooks/useWorkflowTimeline";
 import { useRunHistory } from "@/hooks/useRunHistory";
@@ -212,8 +213,8 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
       >
         {/* Left column — operator actions + timeline + context + lineage + audit log */}
         <div className="col-span-12 lg:col-span-9 flex flex-col gap-6">
-          {/* Panel E: Operator actions — only rendered when run is actionable */}
-          {currentRun && (
+          {/* Panel E: Operator actions — only rendered when feature flag is on AND run is actionable */}
+          {OPERATOR_CONTROL_ENABLED && currentRun && (
             <OperatorActionsBlock
               runId={runId}
               status={currentRun.status}

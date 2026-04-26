@@ -45,7 +45,7 @@
  * aria-disabled; copy button with aria-live announcement.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
@@ -58,6 +58,9 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   ChevronDown,
+  CheckCircle2,
+  XCircle,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
@@ -81,6 +84,12 @@ import { ArticleViewer } from "@miethe/ui";
 import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import {
+  promoteArtifact,
+  linkArtifact,
+  requestReview,
+  type LinkArtifactRequest,
+} from "@/lib/api/artifacts";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -707,6 +716,218 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 // Migrated from header row to ContextRail action column.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Inline toast (mirrors InboxContextRail pattern — no external toast lib)
+// ---------------------------------------------------------------------------
+
+type ToastVariant = "success" | "error";
+
+interface ToastState {
+  message: string;
+  variant: ToastVariant;
+}
+
+function InlineToast({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastState;
+  onDismiss: () => void;
+}) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex items-center gap-2 rounded-md border px-3 py-2 text-xs shadow-sm",
+        toast.variant === "success"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/40 dark:text-emerald-300"
+          : "border-destructive/30 bg-destructive/10 text-destructive",
+      )}
+    >
+      {toast.variant === "success" ? (
+        <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+      ) : (
+        <XCircle className="size-3.5 shrink-0" aria-hidden="true" />
+      )}
+      <span className="flex-1">{toast.message}</span>
+      <button
+        type="button"
+        aria-label="Dismiss notification"
+        onClick={onDismiss}
+        className="ml-1 opacity-60 hover:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <X className="size-3" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Link target-selector dialog (simple ID-input — no existing selector found)
+// ---------------------------------------------------------------------------
+
+interface LinkDialogProps {
+  open: boolean;
+  isSubmitting: boolean;
+  onCancel: () => void;
+  onConfirm: (data: LinkArtifactRequest) => void;
+}
+
+const EDGE_TYPE_OPTIONS = [
+  { value: "relates_to", label: "Relates to" },
+  { value: "derived_from", label: "Derived from" },
+  { value: "supports", label: "Supports" },
+  { value: "supersedes", label: "Supersedes" },
+  { value: "contradicts", label: "Contradicts" },
+  { value: "contains", label: "Contains" },
+] as const;
+
+function LinkDialog({ open, isSubmitting, onCancel, onConfirm }: LinkDialogProps) {
+  const [targetId, setTargetId] = useState("");
+  const [edgeType, setEdgeType] = useState("relates_to");
+
+  // Reset form when dialog opens
+  useEffect(() => {
+    if (open) {
+      setTargetId("");
+      setEdgeType("relates_to");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = targetId.trim();
+    if (!trimmed) return;
+    onConfirm({ target_id: trimmed, edge_type: edgeType });
+  }
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="link-dialog-title"
+      className="fixed inset-0 z-50 flex items-center justify-center"
+    >
+      {/* Backdrop */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-black/40"
+        onClick={isSubmitting ? undefined : onCancel}
+      />
+      {/* Panel */}
+      <form
+        onSubmit={handleSubmit}
+        className={cn(
+          "relative z-10 flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-background p-5 shadow-lg",
+          "focus:outline-none",
+        )}
+      >
+        <div className="flex items-center justify-between">
+          <h2 id="link-dialog-title" className="text-sm font-semibold text-foreground">
+            Link to artifact
+          </h2>
+          <button
+            type="button"
+            aria-label="Close dialog"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            className="text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="link-target-id"
+            className="text-xs font-medium text-muted-foreground"
+          >
+            Target artifact ID
+          </label>
+          <input
+            id="link-target-id"
+            type="text"
+            value={targetId}
+            onChange={(e) => setTargetId(e.target.value)}
+            placeholder="e.g. abc123"
+            required
+            disabled={isSubmitting}
+            autoFocus
+            className={cn(
+              "h-8 rounded-md border bg-background px-2.5 text-xs text-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <label
+            htmlFor="link-edge-type"
+            className="text-xs font-medium text-muted-foreground"
+          >
+            Edge type
+          </label>
+          <div className="relative">
+            <select
+              id="link-edge-type"
+              value={edgeType}
+              onChange={(e) => setEdgeType(e.target.value)}
+              disabled={isSubmitting}
+              className={cn(
+                "h-8 w-full appearance-none rounded-md border bg-background pl-2.5 pr-7 text-xs text-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "disabled:cursor-not-allowed disabled:opacity-50",
+              )}
+            >
+              {EDGE_TYPE_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2 top-1/2 size-3 -translate-y-1/2 text-muted-foreground"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isSubmitting}
+            className={cn(
+              "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium",
+              "transition-colors hover:bg-accent hover:text-accent-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={isSubmitting || !targetId.trim()}
+            className={cn(
+              "inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground",
+              "transition-colors hover:bg-primary/90",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "disabled:cursor-not-allowed disabled:opacity-50",
+            )}
+          >
+            {isSubmitting && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+            {isSubmitting ? "Linking..." : "Link"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -744,6 +965,77 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     const timer = setTimeout(() => setCompileSuccess(false), 3000);
     return () => clearTimeout(timer);
   }, [compileSuccess]);
+
+  // ---------------------------------------------------------------------------
+  // Action state — Promote, Link Related, Request Review (P3-07)
+  // ---------------------------------------------------------------------------
+
+  // Shared inline toast (success / error feedback for rail actions)
+  const [actionToast, setActionToast] = useState<ToastState | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showToast = useCallback((toast: ToastState) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setActionToast(toast);
+    toastTimerRef.current = setTimeout(() => setActionToast(null), 4000);
+  }, []);
+
+  // Promote
+  const [isPromoting, setIsPromoting] = useState(false);
+  const [promotedLifecycle, setPromotedLifecycle] = useState<string | null>(null);
+
+  const handlePromote = useCallback(async () => {
+    if (isPromoting) return;
+    setIsPromoting(true);
+    try {
+      const result = await promoteArtifact(id);
+      setPromotedLifecycle(result.lifecycle_stage);
+      showToast({ message: `Promoted to ${result.lifecycle_stage}`, variant: "success" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Promote failed";
+      showToast({ message: msg, variant: "error" });
+    } finally {
+      setIsPromoting(false);
+    }
+  }, [id, isPromoting, showToast]);
+
+  // Link — dialog-first flow
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
+
+  const handleLinkConfirm = useCallback(async (data: LinkArtifactRequest) => {
+    if (isLinking) return;
+    setIsLinking(true);
+    try {
+      await linkArtifact(id, data);
+      setLinkDialogOpen(false);
+      showToast({ message: "Link created successfully", variant: "success" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Link failed";
+      showToast({ message: msg, variant: "error" });
+    } finally {
+      setIsLinking(false);
+    }
+  }, [id, isLinking, showToast]);
+
+  // Request Review
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [reviewQueued, setReviewQueued] = useState(false);
+
+  const handleRequestReview = useCallback(async () => {
+    if (isReviewing || reviewQueued) return;
+    setIsReviewing(true);
+    try {
+      await requestReview(id);
+      setReviewQueued(true);
+      showToast({ message: "Added to review queue", variant: "success" });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Request review failed";
+      showToast({ message: msg, variant: "error" });
+    } finally {
+      setIsReviewing(false);
+    }
+  }, [id, isReviewing, reviewQueued, showToast]);
 
   // Deep-link: if ?tab=derivatives is present AND the artifact is a source type,
   // activate the Derivatives tab on mount / when the artifact loads.
@@ -805,26 +1097,48 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       icon: StickyNote,
     },
     {
-      label: "Promote to Archive",
-      ariaLabel: "Promote artifact to archive lifecycle stage",
+      label: isPromoting
+        ? "Promoting..."
+        : promotedLifecycle
+          ? `Promoted: ${promotedLifecycle}`
+          : "Promote to Archive",
+      ariaLabel: isPromoting
+        ? "Promoting artifact lifecycle stage"
+        : "Promote artifact to archive lifecycle stage",
       hasEndpoint: true,
-      description: "POST /api/artifacts/:id/promote — wired in a future P3 task",
-      icon: Archive,
-    },
+      description: "POST /api/artifacts/:id/promote (P3-07)",
+      onClick: isPromoting ? undefined : handlePromote,
+      icon: isPromoting ? Loader2 : Archive,
+      disabled: isPromoting,
+    } satisfies ContextRailAction,
     {
-      label: "Link Related",
-      ariaLabel: "Link this artifact to a related artifact",
+      label: isLinking ? "Linking..." : "Link Related",
+      ariaLabel: isLinking
+        ? "Link creation in progress"
+        : "Link this artifact to a related artifact",
       hasEndpoint: true,
-      description: "POST /api/artifacts/:id/link — wired in a future P3 task",
-      icon: Link2,
-    },
+      description: "POST /api/artifacts/:id/link (P3-07)",
+      onClick: isLinking ? undefined : () => setLinkDialogOpen(true),
+      icon: isLinking ? Loader2 : Link2,
+      disabled: isLinking,
+    } satisfies ContextRailAction,
     {
-      label: "Request Review",
-      ariaLabel: "Add this artifact to the review queue",
+      label: isReviewing
+        ? "Requesting..."
+        : reviewQueued
+          ? "Review Requested"
+          : "Request Review",
+      ariaLabel: isReviewing
+        ? "Review request in progress"
+        : reviewQueued
+          ? "Review already queued"
+          : "Add this artifact to the review queue",
       hasEndpoint: true,
-      description: "POST /api/artifacts/:id/review — wired in a future P3 task",
-      icon: CheckSquare,
-    },
+      description: "POST /api/artifacts/:id/review (P3-07)",
+      onClick: isReviewing || reviewQueued ? undefined : handleRequestReview,
+      icon: isReviewing ? Loader2 : CheckSquare,
+      disabled: isReviewing || reviewQueued,
+    } satisfies ContextRailAction,
     ...(showCompileAction
       ? [
           {
@@ -842,7 +1156,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full flex-col gap-4">
+      {/* Link dialog — portal-root level, above page content */}
+      <LinkDialog
+        open={linkDialogOpen}
+        isSubmitting={isLinking}
+        onCancel={() => setLinkDialogOpen(false)}
+        onConfirm={handleLinkConfirm}
+      />
       {/* ------------------------------------------------------------------ */}
       {/* Title block — P4-01: breadcrumbs + eyebrow tags + display title   */}
       {/* + metadata strip. ArtifactTitleBlock owns all four sub-sections.  */}
@@ -892,7 +1213,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       <div
         role="tablist"
         aria-label="Artifact readers"
-        className="flex overflow-x-auto border-b scrollbar-none [-webkit-overflow-scrolling:touch]"
+        className="sticky top-0 z-10 flex shrink-0 overflow-x-auto border-b bg-background scrollbar-none [-webkit-overflow-scrolling:touch]"
       >
         {visibleTabs.map((tab) => (
           <button
@@ -917,8 +1238,10 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Content area: reader + sidebar                                      */}
+      {/* Scrollable body — everything below tab bar scrolls here             */}
       {/* ------------------------------------------------------------------ */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+      {/* Content area: reader + sidebar                                      */}
       <div className="flex gap-6">
         {/* Main reader area */}
         <div className="min-w-0 flex-1">
@@ -997,6 +1320,13 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           aria-label="Context rail"
           className="hidden w-72 shrink-0 lg:block"
         >
+          {/* P3-07: Action toast (Promote / Link / Review feedback) */}
+          {actionToast && (
+            <InlineToast
+              toast={actionToast}
+              onDismiss={() => setActionToast(null)}
+            />
+          )}
           {/* FE-03: Compile feedback — success + error shown above the rail */}
           {compileSuccess && (
             <div
@@ -1042,6 +1372,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* plan Notes). HistoryPanel in rail keeps its graceful empty state.  */}
       {/* ------------------------------------------------------------------ */}
       <ActivityTimeline artifactId={artifact.id} />
+      </div>
     </div>
   );
 }

@@ -70,6 +70,7 @@ import {
   Link2,
   BookOpen,
   GitMerge,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/ui/type-badge";
@@ -79,6 +80,9 @@ import {
   type ArtifactEdgeItem,
   type EdgeType,
 } from "@/hooks/useArtifactEdges";
+import { useLineage } from "@/hooks/useLineage";
+import { useRecentSyntheses } from "@/hooks/useRecentSyntheses";
+import type { SynthesisLineageNode } from "@/lib/api/research";
 import type { ArtifactDetail } from "@/types/artifact";
 
 // Convenience alias — ContextRail panels operate on ArtifactDetail
@@ -106,6 +110,13 @@ export interface ContextRailAction {
   onClick?: () => void;
   /** Leading icon component (lucide-react). Renders left of label. */
   icon?: React.ComponentType<{ className?: string }>;
+  /**
+   * When true the button is rendered in a disabled / muted state and
+   * ignores clicks. Distinct from `!onClick` (un-wired stubs) — use
+   * `disabled` for actions that are intentionally blocked at runtime
+   * (e.g. already-submitted, in-flight).
+   */
+  disabled?: boolean;
 }
 
 export interface ContextRailProps {
@@ -696,14 +707,113 @@ function ContradictionsPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// Panel: Lineage (research variant) — backed by /edges endpoint + deferred note
+// Panel: Lineage (research variant) — wired to synthesis-lineage endpoint
 // ---------------------------------------------------------------------------
 
-function ResearchLineagePanel({ artifactId }: { artifactId: string | undefined }) {
-  // Reuse the edges endpoint — Lineage = derived_from + supersedes edges
-  const { data, isLoading, isError, error, refetch } = useArtifactEdges(
-    artifactId ?? null,
+/**
+ * Recursive node renderer for the synthesis lineage tree.
+ *
+ * Renders a collapsible sub-tree. Root node is rendered by ResearchLineagePanel;
+ * children are rendered recursively. Depth is capped at 10 by the backend,
+ * so no explicit depth guard is required here.
+ */
+function LineageNode({
+  node,
+  isRoot = false,
+}: {
+  node: SynthesisLineageNode;
+  isRoot?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const hasChildren = node.children.length > 0;
+
+  const edgeLabel = node.edge_type
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return (
+    <li
+      className={cn(
+        "flex flex-col gap-0.5",
+        !isRoot && "pl-3 border-l border-muted",
+      )}
+    >
+      {/* Node row */}
+      <div className="flex items-start gap-1.5">
+        {/* Expand toggle — only visible when children exist */}
+        {hasChildren ? (
+          <button
+            type="button"
+            aria-label={expanded ? "Collapse children" : "Expand children"}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((v) => !v)}
+            className={cn(
+              "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground",
+              "hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            )}
+          >
+            <span aria-hidden="true" className="text-[10px] leading-none">
+              {expanded ? "▾" : "▸"}
+            </span>
+          </button>
+        ) : (
+          /* Spacer so leaf nodes align with expandable nodes */
+          <span aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        )}
+
+        {/* Content */}
+        <div className="flex min-w-0 flex-col gap-0.5">
+          {/* Edge type badge — omit on root */}
+          {!isRoot && (
+            <span className="inline-flex w-fit items-center rounded-sm bg-sky-100 px-1.5 py-0.5 text-[9px] font-medium leading-tight text-sky-800 dark:bg-sky-900/40 dark:text-sky-300">
+              {edgeLabel}
+            </span>
+          )}
+          <Link
+            href={`/artifact/${node.artifact_id}`}
+            className={cn(
+              "truncate text-[11px] font-medium leading-snug text-foreground",
+              "hover:underline underline-offset-2",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+              isRoot && "text-xs",
+            )}
+          >
+            {node.title || node.artifact_id}
+          </Link>
+          <span className="text-[10px] capitalize text-muted-foreground/70">
+            {node.artifact_type}
+          </span>
+        </div>
+      </div>
+
+      {/* Children */}
+      {hasChildren && expanded && (
+        <ul
+          role="list"
+          aria-label={`Children of ${node.title || node.artifact_id}`}
+          className="mt-1 flex flex-col gap-1"
+        >
+          {node.children.map((child) => (
+            <LineageNode
+              key={`${child.artifact_id}-${child.edge_type}-${child.depth}`}
+              node={child}
+            />
+          ))}
+        </ul>
+      )}
+
+      {/* Sibling overflow hint */}
+      {node.next_sibling_cursor && (
+        <p className="mt-0.5 pl-5 text-[10px] italic text-muted-foreground/60">
+          More siblings not shown
+        </p>
+      )}
+    </li>
   );
+}
+
+function ResearchLineagePanel({ artifactId }: { artifactId: string | undefined }) {
+  const { data, isLoading, isError, error, refetch } = useLineage(artifactId);
 
   if (!artifactId) {
     return (
@@ -719,12 +829,18 @@ function ResearchLineagePanel({ artifactId }: { artifactId: string | undefined }
   if (isLoading) {
     return (
       <div aria-busy="true" aria-label="Loading lineage" className="flex flex-col gap-2">
-        {Array.from({ length: 3 }, (_, i) => (
+        {Array.from({ length: 4 }, (_, i) => (
           <div
             key={i}
             aria-hidden="true"
-            className="h-8 animate-pulse rounded-md border bg-card"
-          />
+            className="flex animate-pulse items-center gap-1.5 px-1"
+          >
+            <div
+              className="size-4 shrink-0 rounded-sm bg-muted"
+              style={{ marginLeft: `${(i % 3) * 12}px` }}
+            />
+            <div className="h-3 flex-1 rounded bg-muted" style={{ maxWidth: `${70 - i * 8}%` }} />
+          </div>
         ))}
       </div>
     );
@@ -737,7 +853,8 @@ function ResearchLineagePanel({ artifactId }: { artifactId: string | undefined }
         className="flex flex-col items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-4 text-center"
       >
         <AlertCircle aria-hidden="true" className="size-4 text-destructive" />
-        <p className="text-xs text-muted-foreground">{error.message}</p>
+        <p className="text-xs text-muted-foreground">Unable to load lineage</p>
+        <p className="text-[10px] text-muted-foreground/70">{error.message}</p>
         <button
           type="button"
           onClick={refetch}
@@ -752,45 +869,42 @@ function ResearchLineagePanel({ artifactId }: { artifactId: string | undefined }
     );
   }
 
-  const incoming = data?.incoming ?? [];
-  const outgoing = data?.outgoing ?? [];
+  // Artifact not in overlay yet
+  if (!data?.found || !data.root) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center gap-2 rounded-md border border-dashed px-3 py-6 text-center"
+      >
+        <GitMerge aria-hidden="true" className="size-5 text-muted-foreground/40" />
+        <p className="text-xs font-medium text-foreground">No lineage data</p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Lineage appears after the artifact is compiled and reconciled into
+          the overlay.
+        </p>
+      </div>
+    );
+  }
 
-  // Filter to lineage-relevant edge types: derived_from, supersedes
-  const lineageTypes: EdgeType[] = ["derived_from", "supersedes"];
-  const lineageEdges = [
-    ...incoming.filter((e) => lineageTypes.includes(e.type)),
-    ...outgoing.filter((e) => lineageTypes.includes(e.type)),
-  ];
+  const root = data.root;
+  const hasChildren = root.children.length > 0;
 
   return (
-    <div className="flex flex-col gap-3">
-      {lineageEdges.length === 0 ? (
-        <div
-          role="status"
-          className="flex flex-col items-center gap-2 rounded-md border border-dashed px-3 py-6 text-center"
-        >
-          <p className="text-xs font-medium text-foreground">No lineage edges</p>
-          <p className="text-[11px] text-muted-foreground">
-            Derived-from and supersedes edges appear here after compilation.
-          </p>
-        </div>
-      ) : (
-        <ul role="list" aria-label="Lineage edges" className="flex flex-col gap-1">
-          {lineageEdges.map((edge) => (
-            <CompactEdgeRow
-              key={`lineage-${edge.artifact_id}-${edge.type}`}
-              edge={edge}
-            />
-          ))}
-        </ul>
+    <div className="flex flex-col gap-2">
+      <ul role="tree" aria-label="Synthesis lineage tree" className="flex flex-col gap-1">
+        <LineageNode node={root} isRoot />
+      </ul>
+
+      {!hasChildren && (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          No child artifacts derived from this one yet.
+        </p>
       )}
-      {/* Note about richer lineage timeline */}
-      <p
-        aria-label="Lineage timeline note"
-        className="rounded-sm border border-dashed px-2 py-1.5 text-[10px] text-muted-foreground/70"
-      >
-        Full lineage timeline (runs joined) — planned via{" "}
-        <code className="font-mono">GET /api/artifacts/:id/lineage</code>.
+
+      {/* Diagnostic footer */}
+      <p className="mt-1 text-[10px] text-muted-foreground/50">
+        Depth {data.depth} &middot; {data.raw_edge_count} edge
+        {data.raw_edge_count !== 1 ? "s" : ""} traversed
       </p>
     </div>
   );
@@ -867,6 +981,109 @@ function ResearchMetadataPanel({ artifact }: { artifact: Artifact | undefined })
 }
 
 // ---------------------------------------------------------------------------
+// Panel: Syntheses (research variant) — recent synthesis artifacts list
+// Backed by GET /api/research/recent-syntheses (P4-01).
+// ---------------------------------------------------------------------------
+
+/**
+ * Compact row for a single synthesis artifact.
+ * Renders the title linked to the detail page plus a relative updated_at time.
+ */
+function SynthesisRow({ id, title, updated }: { id: string; title: string; updated: string | null }) {
+  return (
+    <li className="flex flex-col gap-0.5 rounded-md border bg-card px-2.5 py-2 text-xs">
+      <Link
+        href={`/artifact/${id}`}
+        className={cn(
+          "truncate font-medium text-foreground",
+          "hover:underline underline-offset-2",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+        )}
+      >
+        {title}
+      </Link>
+      {updated && (
+        <time
+          dateTime={updated}
+          className="text-[10px] text-muted-foreground/70"
+        >
+          <RelativeTime iso={updated} />
+        </time>
+      )}
+    </li>
+  );
+}
+
+/**
+ * Exported variant of SynthesesPanel that accepts an optional topicId scope.
+ * Used by Research Home when the user selects a topic in the WorkspaceSelector.
+ */
+export function ResearchSynthesesPanel({ topicId }: { topicId?: string }) {
+  return <SynthesesPanel topicId={topicId} />;
+}
+
+function SynthesesPanel({ topicId }: { topicId?: string } = {}) {
+  const { syntheses, isLoading, isError, error } = useRecentSyntheses({
+    limit: 10,
+    ...(topicId ? { topic_id: topicId } : {}),
+  });
+
+  if (isLoading) {
+    return (
+      <div aria-busy="true" aria-label="Loading recent syntheses" className="flex flex-col gap-2">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div
+            key={i}
+            aria-hidden="true"
+            className="flex animate-pulse flex-col gap-1 rounded-md border bg-card px-2.5 py-2"
+          >
+            <div className="h-3 w-3/4 rounded bg-muted" />
+            <div className="h-2.5 w-1/3 rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (isError && error) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-4 text-center"
+      >
+        <AlertCircle aria-hidden="true" className="size-4 text-destructive" />
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+      </div>
+    );
+  }
+
+  if (syntheses.length === 0) {
+    return (
+      <div
+        role="status"
+        className="flex flex-col items-center gap-2 rounded-md border border-dashed px-3 py-6 text-center"
+      >
+        <FileText aria-hidden="true" className="size-5 text-muted-foreground/40" />
+        <p className="text-xs font-medium text-foreground">No recent syntheses.</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul role="list" aria-label="Recent syntheses" className="flex flex-col gap-1">
+      {syntheses.map((item) => (
+        <SynthesisRow
+          key={item.id}
+          id={item.id}
+          title={item.title}
+          updated={item.updated}
+        />
+      ))}
+    </ul>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab sets
 // ---------------------------------------------------------------------------
 
@@ -905,6 +1122,11 @@ const RESEARCH_TABS: ContextRailTab[] = [
     id: "lineage",
     label: "Lineage",
     renderContent: (artifactId) => <ResearchLineagePanel artifactId={artifactId} />,
+  },
+  {
+    id: "syntheses",
+    label: "Syntheses",
+    renderContent: () => <SynthesesPanel />,
   },
   {
     id: "metadata",
@@ -973,27 +1195,32 @@ export function ContextRail({
           aria-label="Artifact actions"
           className="flex flex-col gap-1.5"
         >
-          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick, icon: Icon }) => (
+          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick, icon: Icon, disabled }) => (
             <button
               key={label}
               type="button"
               aria-label={btnAriaLabel}
-              aria-disabled={!onClick ? "true" : undefined}
+              aria-disabled={(disabled || !onClick) ? "true" : undefined}
+              disabled={disabled}
               title={description}
               onClick={
-                onClick
-                  ? onClick
-                  : () => {
-                      console.debug(`[ContextRail] Action stub: "${label}" — ${description}`);
-                    }
+                disabled
+                  ? undefined
+                  : onClick
+                    ? onClick
+                    : () => {
+                        console.debug(`[ContextRail] Action stub: "${label}" — ${description}`);
+                      }
               }
               className={cn(
                 // shadcn Button variant="outline" pattern
                 "inline-flex h-8 w-full items-center justify-start gap-2 rounded-md border bg-background px-3 text-xs font-medium",
                 "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                onClick
-                  ? "hover:bg-accent hover:text-accent-foreground"
-                  : "cursor-default text-muted-foreground hover:bg-muted/50",
+                disabled
+                  ? "cursor-not-allowed text-muted-foreground opacity-60"
+                  : onClick
+                    ? "hover:bg-accent hover:text-accent-foreground"
+                    : "cursor-default text-muted-foreground hover:bg-muted/50",
               )}
             >
               {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
