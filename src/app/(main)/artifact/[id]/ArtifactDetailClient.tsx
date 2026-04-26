@@ -54,7 +54,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
 import {
   StickyNote,
   Archive,
@@ -73,7 +72,7 @@ import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { WorkspaceBadge } from "@/components/ui/workspace-badge";
 import { WorkflowOSTab } from "@/components/workflow/workflow-os-tab";
-import { useArtifact, artifactQueryKey } from "@/hooks/useArtifact";
+import { useArtifact } from "@/hooks/useArtifact";
 import { useDerivatives } from "@/hooks/useDerivatives";
 import { DerivativesList } from "@/components/workflow/derivatives-list";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
@@ -96,13 +95,8 @@ import {
   InlineSelect,
   InlineChipEditor,
 } from "@/components/inline-edit";
-import {
-  patchArtifact,
-  fetchArtifactEtag,
-  ETagMismatchError,
-  ArtifactValidationError,
-  type ArtifactPatchFields,
-} from "@/lib/api/artifacts";
+import type { ArtifactPatchFields } from "@/lib/api/artifacts";
+import { useArtifactFieldSave } from "./useArtifactFieldSave";
 import type { ArtifactDetail } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
@@ -1063,113 +1057,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const { artifact, isLoading, isError, error, isNotFound, refetch } =
     useArtifact(id);
 
-  // ---- TanStack Query client for optimistic cache updates ----
-  const queryClient = useQueryClient();
-
-  // ---- ETag state for If-Match header (P2-06) ----
-  // Initialised from the GET /artifacts/:id response header on mount.
-  // Updated after every successful PATCH from the response ETag header.
-  const [etag, setEtag] = useState<string>("");
-
-  useEffect(() => {
-    // Fetch the current ETag once the artifact ID is known.
-    // Fire-and-forget; if it fails etag stays "" and patchArtifact will surface
-    // a 400 which maps to the generic "Save failed" toast path.
-    void fetchArtifactEtag(id).then((e) => {
-      if (e) setEtag(e);
-    });
-  }, [id]);
-
   // ---- Toast notifications (P2-06) ----
   const { toast: activeToast, show: showToast, dismiss: dismissToast } = useToast();
 
-  // ---- Per-field save handler ----
-  // For tags: the value is already a { tags_add, tags_remove } object —
-  // the EditableMetadataSection's handleTagsSave wrapper builds it.
-  // For owners: value is the full string[].
-  // For all other fields: value is the new scalar value.
-  const handleFieldSave = useCallback(
-    async (
-      field: keyof ArtifactPatchFields,
-      value: unknown,
-    ) => {
-      // Build the patch payload. Tags are a special case where the value object
-      // already contains tags_add and tags_remove keys (assembled by
-      // EditableMetadataSection.handleTagsSave); spread it directly.
-      let patch: Partial<ArtifactPatchFields>;
-      if (field === "tags_add") {
-        // value is { tags_add: string[], tags_remove: string[] } here
-        patch = value as Partial<ArtifactPatchFields>;
-      } else {
-        patch = { [field]: value } as Partial<ArtifactPatchFields>;
-      }
-
-      // Snapshot current artifact for rollback
-      const prevData = queryClient.getQueryData<ArtifactDetail>(
-        artifactQueryKey(id),
-      );
-
-      // Optimistic cache update — apply scalar fields to the cached artifact.
-      // Tags are applied via tags_add/tags_remove so skip direct optimistic
-      // update for those (the canonical replacement after success handles them).
-      if (field !== "tags_add") {
-        queryClient.setQueryData<ArtifactDetail>(
-          artifactQueryKey(id),
-          (old) => {
-            if (!old) return old;
-            // For top-level fields on ArtifactDetail (title, status, workspace)
-            // update them directly. For frontmatter-backed fields, also update
-            // the frontmatter_jsonb snapshot so display stays consistent.
-            const updated: ArtifactDetail = { ...old };
-            if (field === "title") updated.title = value as string;
-            if (field === "status") updated.status = value as ArtifactDetail["status"];
-            if (field === "workspace") updated.workspace = value as ArtifactDetail["workspace"];
-            // frontmatter-backed fields
-            const fmFields: Array<keyof ArtifactPatchFields> = [
-              "description",
-              "domain",
-              "project",
-              "freshness_class",
-              "verification_status",
-              "series",
-              "publish_state",
-              "owners",
-            ];
-            if (fmFields.includes(field)) {
-              updated.frontmatter_jsonb = {
-                ...(old.frontmatter_jsonb ?? {}),
-                [field]: value,
-              };
-            }
-            return updated;
-          },
-        );
-      }
-
-      try {
-        const { data, etag: newEtag } = await patchArtifact(id, patch, etag);
-        setEtag(newEtag);
-        // Canonical replacement with server response
-        queryClient.setQueryData<ArtifactDetail>(artifactQueryKey(id), data);
-        showToast("success", "Saved");
-      } catch (err) {
-        // Rollback optimistic update
-        if (prevData) {
-          queryClient.setQueryData<ArtifactDetail>(artifactQueryKey(id), prevData);
-        }
-        if (err instanceof ETagMismatchError) {
-          showToast("error", "Edited elsewhere — refresh to continue");
-        } else if (err instanceof ArtifactValidationError) {
-          showToast("error", `Invalid value: ${err.field}`);
-        } else {
-          showToast("error", "Save failed");
-        }
-        // Re-throw so the inline-edit component stays in edit mode
-        throw err;
-      }
-    },
-    [id, etag, queryClient, showToast],
-  );
+  // ---- Per-field save handler (extracted to useArtifactFieldSave — P2-07) ----
+  const { handleFieldSave } = useArtifactFieldSave({
+    artifactId: id,
+    showToast,
+  });
 
   // Compile success feedback: auto-clears after 3 seconds (FE-03).
   const [compileSuccess, setCompileSuccess] = useState(false);
