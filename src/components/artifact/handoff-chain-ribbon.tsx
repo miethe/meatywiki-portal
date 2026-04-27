@@ -269,8 +269,7 @@ export function HandoffChainRibbon({ artifact, className }: HandoffChainRibbonPr
     <div
       aria-label="Artifact workflow stages"
       className={cn(
-        "flex items-center gap-0 overflow-x-auto rounded-lg border bg-muted/20 px-3 py-2",
-        "scrollbar-none [-webkit-overflow-scrolling:touch]",
+        "flex items-center gap-0 overflow-hidden rounded-lg border bg-muted/20 px-3 py-3",
         className,
       )}
     >
