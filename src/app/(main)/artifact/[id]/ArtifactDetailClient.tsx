@@ -29,6 +29,11 @@
  *     and transparent client-side fallback on 404/network error.
  *   - Optional edge_type filter dropdown in Backlinks tab.
  *
+ * P2-02 additions (pipeline observability):
+ *   - "Processing" tab added after Backlinks, before Derivatives.
+ *   - Renders ProcessingHistoryTab which fetches /api/artifacts/:id/processing-history.
+ *   - Tab uses `hidden` attribute; TanStack Query caches data across tab switches.
+ *
  * P2-06 additions (v1.8 inline editing):
  *   - All 12 editable fields wired with inline-edit components.
  *   - ETag state initialised from GET response header via fetchArtifactEtag.
@@ -88,6 +93,7 @@ import type { EdgeType } from "@/hooks/useArtifactEdges";
 import { ArticleViewer } from "@miethe/ui";
 import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
+import { ProcessingHistoryTab } from "@/components/artifact/processing-history-tab";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
 import {
   InlineTextField,
@@ -159,7 +165,7 @@ function EdgeTypeBadge({ edgeType }: { edgeType: EdgeType }) {
 // Tab definition
 // ---------------------------------------------------------------------------
 
-const BASE_TABS = ["Source", "Knowledge", "Draft", "Workflow OS", "Backlinks"] as const;
+const BASE_TABS = ["Source", "Knowledge", "Draft", "Workflow OS", "Backlinks", "Processing"] as const;
 type TabId = (typeof BASE_TABS)[number] | "Derivatives";
 
 function tabPanelId(tab: TabId) {
@@ -1096,6 +1102,9 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     if (tabParam === "backlinks" && artifact) {
       setActiveTab("Backlinks");
     }
+    if (tabParam === "processing" && artifact) {
+      setActiveTab("Processing");
+    }
   }, [searchParams, artifact]);
 
   // ---- Loading state ----
@@ -1326,6 +1335,16 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
             {activeTab === "Backlinks" && (
               <BacklinksTab artifactId={artifact.id} />
             )}
+          </div>
+
+          {/* Processing history tab (P2-02) */}
+          <div
+            id={tabPanelId("Processing")}
+            role="tabpanel"
+            aria-labelledby={tabButtonId("Processing")}
+            hidden={activeTab !== "Processing"}
+          >
+            <ProcessingHistoryTab artifactId={artifact.id} />
           </div>
 
           {/* Derivatives tab — source-type artifacts only (DETAIL-03) */}

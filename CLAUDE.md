@@ -136,3 +136,12 @@ Per the v1.5 PRD deferred-items table:
 - Image OCR in intake — deferred to v2
 - ML-based routing recommendations — v1.5 uses rule-based only
 - ContentViewer HTML sanitization — blocked on upstream `@miethe/ui` DOMPurify integration (FU-01, FU-02 follow-ups)
+
+## Pipeline Observability (v1.7+)
+
+Frontend conventions for compile pipeline observability (terminal events, degradation indicators, processing history):
+
+- **SSE Event Types**: The SSE stream (`src/lib/sse/types.ts`) now emits `compile_failed` and `stage_degraded` in addition to `workflow_completed`. Both are terminal events that halt the pipeline.
+- **Quick-Add Modal Degraded State**: On `compile_failed` or `stage_degraded`, the modal shows an amber warning badge ("Added with issues") instead of green success. See `src/components/quick-add/quick-add-modal.tsx`.
+- **Processing History Tab**: Artifact detail (`ArtifactDetailClient.tsx`) includes a "Processing" tab showing the full pipeline stage timeline. Data is fetched via `useProcessingHistory(artifactId)` hook (`src/hooks/use-processing-history.ts`) from `GET /api/artifacts/{id}/processing-history`.
+- **Degradation Indicators**: Timeline rows in `src/components/artifact/processing-history-tab.tsx` show amber "Degraded" badge (with `degraded_reason` tooltip) and red "Failed" badge (with `error_detail` tooltip) to surface stage-level failures and partial completions.

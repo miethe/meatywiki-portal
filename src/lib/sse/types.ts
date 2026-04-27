@@ -89,6 +89,32 @@ export interface WorkflowFailedEvent extends SSEEventBase {
   };
 }
 
+export interface CompileFailedEvent extends SSEEventBase {
+  type: "compile_failed";
+  /** Human-readable error description. */
+  error?: string;
+  /** Stage at which compile failure occurred, if known. */
+  failed_stage?: string;
+  /** Artifact ID if the artifact was still created despite compile failure. */
+  artifact_id?: string;
+  metadata?: {
+    [key: string]: unknown;
+  };
+}
+
+export interface StageDegradedEvent extends SSEEventBase {
+  type: "stage_degraded";
+  /** Which pipeline stage fell back. */
+  stage: string;
+  /** Human-readable description of the degradation (e.g. extraction parse failure). */
+  reason?: string;
+  /** Artifact ID for the degraded artifact. */
+  artifact_id?: string;
+  metadata?: {
+    [key: string]: unknown;
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Union type
 // ---------------------------------------------------------------------------
@@ -98,12 +124,16 @@ export type SSEWorkflowEvent =
   | StageProgressEvent
   | StageCompletedEvent
   | WorkflowCompletedEvent
-  | WorkflowFailedEvent;
+  | WorkflowFailedEvent
+  | CompileFailedEvent
+  | StageDegradedEvent;
 
 /** Terminal event types — when received, the stream can be closed. */
 export const TERMINAL_EVENT_TYPES = new Set<SSEWorkflowEvent["type"]>([
   "workflow_completed",
   "workflow_failed",
+  "compile_failed",
+  "stage_degraded",
 ]);
 
 /** Connection status for use by consumers (hook, UI). */
