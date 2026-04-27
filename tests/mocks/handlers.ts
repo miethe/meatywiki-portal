@@ -291,6 +291,13 @@ export const handlers = [
     return HttpResponse.json({ data: detail });
   }),
 
+  // Processing history (GET /api/artifacts/:id/processing-history) — P2-02 / P2-04
+  // Default: empty list. Override in specific tests via server.use() for
+  // populated, error, or degraded-event scenarios.
+  http.get(`${API_BASE}/api/artifacts/:id/processing-history`, () => {
+    return HttpResponse.json({ data: [] });
+  }),
+
   // Artifact edges (GET /api/artifacts/:id/edges) — P4-03 / P4-04
   // Default: no edges. Override in specific tests via server.use().
   http.get(`${API_BASE}/api/artifacts/:id/edges`, ({ params }) => {

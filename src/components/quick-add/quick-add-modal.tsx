@@ -53,7 +53,7 @@ import { useOfflineQueue } from "@/hooks/use-offline-queue";
 import { AudioRecorder } from "@/components/quick-add/audio-recorder";
 import { FileDropZone } from "@/components/quick-add/file-drop-zone";
 import type { WorkflowRunStatus } from "@/types/artifact";
-import type { SSEWorkflowEvent, WorkflowCompletedEvent } from "@/lib/sse/types";
+import type { SSEWorkflowEvent, WorkflowCompletedEvent, CompileFailedEvent, StageDegradedEvent } from "@/lib/sse/types";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -66,6 +66,7 @@ type ModalPhase =
   | "form"          // initial form entry
   | "ingesting"     // POST accepted, SSE streaming
   | "complete"      // SSE workflow_completed received
+  | "degraded"      // SSE compile_failed or stage_degraded: content added but processing had issues
   | "queued"        // offline: stored in IndexedDB
   | "audio_queued"  // audio/file upload accepted (transcription/processing pending)
   | "error";        // POST error or SSE workflow_failed
@@ -324,6 +325,26 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
         });
         setWorkflowStatus("complete");
         setPhase("complete");
+      }
+    } else if (lastEvent.type === "compile_failed") {
+      const ev = lastEvent as CompileFailedEvent;
+      if (completedRun?.runId !== runId) {
+        setCompletedRun({
+          runId: runId!,
+          artifactId: ev.artifact_id ?? null,
+        });
+        setWorkflowStatus("failed");
+        setPhase("degraded");
+      }
+    } else if (lastEvent.type === "stage_degraded") {
+      const ev = lastEvent as StageDegradedEvent;
+      if (completedRun?.runId !== runId) {
+        setCompletedRun({
+          runId: runId!,
+          artifactId: ev.artifact_id ?? null,
+        });
+        setWorkflowStatus("failed");
+        setPhase("degraded");
       }
     } else if (lastEvent.type === "workflow_failed") {
       if (phase === "ingesting") {
@@ -607,6 +628,8 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                 ? "Ingesting…"
                 : phase === "complete"
                 ? "Added"
+                : phase === "degraded"
+                ? "Added with issues"
                 : phase === "queued"
                 ? "Queued"
                 : phase === "audio_queued"
@@ -1138,6 +1161,83 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                 )}
               >
                 Add another
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* --- DEGRADED PHASE (compile_failed or stage_degraded — content added but processing had issues) --- */}
+        {phase === "degraded" && completedRun && (
+          <div className="p-5">
+            <div
+              role="alert"
+              aria-live="polite"
+              className="rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-950/40 p-4"
+            >
+              <div className="mb-3 flex items-center gap-2">
+                <svg
+                  aria-hidden="true"
+                  className="size-5 shrink-0 text-amber-600 dark:text-amber-400"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"
+                  />
+                </svg>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                  Content added but processing had issues
+                </p>
+              </div>
+              <p className="text-sm text-amber-800/80 dark:text-amber-200/80">
+                Your content was saved, but one or more pipeline stages encountered problems.
+                The artifact may be incomplete.
+              </p>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              {completedRun.artifactId && (
+                <a
+                  href={`/artifact/${completedRun.artifactId}`}
+                  className={cn(
+                    "inline-flex h-9 w-full items-center justify-center rounded-md px-4 text-sm font-medium",
+                    "bg-amber-500 text-white dark:bg-amber-600",
+                    "transition-colors hover:bg-amber-600 dark:hover:bg-amber-500",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  )}
+                >
+                  View details
+                  <svg
+                    aria-hidden="true"
+                    className="ml-1.5 size-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
+                  </svg>
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={handleCloseAttempt}
+                className={cn(
+                  "inline-flex h-9 w-full items-center justify-center rounded-md px-4 text-sm font-medium",
+                  "border border-input bg-background text-foreground",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                Dismiss
               </button>
             </div>
           </div>
