@@ -104,14 +104,35 @@ All 12 task IDs live in the backend repo's phase-3-frontend-screens.md and phase
 
 Every screen must pass WCAG 2.1 AA. shadcn/ui provides ARIA primitives — do not strip `aria-*` attributes from shadcn components. Run `pnpm e2e` to validate axe-core checks before submitting P3-09.
 
+## Portal v1.5 Conventions
+
+Portal v1.5 adds write-path support for Lens Badge assessments, PWA capabilities, and new workspace screens. Key conventions:
+
+### Workflow OS Lens Write Path (v1.5)
+
+- **Assessment Modal**: Clicking a Lens Badge opens a modal; user selects a new score + optional rationale note → `PATCH /api/artifacts/:id/lens`
+- **Lens Rationale Shape**: Each updated dimension stores a per-dimension object: `{ rationale: string, updated_at: ISO8601, updated_by: string | null }`
+- **Request/Response Round-Trip**: UI reads current Lens state via `GET /api/artifacts/:id`, submits changes via `PATCH`, reads back immediately to ensure consistency
+- **Never bypass the API**: The frontend cannot write to vault frontmatter directly; all updates flow through `PATCH /api/artifacts/:id/lens` (routed to backend's `EngineAdapter.update_lens_fields()`)
+- **Rationale Tooltips**: Hover over any Lens dimension in the Lens Scoring Panel shows the rationale from `artifact_metadata.lens_rationale_jsonb[dimension]`
+- **Single-user safe**: v1.5 does not track multi-user authorship; `updated_by` is optional and defaults to null (set by backend if session user tracking is added)
+
+### PWA Service Worker Scope (v1.5)
+
+- **Service Worker Scope**: Registered with scope `"/"` (root of the Portal origin); intercepts all requests under that scope
+- **No Cross-Origin Requests**: Service worker does not intercept requests to other origins (e.g., analytics, CDN)
+- **Offline Queue**: Intercepts `POST /api/intake/{note,url,upload}` when `navigator.onLine === false`; stores payload in IndexedDB object store `offline_queue` (schema: `{ id, endpoint, payload, enqueued_at, retries }`)
+- **Share-Target Endpoints**: `POST /api/intake/url` (URL share from system share sheet) and `POST /api/intake/note` (text share); both handled by same offline queue logic
+- **Audio Capture MIME Whitelist**: `audio/webm`, `audio/ogg`, `audio/mp4`, `audio/wav` only; larger than 25 MB rejected at upload time
+- **Token NOT in IndexedDB**: Bearer token is never stored in the browser's IndexedDB. On sync-on-reconnect, token is re-read from memory (React state / cookie) and attached to each request header
+- **Graceful Degradation**: Background Sync API unsupported on iOS Safari < 16.4; fallback shows manual "Retry" button (documented in README browser support matrix)
+
 ## Deferred Items (v1.5+)
 
-Per the PRD deferred-items table (DF-001..DF-016):
-- Workflow OS Screens B + C
-- Blog/Projects workspaces
-- Multi-user auth, OAuth
-- PWA / offline support
-- Mobile share-target, audio intake, image OCR
-- Workflow Initiation Flow (Screen A)
-
-Do not implement these in Phase 3.
+Per the v1.5 PRD deferred-items table:
+- Workflow OS Screen C (Ops Dashboard) — deferred to v2
+- Projects workspace — deferred to v2 (F1-blocked)
+- Multi-user auth, OAuth — deferred indefinitely (local-only by design)
+- Image OCR in intake — deferred to v2
+- ML-based routing recommendations — v1.5 uses rule-based only
+- ContentViewer HTML sanitization — blocked on upstream `@miethe/ui` DOMPurify integration (FU-01, FU-02 follow-ups)
