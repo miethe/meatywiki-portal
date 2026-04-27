@@ -1252,32 +1252,37 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           <EditableMetadataSection artifact={artifact} onSave={handleFieldSave} />
 
           {/* Tab bar — sticky at top of content scroll so the active tab
-              stays reachable while reader content scrolls beneath it. */}
-          <div
-            role="tablist"
-            aria-label="Artifact readers"
-            className="sticky top-0 z-10 -mx-1 flex overflow-x-auto border-b bg-background px-1 scrollbar-none [-webkit-overflow-scrolling:touch]"
-          >
-            {visibleTabs.map((tab) => (
-              <button
-                key={tab}
-                id={tabButtonId(tab)}
-                role="tab"
-                type="button"
-                aria-selected={tab === activeTab}
-                aria-controls={tabPanelId(tab)}
-                onClick={() => setActiveTab(tab)}
-                className={cn(
-                  "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                  tab === activeTab
-                    ? "border-primary text-foreground"
-                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-                )}
-              >
-                {tab}
-              </button>
-            ))}
+              stays reachable while reader content scrolls beneath it.
+              Outer wrapper provides height; inner div handles horizontal
+              overflow (CSS coerces overflow-y to auto when overflow-x is
+              non-visible, collapsing height to 0 in flex columns). */}
+          <div className="sticky top-0 z-10 shrink-0 border-b bg-background">
+            <div
+              role="tablist"
+              aria-label="Artifact readers"
+              className="-mx-1 flex overflow-x-auto px-1 scrollbar-none [-webkit-overflow-scrolling:touch]"
+            >
+              {visibleTabs.map((tab) => (
+                <button
+                  key={tab}
+                  id={tabButtonId(tab)}
+                  role="tab"
+                  type="button"
+                  aria-selected={tab === activeTab}
+                  aria-controls={tabPanelId(tab)}
+                  onClick={() => setActiveTab(tab)}
+                  className={cn(
+                    "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    tab === activeTab
+                      ? "border-primary text-foreground"
+                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                  )}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Reader panels */}
