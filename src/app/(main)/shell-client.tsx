@@ -22,6 +22,7 @@
  */
 
 import { useState, createContext, useContext, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { ShellNav } from "./shell-nav";
 import { ShellHeader } from "./shell-header";
 import { SmartTriageButton } from "@/components/inbox/smart-triage-button";
@@ -67,18 +68,25 @@ function SidebarFooterSlot({ compact = false }: { compact?: boolean }) {
 
 export function ShellClient({ children }: { children: React.ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const pathname = usePathname();
 
   const toggle = useCallback(() => setMobileNavOpen((v) => !v), []);
   const close = useCallback(() => setMobileNavOpen(false), []);
 
+  // Routes that own their internal scroll partitioning (locked top section +
+  // independently-scrolling body columns). For these, <main> must NOT scroll
+  // and must NOT impose padding — the page handles both internally.
+  const isFullBleed =
+    pathname === "/library" || pathname.startsWith("/artifact/");
+
   return (
     <MobileNavContext.Provider value={{ isOpen: mobileNavOpen, toggle, close }}>
-      <div className="flex min-h-screen bg-background">
+      <div className="flex h-screen overflow-hidden bg-background">
         {/* ---------------------------------------------------------------- */}
         {/* Desktop sidebar — hidden on mobile, shown md+                    */}
         {/* ---------------------------------------------------------------- */}
         <aside
-          className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex"
+          className="hidden w-60 shrink-0 flex-col overflow-y-auto border-r bg-card md:flex"
           aria-label="Sidebar navigation"
         >
           {/* Brand chip — desktop sidebar header (ADR-DPI-006 Option B).
@@ -158,7 +166,12 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
 
           <main
             id="main-content"
-            className="flex-1 overflow-y-auto p-4 md:p-6"
+            className={cn(
+              "flex min-w-0 min-h-0 flex-1 flex-col",
+              isFullBleed
+                ? "overflow-hidden"
+                : "overflow-y-auto p-4 md:p-6",
+            )}
             tabIndex={-1}
           >
             {children}

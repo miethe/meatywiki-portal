@@ -1107,23 +1107,40 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     }
   }, [searchParams, artifact]);
 
-  // ---- Loading state ----
+  // ---- Loading / error states ----
+  // Wrap each early-return in a scrollable padded container since the shell's
+  // <main> is `overflow-hidden` for full-bleed routes (see shell-client.tsx).
   if (isLoading) {
-    return <DetailSkeleton />;
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <DetailSkeleton />
+      </div>
+    );
   }
 
-  // ---- Error states ----
   if (isNotFound) {
-    return <NotFoundState id={id} />;
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <NotFoundState id={id} />
+      </div>
+    );
   }
 
   if (isError && error) {
-    return <ErrorState error={error} onRetry={refetch} />;
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <ErrorState error={error} onRetry={refetch} />
+      </div>
+    );
   }
 
   // Guard: artifact may still be undefined if query is disabled
   if (!artifact) {
-    return <DetailSkeleton />;
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <DetailSkeleton />
+      </div>
+    );
   }
 
   // Determine whether this artifact is a source type (raw_* | source_summary).
@@ -1191,97 +1208,80 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    // Full-bleed route: <main> is overflow-hidden + unpadded. This page owns
+    // its padding and partitions the viewport into:
+    //   1) Locked top region: title block + key-detail badges (shrink-0).
+    //   2) Body row (flex-1, min-h-0): main content column (scrolls), right
+    //      ContextRail (scrolls independently).
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
       {/* ------------------------------------------------------------------ */}
-      {/* Title block — P4-01: breadcrumbs + eyebrow tags + display title   */}
-      {/* + metadata strip. ArtifactTitleBlock owns all four sub-sections.  */}
+      {/* Locked top region — title + key-detail badges (does not scroll)    */}
       {/* ------------------------------------------------------------------ */}
-      <ArtifactTitleBlock artifact={artifact} />
+      <div className="flex shrink-0 flex-col gap-4">
+        <ArtifactTitleBlock artifact={artifact} />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Lens badges + secondary metadata (type, workspace, freshness)      */}
-      {/* DP3-02: badge row is tab-agnostic and does not re-mount on switch  */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="flex flex-col gap-2">
-        {/* Lens Badge Set — FULL variant, above the tab bar per manifest §3.4 */}
-        <LensBadgeSet artifact={artifact} variant="detail" />
+        <div className="flex flex-col gap-2">
+          {/* Lens Badge Set — FULL variant, above the tab bar per manifest §3.4 */}
+          <LensBadgeSet artifact={artifact} variant="detail" />
 
-        {/* Type / workspace / indicator badge row */}
-        <div className="flex flex-wrap items-center gap-2">
-          <TypeBadge type={artifact.type} />
-          <WorkspaceBadge workspace={artifact.workspace} />
-          {/* Freshness indicator from raw frontmatter fields (P4-04) */}
-          <ArtifactFreshnessBadge
-            freshness={artifact.frontmatter_jsonb?.["lens_freshness"] as string | null | undefined}
-            staleAfter={artifact.frontmatter_jsonb?.["stale_after"] as string | null | undefined}
-          />
-          {/* Contradiction flag from edges endpoint (P4-04) */}
-          <ContradictionFlag artifactId={artifact.id} />
+          {/* Type / workspace / indicator badge row */}
+          <div className="flex flex-wrap items-center gap-2">
+            <TypeBadge type={artifact.type} />
+            <WorkspaceBadge workspace={artifact.workspace} />
+            <ArtifactFreshnessBadge
+              freshness={artifact.frontmatter_jsonb?.["lens_freshness"] as string | null | undefined}
+              staleAfter={artifact.frontmatter_jsonb?.["stale_after"] as string | null | undefined}
+            />
+            <ContradictionFlag artifactId={artifact.id} />
+          </div>
         </div>
-        {/*
-         * Action buttons migrated to ContextRail action column (ADR-DPI-002 §1).
-         * Previously rendered here in the header row; now owned by the rail.
-         */}
       </div>
 
       {/* ------------------------------------------------------------------ */}
-      {/* Handoff Chain ribbon — P4-04                                       */}
-      {/* Horizontal stage pills: ingest→classify→extract→compile→file→lint  */}
-      {/* Stages inferred from artifact lifecycle state (no new endpoint).   */}
+      {/* Body row: main content column + right ContextRail.                  */}
+      {/* Each column scrolls independently inside the row's flex height.    */}
       {/* ------------------------------------------------------------------ */}
-      <HandoffChainRibbon artifact={artifact} />
+      <div className="flex min-h-0 flex-1 gap-6">
+        {/* Main content column — scrolls independently of the rail and of   */}
+        {/* the locked top region. pr-1 keeps cards clear of the scrollbar.  */}
+        <div className="flex h-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+          {/* Handoff Chain ribbon (P4-04) */}
+          <HandoffChainRibbon artifact={artifact} />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Inline-editable metadata section (P2-06)                           */}
-      {/* 12 fields: title, description, status, workspace, tags, domain,    */}
-      {/* project, freshness_class, verification_status, series,             */}
-      {/* publish_state, owners.                                             */}
-      {/* Non-editable fields (id, type, subtype, lifecycle_stage, created,  */}
-      {/* updated, schema_version, lens badges, compile_*, content_hash,     */}
-      {/* file_path) are rendered read-only in TitleBlock and ContextRail.   */}
-      {/* ------------------------------------------------------------------ */}
-      <EditableMetadataSection artifact={artifact} onSave={handleFieldSave} />
+          {/* Inline-editable metadata section (P2-06) */}
+          <EditableMetadataSection artifact={artifact} onSave={handleFieldSave} />
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Tab bar                                                             */}
-      {/* DP3-02 #10: horizontal scroll on mobile; no line-wrap (tabs stay   */}
-      {/* single-row at all breakpoints to preserve scan order invariant).   */}
-      {/* Derivatives tab appended for source-type artifacts only.           */}
-      {/* Backlinks tab always visible (P7-04).                              */}
-      {/* ------------------------------------------------------------------ */}
-      <div
-        role="tablist"
-        aria-label="Artifact readers"
-        className="flex overflow-x-auto border-b scrollbar-none [-webkit-overflow-scrolling:touch]"
-      >
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab}
-            id={tabButtonId(tab)}
-            role="tab"
-            type="button"
-            aria-selected={tab === activeTab}
-            aria-controls={tabPanelId(tab)}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              tab === activeTab
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-            )}
+          {/* Tab bar — sticky at top of content scroll so the active tab
+              stays reachable while reader content scrolls beneath it. */}
+          <div
+            role="tablist"
+            aria-label="Artifact readers"
+            className="sticky top-0 z-10 -mx-1 flex overflow-x-auto border-b bg-background px-1 scrollbar-none [-webkit-overflow-scrolling:touch]"
           >
-            {tab}
-          </button>
-        ))}
-      </div>
+            {visibleTabs.map((tab) => (
+              <button
+                key={tab}
+                id={tabButtonId(tab)}
+                role="tab"
+                type="button"
+                aria-selected={tab === activeTab}
+                aria-controls={tabPanelId(tab)}
+                onClick={() => setActiveTab(tab)}
+                className={cn(
+                  "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                  tab === activeTab
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                )}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Content area: reader + sidebar                                      */}
-      {/* ------------------------------------------------------------------ */}
-      <div className="flex gap-6">
-        {/* Main reader area */}
-        <div className="min-w-0 flex-1">
+          {/* Reader panels */}
+          <div className="min-w-0 flex-1">
           {/* Source tab */}
           <div
             id={tabPanelId("Source")}
@@ -1360,12 +1360,17 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           )}
         </div>
 
-        {/* ContextRail — inline right-column rail (ADR-DPI-002 Option A.1) */}
-        {/* Hidden below lg; rail owns action column + tabbed panels.       */}
-        {/* Replaces the previous flat metadata aside.                      */}
+          {/* Activity Timeline (P4-04) — full-width feed at bottom of      */}
+          {/* the scrollable content column.                                  */}
+          <ActivityTimeline artifactId={artifact.id} />
+        </div>
+
+        {/* ContextRail — inline right-column rail (ADR-DPI-002 Option A.1).
+            Scrolls independently of the content column so users can review
+            actions and context without losing their place in the reader.    */}
         <aside
           aria-label="Context rail"
-          className="hidden w-72 shrink-0 lg:block"
+          className="hidden h-full w-72 shrink-0 overflow-y-auto lg:block"
         >
           {/* FE-03: Compile feedback — success + error shown above the rail */}
           {compileSuccess && (
@@ -1404,14 +1409,6 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           />
         </aside>
       </div>
-
-      {/* ------------------------------------------------------------------ */}
-      {/* Activity Timeline — P4-04                                          */}
-      {/* Inline activity feed at body bottom (full-width below reader+rail) */}
-      {/* Falls back to mock fixture data when endpoint absent (per P4-04    */}
-      {/* plan Notes). HistoryPanel in rail keeps its graceful empty state.  */}
-      {/* ------------------------------------------------------------------ */}
-      <ActivityTimeline artifactId={artifact.id} />
 
       {/* ------------------------------------------------------------------ */}
       {/* Toast notification (P2-06) — fixed bottom-right, auto-dismissing   */}

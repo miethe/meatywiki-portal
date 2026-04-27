@@ -321,13 +321,10 @@ function ArchiveFilterColumn({ filters, onChange, alwaysVisible = false }: Archi
     <aside
       aria-label="Archive filters"
       className={cn(
-        // Fixed width, sticky scroll
-        // Sticky behavior: this element is a direct child of the three-column
-        // flex row which itself lives inside <main overflow-y-auto>. No
-        // overflow:hidden/auto ancestor interrupts the sticky chain.
-        // See P3-04 comment in page header for full ancestry analysis.
+        // Fixed width; full-height column with its own internal scroll so
+        // filters stay locked while the grid column scrolls independently.
         "w-[200px] shrink-0",
-        "sticky top-0 self-start max-h-[calc(100vh-7rem)] overflow-y-auto",
+        "h-full overflow-y-auto",
         // Surface — bg-card token works in both light and dark mode
         "rounded-lg border bg-card",
         // Visibility: always shown in mobile drawer; hidden <768px in page layout
@@ -1178,16 +1175,17 @@ function LibraryPageInner() {
       sections={railSections}
       collapsible
       width={320}
-      className="sticky top-0 self-start max-h-[calc(100vh-7rem)] overflow-hidden"
+      className="h-full overflow-hidden"
     />
   );
 
   return (
     // Full-height flex column — fills the shell's <main> area.
-    // NOTE: intentionally uses min-h-0 rather than overflow:auto so that
-    // position:sticky on the filter column and ContextRail can propagate up
-    // to the <main overflow-y-auto> scroll container without interruption.
-    <div className="flex flex-col gap-4 min-h-0">
+    // Library is a "full-bleed" route (see shell-client.tsx): <main> does NOT
+    // scroll and does NOT pad. This page owns its padding and partitions the
+    // viewport into a locked top section (header / lens / filter bar) and a
+    // body row whose three columns each scroll independently.
+    <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
 
       {/* Mobile filter drawer — fixed overlay, <768px only */}
       <MobileFilterDrawer
@@ -1247,8 +1245,9 @@ function LibraryPageInner() {
 
       {/* ------------------------------------------------------------------ */}
       {/* Three-column body: filter col | main grid | context rail            */}
+      {/* Each column scrolls independently inside this row's flex height.    */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex flex-1 min-h-0 gap-4 items-start">
+      <div className="flex flex-1 min-h-0 gap-4 items-stretch">
 
         {/* Left filter column — 200px fixed, sticky, hidden <768px.
             Sticky chain: this is a direct flex child of the row below, which
@@ -1260,11 +1259,13 @@ function LibraryPageInner() {
           onChange={handleArchiveFilterChange}
         />
 
-        {/* Main content area — 2-col CSS grid, masonry-friendly */}
+        {/* Main content area — 2-col CSS grid, masonry-friendly.
+            Owns its own vertical scroll so the filter column / context rail
+            stay locked in place. pr-1 keeps the scrollbar from clipping cards. */}
         <section
           aria-label="Library artifacts"
           aria-busy={isLoading}
-          className="flex-1 min-w-0"
+          className="flex-1 min-w-0 h-full overflow-y-auto pr-1"
         >
           {isError && error ? (
             <ErrorState
