@@ -64,7 +64,7 @@ function InboxDirectorySection({
     else setTesting(true);
 
     try {
-      await api.patch<ConfigResponse>("/api/config", { inbox_dir: dir });
+      await api.patch<ConfigResponse>("/config", { inbox_dir: dir });
 
       if (mode === "save") {
         onSaved(dir);
@@ -344,7 +344,7 @@ export function SettingsConfigClient() {
 
   useEffect(() => {
     api
-      .get<ConfigResponse>("/api/config")
+      .get<ConfigResponse>("/config")
       .then((data) => setConfig(data))
       .catch(() =>
         setFetchError("Could not load configuration. Is the backend running?"),
