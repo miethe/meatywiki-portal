@@ -168,6 +168,8 @@ interface ArtifactCardProps {
   inboxGroup?: InboxGroup;
   urgencyLevel?: UrgencyLevel;
   urgencyMinutesAgo?: number;
+  /** When provided, replaces the default stub CTA button in the inbox right cluster. */
+  ctaSlot?: React.ReactNode;
   /** Called with the artifact ID when the user selects "Archive" from the meatballs menu */
   onArchive?: (id: string) => void;
   /** Called with the artifact ID when the user selects "Delete" from the meatballs menu */
@@ -204,6 +206,7 @@ export function ArtifactCard({
   inboxGroup,
   urgencyLevel,
   urgencyMinutesAgo,
+  ctaSlot,
   onArchive,
   onDelete,
   className,
@@ -300,25 +303,24 @@ export function ArtifactCard({
               className="hidden sm:inline-flex"
             />
           )}
-          {/* CTA button: pointer-events-auto so clicks go through stretch link */}
-          <button
-            type="button"
-            aria-label={`${ctaLabel} — ${title}`}
-            onClick={(e) => {
-              // Prevent the stretch link from navigating on CTA click.
-              // CTA actions will be wired in future tasks (P5-03/P5-04).
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            className={cn(
-              "pointer-events-auto inline-flex h-7 items-center rounded-md border px-2.5",
-              "text-xs font-medium text-foreground",
-              "transition-colors hover:bg-accent hover:text-accent-foreground",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            )}
-          >
-            {ctaLabel}
-          </button>
+          {ctaSlot ?? (
+            <button
+              type="button"
+              aria-label={`${ctaLabel} — ${title}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              className={cn(
+                "pointer-events-auto inline-flex h-7 items-center rounded-md border px-2.5",
+                "text-xs font-medium text-foreground",
+                "transition-colors hover:bg-accent hover:text-accent-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              {ctaLabel}
+            </button>
+          )}
         </div>
       </article>
     );
