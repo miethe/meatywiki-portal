@@ -8,15 +8,22 @@
  * loading state — only the clicked button shows a spinner while the other is
  * disabled. A fixed-position toast banner surfaces success and error outcomes.
  *
+ * Optimistic removal: on approve or reject click the item is immediately
+ * removed from the TanStack Query cache (< 100 ms). On network error the
+ * cache is restored via onActionComplete() → refetch. (P3-03)
+ *
  * P2-01 (inbox approval UI).
  */
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { approveIntake, rejectIntake } from "@/lib/api/intake";
-import type { IntakePendingItem } from "@/lib/api/intake";
+import type { IntakePendingItem, IntakePendingListResponse } from "@/lib/api/intake";
+import { INBOX_PENDING_QUERY_KEY } from "@/hooks/useInboxPending";
 
 // ---------------------------------------------------------------------------
 // Display name extraction
@@ -219,6 +226,10 @@ export interface PendingApprovalItemProps {
   item: IntakePendingItem;
   /** Called after a successful approve or reject to trigger a list refetch. */
   onActionComplete: () => void;
+  /** Whether this item is currently selected in bulk-select mode. */
+  selected?: boolean;
+  /** Called when the user toggles the item's checkbox. */
+  onSelectionChange?: (runId: string, selected: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -231,11 +242,22 @@ export interface PendingApprovalItemProps {
  * Each action button owns its own loading state. While one action is
  * in-flight the other button is disabled to prevent double-submission.
  * A fixed-position toast banner reports the outcome of each action.
+ *
+ * Optimistic removal strategy:
+ *   1. Immediately remove this item from the TanStack Query cache so the UI
+ *      updates in < 100 ms — before the network round-trip completes.
+ *   2. Await the API call. On success: show toast, call onActionComplete() to
+ *      sync with server state.
+ *   3. On error: show error toast, call onActionComplete() (refetch) to
+ *      restore the item from server state.
  */
 export function PendingApprovalItem({
   item,
   onActionComplete,
+  selected = false,
+  onSelectionChange,
 }: PendingApprovalItemProps) {
+  const queryClient = useQueryClient();
   const [approvingState, setApprovingState] = useState<"idle" | "loading">(
     "idle",
   );
@@ -255,15 +277,34 @@ export function PendingApprovalItem({
   const isAnyLoading =
     approvingState === "loading" || rejectingState === "loading";
 
+  /**
+   * Remove this item from the query cache immediately (optimistic update).
+   * Called synchronously before the API request fires.
+   */
+  const removeFromCache = () => {
+    queryClient.setQueryData(
+      INBOX_PENDING_QUERY_KEY,
+      (old: IntakePendingListResponse | undefined) => {
+        if (!old) return old;
+        const filtered = old.items.filter((i) => i.run_id !== item.run_id);
+        return { items: filtered, count: filtered.length };
+      },
+    );
+  };
+
   const handleApprove = async () => {
     if (isAnyLoading) return;
     setApprovingState("loading");
+    // Optimistic removal — fires before the network request.
+    removeFromCache();
     try {
       await approveIntake(item.run_id);
       showToast("success", `Approved: ${displayName}`);
       onActionComplete();
     } catch {
       showToast("error", `Failed to approve: ${displayName}`);
+      // Restore server state by refetching.
+      onActionComplete();
     } finally {
       setApprovingState("idle");
     }
@@ -272,12 +313,16 @@ export function PendingApprovalItem({
   const handleReject = async () => {
     if (isAnyLoading) return;
     setRejectingState("loading");
+    // Optimistic removal — fires before the network request.
+    removeFromCache();
     try {
       await rejectIntake(item.run_id);
       showToast("success", `Rejected: ${displayName}`);
       onActionComplete();
     } catch {
       showToast("error", `Failed to reject: ${displayName}`);
+      // Restore server state by refetching.
+      onActionComplete();
     } finally {
       setRejectingState("idle");
     }
@@ -289,8 +334,24 @@ export function PendingApprovalItem({
         className={cn(
           "flex items-start gap-3 rounded-md border bg-card p-3",
           "transition-colors hover:bg-accent/30",
+          selected && "border-primary/40 bg-primary/5",
         )}
       >
+        {/* ---------------------------------------------------------------- */}
+        {/* Checkbox (when bulk-select is active)                             */}
+        {/* ---------------------------------------------------------------- */}
+        {onSelectionChange && (
+          <div className="flex shrink-0 items-center pt-0.5">
+            <Checkbox
+              checked={selected}
+              onCheckedChange={(checked) =>
+                onSelectionChange(item.run_id, checked === true)
+              }
+              aria-label={`Select ${extractDisplayName(item)}`}
+            />
+          </div>
+        )}
+
         {/* ---------------------------------------------------------------- */}
         {/* Left: metadata column                                             */}
         {/* ---------------------------------------------------------------- */}
