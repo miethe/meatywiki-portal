@@ -66,6 +66,8 @@ import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
 import { InboxContextRail } from "@/components/inbox/InboxContextRail";
 import { useInboxArtifacts } from "@/hooks/useInboxArtifacts";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import { useInboxPending } from "@/hooks/useInboxPending";
+import { PendingApprovalPanel } from "@/components/inbox/PendingApprovalPanel";
 import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
@@ -583,6 +585,14 @@ export function InboxClient({ initialData }: InboxClientProps) {
   const { artifacts, hasMore, isLoading, error, loadMore, optimisticUpdateArtifact } =
     useInboxArtifacts({ initialData });
 
+  const {
+    items: pendingItems,
+    count: pendingCount,
+    isLoading: pendingLoading,
+    error: pendingError,
+    refetch: pendingRefetch,
+  } = useInboxPending();
+
   // P5-01: Group artifacts by inbox status. Recalculates only when the
   // artifacts array reference changes (load-more appends a new array).
   const groups = useMemo(() => groupArtifacts(artifacts), [artifacts]);
@@ -668,6 +678,21 @@ export function InboxClient({ initialData }: InboxClientProps) {
         <section aria-label="Inbox artifacts" className="min-w-0 flex-1">
           {/* sr-only h2 bridges h1 → h3 heading order (WCAG 1.3.1 heading-order) */}
           <h2 className="sr-only">Artifact list</h2>
+
+          {/* P2-03: Pending Approval panel — rendered above status groups when
+               there are pending items or the initial fetch is in-flight. */}
+          {(pendingCount > 0 || pendingLoading) && (
+            <div className="mb-6">
+              <PendingApprovalPanel
+                items={pendingItems}
+                count={pendingCount}
+                isLoading={pendingLoading}
+                error={pendingError}
+                refetch={pendingRefetch}
+              />
+            </div>
+          )}
+
           {artifacts.length === 0 && !isLoading ? (
             <InboxEmpty />
           ) : (
