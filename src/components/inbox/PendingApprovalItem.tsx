@@ -230,6 +230,12 @@ export interface PendingApprovalItemProps {
   selected?: boolean;
   /** Called when the user toggles the item's checkbox. */
   onSelectionChange?: (runId: string, selected: boolean) => void;
+  /**
+   * When true, all interactive controls (approve, reject, checkbox) are
+   * disabled. Used by the parent panel during bulk sequential execution to
+   * prevent concurrent individual actions.
+   */
+  disabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,6 +262,7 @@ export function PendingApprovalItem({
   onActionComplete,
   selected = false,
   onSelectionChange,
+  disabled = false,
 }: PendingApprovalItemProps) {
   const queryClient = useQueryClient();
   const [approvingState, setApprovingState] = useState<"idle" | "loading">(
@@ -276,6 +283,7 @@ export function PendingApprovalItem({
 
   const isAnyLoading =
     approvingState === "loading" || rejectingState === "loading";
+  const isDisabled = disabled || isAnyLoading;
 
   /**
    * Remove this item from the query cache immediately (optimistic update).
@@ -344,6 +352,7 @@ export function PendingApprovalItem({
           <div className="flex shrink-0 items-center pt-0.5">
             <Checkbox
               checked={selected}
+              disabled={isDisabled}
               onCheckedChange={(checked) =>
                 onSelectionChange(item.run_id, checked === true)
               }
@@ -398,7 +407,7 @@ export function PendingApprovalItem({
             size="sm"
             aria-label={`Approve ${displayName}`}
             aria-busy={approvingState === "loading"}
-            disabled={isAnyLoading}
+            disabled={isDisabled}
             onClick={handleApprove}
             className={cn(
               "h-7 gap-1.5 px-2.5 text-xs",
@@ -435,7 +444,7 @@ export function PendingApprovalItem({
             size="sm"
             aria-label={`Reject ${displayName}`}
             aria-busy={rejectingState === "loading"}
-            disabled={isAnyLoading}
+            disabled={isDisabled}
             onClick={handleReject}
             className={cn(
               "h-7 gap-1.5 px-2.5 text-xs",

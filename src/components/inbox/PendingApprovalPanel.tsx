@@ -255,8 +255,11 @@ export function PendingApprovalPanel({
 }: PendingApprovalPanelProps) {
   const [scanState, setScanState] = useState<"idle" | "scanning">("idle");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkApproving, setBulkApproving] = useState(false);
-  const [bulkRejecting, setBulkRejecting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{
+    current: number;
+    total: number;
+    action: "approve" | "reject";
+  } | null>(null);
   const { toast, show: showToast } = usePanelToast();
 
   // Reset selection when item list changes (e.g. after approve/reject/scan)
@@ -310,49 +313,75 @@ export function PendingApprovalPanel({
   }, [scanState, refetch, showToast]);
 
   const handleBulkApprove = useCallback(async () => {
-    if (selectedIds.size === 0 || bulkApproving) return;
-    setBulkApproving(true);
+    if (selectedIds.size === 0 || bulkProgress !== null) return;
     const ids = Array.from(selectedIds);
-    const results = await Promise.allSettled(ids.map((id) => approveIntake(id)));
-    const succeeded = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed === 0) {
-      showToast("success", `Approved ${succeeded} item${succeeded !== 1 ? "s" : ""}`);
-    } else {
-      showToast(
-        "error",
-        `Approved ${succeeded}, failed ${failed} item${failed !== 1 ? "s" : ""}`,
-      );
+    const total = ids.length;
+    setBulkProgress({ current: 0, total, action: "approve" });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < ids.length; i++) {
+      setBulkProgress({ current: i + 1, total, action: "approve" });
+      try {
+        await approveIntake(ids[i]);
+        successCount++;
+      } catch {
+        failCount++;
+      }
     }
-    setBulkApproving(false);
+
+    setBulkProgress(null);
+
+    if (failCount === 0) {
+      showToast("success", `Approved ${successCount} item${successCount !== 1 ? "s" : ""}`);
+    } else {
+      showToast("error", `Approved ${successCount}, failed ${failCount}`);
+    }
+
     refetch();
-  }, [selectedIds, bulkApproving, showToast, refetch]);
+    setSelectedIds(new Set());
+  }, [selectedIds, bulkProgress, showToast, refetch]);
 
   const handleBulkReject = useCallback(async () => {
-    if (selectedIds.size === 0 || bulkRejecting) return;
-    setBulkRejecting(true);
+    if (selectedIds.size === 0 || bulkProgress !== null) return;
     const ids = Array.from(selectedIds);
-    const results = await Promise.allSettled(ids.map((id) => rejectIntake(id)));
-    const succeeded = results.filter((r) => r.status === "fulfilled").length;
-    const failed = results.filter((r) => r.status === "rejected").length;
-    if (failed === 0) {
-      showToast("success", `Rejected ${succeeded} item${succeeded !== 1 ? "s" : ""}`);
-    } else {
-      showToast(
-        "error",
-        `Rejected ${succeeded}, failed ${failed} item${failed !== 1 ? "s" : ""}`,
-      );
+    const total = ids.length;
+    setBulkProgress({ current: 0, total, action: "reject" });
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < ids.length; i++) {
+      setBulkProgress({ current: i + 1, total, action: "reject" });
+      try {
+        await rejectIntake(ids[i]);
+        successCount++;
+      } catch {
+        failCount++;
+      }
     }
-    setBulkRejecting(false);
+
+    setBulkProgress(null);
+
+    if (failCount === 0) {
+      showToast("success", `Rejected ${successCount} item${successCount !== 1 ? "s" : ""}`);
+    } else {
+      showToast("error", `Rejected ${successCount}, failed ${failCount}`);
+    }
+
     refetch();
-  }, [selectedIds, bulkRejecting, showToast, refetch]);
+    setSelectedIds(new Set());
+  }, [selectedIds, bulkProgress, showToast, refetch]);
 
   const isScanning = scanState === "scanning";
   const showSkeleton = isLoading && items.length === 0;
   const allSelected = items.length > 0 && selectedIds.size === items.length;
   const someSelected = selectedIds.size > 0 && selectedIds.size < items.length;
   const hasSelection = selectedIds.size > 0;
-  const isBulkBusy = bulkApproving || bulkRejecting;
+  const isBulkBusy = bulkProgress !== null;
+  const bulkApproving = bulkProgress?.action === "approve";
+  const bulkRejecting = bulkProgress?.action === "reject";
 
   return (
     <>
@@ -370,6 +399,7 @@ export function PendingApprovalPanel({
                 // we use the data attribute via ref workaround by wrapping in a
                 // native span with aria attributes instead.
                 data-state={someSelected ? "indeterminate" : allSelected ? "checked" : "unchecked"}
+                disabled={isBulkBusy}
                 onCheckedChange={toggleSelectAll}
                 aria-label="Select all pending items"
                 aria-checked={someSelected ? "mixed" : allSelected}
@@ -462,6 +492,14 @@ export function PendingApprovalPanel({
               </>
             )}
 
+            {/* Inline bulk progress indicator */}
+            {bulkProgress && (
+              <span className="text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
+                {bulkProgress.action === "approve" ? "Approving" : "Rejecting"}{" "}
+                {bulkProgress.current} of {bulkProgress.total}…
+              </span>
+            )}
+
             {/* Scan Inbox button */}
             <Button
               type="button"
@@ -469,7 +507,7 @@ export function PendingApprovalPanel({
               size="sm"
               aria-label="Scan inbox for new files"
               aria-busy={isScanning}
-              disabled={isScanning}
+              disabled={isScanning || isBulkBusy}
               onClick={handleScan}
               className={cn(
                 "h-7 gap-1.5 px-2.5 text-xs",
@@ -544,6 +582,7 @@ export function PendingApprovalPanel({
                   onActionComplete={refetch}
                   selected={selectedIds.has(item.run_id)}
                   onSelectionChange={toggleItem}
+                  disabled={isBulkBusy}
                 />
               </li>
             ))}
