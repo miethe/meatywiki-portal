@@ -17,7 +17,7 @@
  * P2-02 (inbox approval UI).
  */
 
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -262,6 +262,27 @@ export function PendingApprovalPanel({
   } | null>(null);
   const { toast, show: showToast } = usePanelToast();
 
+  /**
+   * Ref for the section header element — used as the focus fallback when the
+   * last pending item is optimistically removed from the list.
+   */
+  const headerRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Per-item focus refs.  For item at index i, focusRefs[i] holds a ref whose
+   * `.current` points to the root div of the *next* item (i + 1), or the panel
+   * header when i is the last item.  These are rebuilt whenever the item array
+   * changes identity so they always reflect the current ordering.
+   *
+   * We store an array of stable ref objects; the actual `.current` values are
+   * assigned in the render loop below.
+   */
+  const focusRefs = useMemo(
+    () => items.map(() => React.createRef<HTMLElement | null>()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items.length],
+  );
+
   // Reset selection when item list changes (e.g. after approve/reject/scan)
   useEffect(() => {
     setSelectedIds(new Set());
@@ -389,7 +410,7 @@ export function PendingApprovalPanel({
         {/* ---------------------------------------------------------------- */}
         {/* Section header — matches StatusGroupSection layout exactly        */}
         {/* ---------------------------------------------------------------- */}
-        <div className="flex items-center justify-between gap-2 px-1">
+        <div ref={headerRef} tabIndex={-1} className="flex items-center justify-between gap-2 px-1">
           <div className="flex items-center gap-2">
             {/* Select-all checkbox — only visible when there are items */}
             {items.length > 0 && (
@@ -420,8 +441,8 @@ export function PendingApprovalPanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  aria-label="Approve selected items"
-                  aria-disabled={!hasSelection}
+                  aria-label={`Approve ${selectedIds.size} selected item${selectedIds.size !== 1 ? "s" : ""}`}
+                  aria-disabled={isBulkBusy}
                   aria-busy={bulkApproving}
                   disabled={isBulkBusy}
                   onClick={handleBulkApprove}
@@ -457,8 +478,8 @@ export function PendingApprovalPanel({
                   type="button"
                   variant="outline"
                   size="sm"
-                  aria-label="Reject selected items"
-                  aria-disabled={!hasSelection}
+                  aria-label={`Reject ${selectedIds.size} selected item${selectedIds.size !== 1 ? "s" : ""}`}
+                  aria-disabled={isBulkBusy}
                   aria-busy={bulkRejecting}
                   disabled={isBulkBusy}
                   onClick={handleBulkReject}
@@ -506,6 +527,7 @@ export function PendingApprovalPanel({
               variant="outline"
               size="sm"
               aria-label="Scan inbox for new files"
+              aria-disabled={isScanning || isBulkBusy}
               aria-busy={isScanning}
               disabled={isScanning || isBulkBusy}
               onClick={handleScan}
@@ -575,17 +597,27 @@ export function PendingApprovalPanel({
             aria-label="Pending approval items"
             className="flex flex-col gap-2"
           >
-            {items.map((item) => (
-              <li key={item.run_id}>
-                <PendingApprovalItem
-                  item={item}
-                  onActionComplete={refetch}
-                  selected={selectedIds.has(item.run_id)}
-                  onSelectionChange={toggleItem}
-                  disabled={isBulkBusy}
-                />
-              </li>
-            ))}
+            {items.map((item, index) => {
+              // focusRefs[index] targets the NEXT item's <li> so keyboard
+              // focus jumps forward after optimistic removal.  For the last
+              // item it falls back to the section header (tabIndex={-1}).
+              const nextRef = focusRefs[index + 1] ?? (headerRef as React.RefObject<HTMLElement | null>);
+              return (
+                <li
+                  key={item.run_id}
+                  ref={focusRefs[index] as React.RefObject<HTMLLIElement>}
+                >
+                  <PendingApprovalItem
+                    item={item}
+                    onActionComplete={refetch}
+                    selected={selectedIds.has(item.run_id)}
+                    onSelectionChange={toggleItem}
+                    disabled={isBulkBusy}
+                    focusTargetOnRemoveRef={nextRef}
+                  />
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

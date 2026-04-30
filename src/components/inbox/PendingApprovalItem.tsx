@@ -236,6 +236,12 @@ export interface PendingApprovalItemProps {
    * prevent concurrent individual actions.
    */
   disabled?: boolean;
+  /**
+   * Ref to the element that should receive focus after this item is removed
+   * optimistically. The parent panel passes a ref to the next item's root or
+   * the panel header when this is the last item.
+   */
+  focusTargetOnRemoveRef?: React.RefObject<HTMLElement | null>;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,6 +269,7 @@ export function PendingApprovalItem({
   selected = false,
   onSelectionChange,
   disabled = false,
+  focusTargetOnRemoveRef,
 }: PendingApprovalItemProps) {
   const queryClient = useQueryClient();
   const [approvingState, setApprovingState] = useState<"idle" | "loading">(
@@ -300,11 +307,26 @@ export function PendingApprovalItem({
     );
   };
 
+  /**
+   * Shift focus to the designated target after optimistic removal so the
+   * keyboard user's focus is not lost when the item leaves the DOM.
+   * Called synchronously after removeFromCache() while the async network
+   * request is in-flight.
+   */
+  const shiftFocusAfterRemoval = () => {
+    const target = focusTargetOnRemoveRef?.current;
+    if (target) {
+      // Defer one tick so React has flushed the cache update to the DOM.
+      setTimeout(() => target.focus(), 0);
+    }
+  };
+
   const handleApprove = async () => {
     if (isAnyLoading) return;
     setApprovingState("loading");
     // Optimistic removal — fires before the network request.
     removeFromCache();
+    shiftFocusAfterRemoval();
     try {
       await approveIntake(item.run_id);
       showToast("success", `Approved: ${displayName}`);
@@ -323,6 +345,7 @@ export function PendingApprovalItem({
     setRejectingState("loading");
     // Optimistic removal — fires before the network request.
     removeFromCache();
+    shiftFocusAfterRemoval();
     try {
       await rejectIntake(item.run_id);
       showToast("success", `Rejected: ${displayName}`);
