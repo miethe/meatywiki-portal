@@ -963,11 +963,11 @@ function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionPr
 
       {/* 6. domain */}
       <MetaRow label="Domain">
-        <InlineTextField
-          value={artifact.frontmatter_jsonb?.["domain"] as string ?? ""}
+        <InlineChipEditor
+          values={(artifact.frontmatter_jsonb?.["domain"] as string[] | null) ?? []}
           onSave={(v) => onSave("domain", v)}
           label="Domain"
-          placeholder="e.g. philosophy, engineering"
+          placeholder="Add domain…"
         />
       </MetaRow>
 
