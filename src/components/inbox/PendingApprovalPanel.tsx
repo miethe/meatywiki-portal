@@ -20,8 +20,9 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { PendingApprovalItem } from "@/components/inbox/PendingApprovalItem";
-import { scanInbox } from "@/lib/api/intake";
+import { approveIntake, rejectIntake, scanInbox } from "@/lib/api/intake";
 import type { IntakePendingItem } from "@/lib/api/intake";
 
 // ---------------------------------------------------------------------------
@@ -253,7 +254,43 @@ export function PendingApprovalPanel({
   refetch,
 }: PendingApprovalPanelProps) {
   const [scanState, setScanState] = useState<"idle" | "scanning">("idle");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [bulkRejecting, setBulkRejecting] = useState(false);
   const { toast, show: showToast } = usePanelToast();
+
+  // Reset selection when item list changes (e.g. after approve/reject/scan)
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [items]);
+
+  const toggleItem = useCallback((runId: string, selected: boolean) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(runId);
+      } else {
+        next.delete(runId);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(items.map((i) => i.run_id)));
+  }, [items]);
+
+  const deselectAll = useCallback(() => {
+    setSelectedIds(new Set());
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === items.length && items.length > 0) {
+      deselectAll();
+    } else {
+      selectAll();
+    }
+  }, [selectedIds.size, items, selectAll, deselectAll]);
 
   const handleScan = useCallback(async () => {
     if (scanState === "scanning") return;
@@ -272,8 +309,50 @@ export function PendingApprovalPanel({
     }
   }, [scanState, refetch, showToast]);
 
+  const handleBulkApprove = useCallback(async () => {
+    if (selectedIds.size === 0 || bulkApproving) return;
+    setBulkApproving(true);
+    const ids = Array.from(selectedIds);
+    const results = await Promise.allSettled(ids.map((id) => approveIntake(id)));
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed === 0) {
+      showToast("success", `Approved ${succeeded} item${succeeded !== 1 ? "s" : ""}`);
+    } else {
+      showToast(
+        "error",
+        `Approved ${succeeded}, failed ${failed} item${failed !== 1 ? "s" : ""}`,
+      );
+    }
+    setBulkApproving(false);
+    refetch();
+  }, [selectedIds, bulkApproving, showToast, refetch]);
+
+  const handleBulkReject = useCallback(async () => {
+    if (selectedIds.size === 0 || bulkRejecting) return;
+    setBulkRejecting(true);
+    const ids = Array.from(selectedIds);
+    const results = await Promise.allSettled(ids.map((id) => rejectIntake(id)));
+    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    const failed = results.filter((r) => r.status === "rejected").length;
+    if (failed === 0) {
+      showToast("success", `Rejected ${succeeded} item${succeeded !== 1 ? "s" : ""}`);
+    } else {
+      showToast(
+        "error",
+        `Rejected ${succeeded}, failed ${failed} item${failed !== 1 ? "s" : ""}`,
+      );
+    }
+    setBulkRejecting(false);
+    refetch();
+  }, [selectedIds, bulkRejecting, showToast, refetch]);
+
   const isScanning = scanState === "scanning";
   const showSkeleton = isLoading && items.length === 0;
+  const allSelected = items.length > 0 && selectedIds.size === items.length;
+  const someSelected = selectedIds.size > 0 && selectedIds.size < items.length;
+  const hasSelection = selectedIds.size > 0;
+  const isBulkBusy = bulkApproving || bulkRejecting;
 
   return (
     <>
@@ -283,47 +362,142 @@ export function PendingApprovalPanel({
         {/* ---------------------------------------------------------------- */}
         <div className="flex items-center justify-between gap-2 px-1">
           <div className="flex items-center gap-2">
+            {/* Select-all checkbox — only visible when there are items */}
+            {items.length > 0 && (
+              <Checkbox
+                checked={allSelected}
+                // Radix Checkbox doesn't support indeterminate via `checked`;
+                // we use the data attribute via ref workaround by wrapping in a
+                // native span with aria attributes instead.
+                data-state={someSelected ? "indeterminate" : allSelected ? "checked" : "unchecked"}
+                onCheckedChange={toggleSelectAll}
+                aria-label="Select all pending items"
+                aria-checked={someSelected ? "mixed" : allSelected}
+                className={cn(someSelected && "opacity-60")}
+              />
+            )}
             <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Pending Approval
             </span>
             <CountPill count={count} />
           </div>
 
-          {/* Scan Inbox button */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label="Scan inbox for new files"
-            aria-busy={isScanning}
-            disabled={isScanning}
-            onClick={handleScan}
-            className={cn(
-              "h-7 gap-1.5 px-2.5 text-xs",
-              isScanning ? "cursor-not-allowed" : "",
+          <div className="flex items-center gap-1.5">
+            {/* Bulk action buttons — only visible when items are selected */}
+            {hasSelection && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-label="Approve selected items"
+                  aria-disabled={!hasSelection}
+                  aria-busy={bulkApproving}
+                  disabled={isBulkBusy}
+                  onClick={handleBulkApprove}
+                  className={cn(
+                    "h-7 gap-1.5 px-2.5 text-xs",
+                    bulkApproving
+                      ? "cursor-not-allowed"
+                      : "hover:border-emerald-500/60 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400",
+                  )}
+                >
+                  {bulkApproving ? (
+                    <Spinner />
+                  ) : (
+                    <svg
+                      aria-hidden="true"
+                      className="size-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="m5 13 4 4L19 7"
+                      />
+                    </svg>
+                  )}
+                  Approve selected
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-label="Reject selected items"
+                  aria-disabled={!hasSelection}
+                  aria-busy={bulkRejecting}
+                  disabled={isBulkBusy}
+                  onClick={handleBulkReject}
+                  className={cn(
+                    "h-7 gap-1.5 px-2.5 text-xs",
+                    bulkRejecting
+                      ? "cursor-not-allowed"
+                      : "hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive",
+                  )}
+                >
+                  {bulkRejecting ? (
+                    <Spinner />
+                  ) : (
+                    <svg
+                      aria-hidden="true"
+                      className="size-3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M6 18 18 6M6 6l12 12"
+                      />
+                    </svg>
+                  )}
+                  Reject selected
+                </Button>
+              </>
             )}
-          >
-            {isScanning ? (
-              <Spinner />
-            ) : (
-              /* Refresh/scan icon */
-              <svg
-                aria-hidden="true"
-                className="size-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 0 0 4.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 0 1-15.357-2m15.357 2H15"
-                />
-              </svg>
-            )}
-            {isScanning ? "Scanning…" : "Scan Inbox"}
-          </Button>
+
+            {/* Scan Inbox button */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="Scan inbox for new files"
+              aria-busy={isScanning}
+              disabled={isScanning}
+              onClick={handleScan}
+              className={cn(
+                "h-7 gap-1.5 px-2.5 text-xs",
+                isScanning ? "cursor-not-allowed" : "",
+              )}
+            >
+              {isScanning ? (
+                <Spinner />
+              ) : (
+                /* Refresh/scan icon */
+                <svg
+                  aria-hidden="true"
+                  className="size-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 0 0 4.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 0 1-15.357-2m15.357 2H15"
+                  />
+                </svg>
+              )}
+              {isScanning ? "Scanning…" : "Scan Inbox"}
+            </Button>
+          </div>
         </div>
 
         {/* ---------------------------------------------------------------- */}
@@ -365,7 +539,12 @@ export function PendingApprovalPanel({
           >
             {items.map((item) => (
               <li key={item.run_id}>
-                <PendingApprovalItem item={item} onActionComplete={refetch} />
+                <PendingApprovalItem
+                  item={item}
+                  onActionComplete={refetch}
+                  selected={selectedIds.has(item.run_id)}
+                  onSelectionChange={toggleItem}
+                />
               </li>
             ))}
           </ul>
