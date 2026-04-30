@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Pending Approval queue in `/inbox`: list pending intake items, per-item approve/reject with optimistic removal, bulk select-all with sequential execution and progress indicator, Scan Inbox button, 30s auto-refresh with background-tab pause
+
 ## [1.6.0] - 2026-04-24
 
 ### Changed
