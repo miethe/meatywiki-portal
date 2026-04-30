@@ -378,6 +378,47 @@ export const handlers = [
     );
   }),
 
+  // ------------------------------------------------------------------
+  // Intake approval queue (P1-02)
+  // ------------------------------------------------------------------
+
+  // List pending intake jobs (GET /api/intake/pending)
+  http.get(`${API_BASE}/api/intake/pending`, () => {
+    return HttpResponse.json({
+      items: [
+        {
+          run_id: "test-run-1",
+          artifact_type: "note",
+          status: "pending_approval",
+          created_at: "2026-04-30T10:00:00Z",
+          payload: { original_filename: "test-note.md" },
+        },
+      ],
+      count: 1,
+    });
+  }),
+
+  // Approve a pending intake job (POST /api/intake/:run_id/approve)
+  http.post(`${API_BASE}/api/intake/:run_id/approve`, ({ params }) => {
+    return HttpResponse.json({
+      status: "approved",
+      run_id: params["run_id"] as string,
+    });
+  }),
+
+  // Reject a pending intake job (POST /api/intake/:run_id/reject)
+  http.post(`${API_BASE}/api/intake/:run_id/reject`, ({ params }) => {
+    return HttpResponse.json({
+      status: "rejected",
+      run_id: params["run_id"] as string,
+    });
+  }),
+
+  // Manual inbox scan (POST /api/admin/inbox/scan)
+  http.post(`${API_BASE}/api/admin/inbox/scan`, () => {
+    return HttpResponse.json({ files_enqueued: 3 });
+  }),
+
   // Synthesize (POST /api/workflows/synthesize) — P4-02
   // Returns 202 Accepted with run_id + status + created_at.
   // Tests that need a failure response should override via server.use().
