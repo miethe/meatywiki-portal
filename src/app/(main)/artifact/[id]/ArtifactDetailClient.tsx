@@ -58,7 +58,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   StickyNote,
   Archive,
@@ -71,6 +71,7 @@ import {
   ChevronDown,
   CheckCircle2,
   XCircle,
+  Trash2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
@@ -104,6 +105,17 @@ import {
 import type { ArtifactPatchFields } from "@/lib/api/artifacts";
 import { useArtifactFieldSave } from "./useArtifactFieldSave";
 import type { ArtifactDetail } from "@/types/artifact";
+import { useArchiveArtifact, useDeleteArtifact } from "@/hooks/use-artifact-actions";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -1059,6 +1071,7 @@ interface ArtifactDetailClientProps {
 
 export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>("Source");
   const { artifact, isLoading, isError, error, isNotFound, refetch } =
     useArtifact(id);
@@ -1090,6 +1103,29 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     const timer = setTimeout(() => setCompileSuccess(false), 3000);
     return () => clearTimeout(timer);
   }, [compileSuccess]);
+
+  // ---- Archive / delete mutations (meatballs menu + rail actions) ----
+  const archiveMutation = useArchiveArtifact();
+  const deleteMutation = useDeleteArtifact();
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const handleArchive = useCallback(() => {
+    if (!artifact) return;
+    archiveMutation.mutate(artifact.id, {
+      onSuccess: () => router.push("/library"),
+    });
+  }, [artifact, archiveMutation, router]);
+
+  const handleDeleteConfirm = useCallback(() => {
+    if (!artifact) return;
+    deleteMutation.mutate(artifact.id, {
+      onSuccess: () => {
+        setShowDeleteConfirm(false);
+        router.push("/library");
+      },
+      onError: () => setShowDeleteConfirm(false),
+    });
+  }, [artifact, deleteMutation, router]);
 
   // Deep-link: if ?tab=derivatives is present AND the artifact is a source type,
   // activate the Derivatives tab on mount / when the artifact loads.
@@ -1171,11 +1207,12 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       icon: StickyNote,
     },
     {
-      label: "Promote to Archive",
+      label: archiveMutation.isPending ? "Archiving…" : "Promote to Archive",
       ariaLabel: "Promote artifact to archive lifecycle stage",
       hasEndpoint: true,
-      description: "POST /api/artifacts/:id/promote — wired in a future P3 task",
-      icon: Archive,
+      description: "POST /api/artifacts/:id/archive",
+      onClick: archiveMutation.isPending ? undefined : handleArchive,
+      icon: archiveMutation.isPending ? Loader2 : Archive,
     },
     {
       label: "Link Related",
@@ -1190,6 +1227,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       hasEndpoint: true,
       description: "POST /api/artifacts/:id/review — wired in a future P3 task",
       icon: CheckSquare,
+    },
+    {
+      label: "Delete",
+      ariaLabel: "Permanently delete this artifact",
+      hasEndpoint: true,
+      description: "DELETE /api/artifacts/:id",
+      onClick: () => setShowDeleteConfirm(true),
+      icon: Trash2,
     },
     ...(showCompileAction
       ? [
@@ -1421,6 +1466,31 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {activeToast && (
         <ToastBanner toast={activeToast} onDismiss={dismissToast} />
       )}
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog
+        open={showDeleteConfirm}
+        onOpenChange={(open) => { if (!open) setShowDeleteConfirm(false); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete artifact?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this artifact from your vault. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

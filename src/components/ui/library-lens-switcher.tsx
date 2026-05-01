@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 // ---------------------------------------------------------------------------
 
 export type LibraryLens =
+  | "all"
   | "default"
   | "concepts"
   | "entities"
@@ -51,7 +52,8 @@ interface LensOption {
 }
 
 const LENS_OPTIONS: LensOption[] = [
-  { value: "default", label: "All Sources" },
+  { value: "all", label: "All Artifacts" },
+  { value: "default", label: "Sources" },
   { value: "concepts", label: "Concepts" },
   { value: "entities", label: "Entities" },
   { value: "syntheses", label: "Syntheses" },

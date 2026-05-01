@@ -613,6 +613,37 @@ export async function fetchArtifactEtag(id: string): Promise<string> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Archive artifact (meatballs menu)
+// ---------------------------------------------------------------------------
+
+/**
+ * Archive an artifact by ID.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/archive
+ * Response: ArtifactDetail (envelope.data)
+ */
+export async function archiveArtifact(id: string): Promise<ArtifactDetail> {
+  const res = await fetch(`/api/artifacts/${encodeURIComponent(id)}/archive`, { method: "POST" });
+  if (!res.ok) throw new Error(`Archive failed: ${res.status}`);
+  const envelope = await res.json();
+  return envelope.data;
+}
+
+// ---------------------------------------------------------------------------
+// Delete artifact (meatballs menu)
+// ---------------------------------------------------------------------------
+
+/**
+ * Permanently delete an artifact by ID.
+ *
+ * Backend: DELETE /api/artifacts/{artifact_id}
+ */
+export async function deleteArtifact(id: string): Promise<void> {
+  const res = await fetch(`/api/artifacts/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
+}
+
 export async function patchArtifactLens(
   id: string,
   body: LensPatchRequest,

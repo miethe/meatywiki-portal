@@ -19,6 +19,7 @@
 
 import { intakeFetch } from "@/lib/pwa/intake-fetch";
 import type { IntakeResponse } from "@/lib/pwa/intake-fetch";
+import { apiFetch } from "@/lib/api/client";
 
 // Re-export helpers so callers don't need to know about the pwa module.
 export { isQueuedResponse } from "@/lib/pwa/intake-fetch";
@@ -172,5 +173,74 @@ export async function submitUpload(
     method: "POST",
     body: blob,
     headers: { "Content-Type": contentType },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Approval/rejection interfaces
+// ---------------------------------------------------------------------------
+
+/** A single intake job awaiting approval. */
+export interface IntakePendingItem {
+  run_id: string;
+  artifact_type: string;
+  status: string;
+  created_at: string;
+  payload: Record<string, unknown>;
+}
+
+/** Response shape for GET /api/intake/pending. */
+export interface IntakePendingListResponse {
+  items: IntakePendingItem[];
+  count: number;
+}
+
+// ---------------------------------------------------------------------------
+// listPending
+// ---------------------------------------------------------------------------
+
+/** Fetch all intake jobs awaiting approval from GET /api/intake/pending. */
+export async function listPending(): Promise<IntakePendingListResponse> {
+  return apiFetch<IntakePendingListResponse>("/intake/pending", {
+    method: "GET",
+  });
+}
+
+// ---------------------------------------------------------------------------
+// approveIntake
+// ---------------------------------------------------------------------------
+
+/** Approve a pending intake job via POST /api/intake/{run_id}/approve. */
+export async function approveIntake(
+  runId: string,
+): Promise<{ status: string; run_id: string }> {
+  return apiFetch<{ status: string; run_id: string }>(
+    `/intake/${runId}/approve`,
+    { method: "POST" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// rejectIntake
+// ---------------------------------------------------------------------------
+
+/** Reject a pending intake job via POST /api/intake/{run_id}/reject. */
+export async function rejectIntake(
+  runId: string,
+): Promise<{ status: string; run_id: string }> {
+  return apiFetch<{ status: string; run_id: string }>(
+    `/intake/${runId}/reject`,
+    { method: "POST" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// scanInbox
+// ---------------------------------------------------------------------------
+
+/** Trigger a manual inbox directory scan via POST /api/admin/inbox/scan. */
+export async function scanInbox(): Promise<{ files_enqueued: number }> {
+  return apiFetch<{ files_enqueued: number }>("/admin/inbox/scan", {
+    method: "POST",
   });
 }

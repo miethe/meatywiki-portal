@@ -66,6 +66,17 @@ import {
   Clock,
   X,
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useArchiveArtifact, useDeleteArtifact } from "@/hooks/use-artifact-actions";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
@@ -161,6 +172,11 @@ const GROUPED_LENS_TYPES: Partial<Record<LibraryLens, string>> = {
 
 function isRollupLens(lens: LibraryLens): boolean {
   return lens === "default" || lens === "orphans";
+}
+
+/** "all" lens: flat list, no type filter, no rollup */
+function isAllLens(lens: LibraryLens): boolean {
+  return lens === "all";
 }
 
 // ---------------------------------------------------------------------------
@@ -1095,6 +1111,37 @@ function LibraryPageInner() {
   // -------------------------------------------------------------------------
   const [selectedArtifact, setSelectedArtifact] = useState<ArtifactCardType | null>(null);
 
+  // -------------------------------------------------------------------------
+  // Meatballs menu — archive / delete mutations
+  // -------------------------------------------------------------------------
+  const archiveMutation = useArchiveArtifact();
+  const deleteMutation = useDeleteArtifact();
+
+  /** ID of the artifact pending delete confirmation (null = dialog closed) */
+  const [artifactToDelete, setArtifactToDelete] = useState<string | null>(null);
+
+  const handleArchive = useCallback(
+    (id: string) => {
+      archiveMutation.mutate(id);
+    },
+    [archiveMutation],
+  );
+
+  const handleDeleteRequest = useCallback((id: string) => {
+    setArtifactToDelete(id);
+  }, []);
+
+  const handleDeleteConfirm = useCallback(() => {
+    if (!artifactToDelete) return;
+    deleteMutation.mutate(artifactToDelete, {
+      onSettled: () => setArtifactToDelete(null),
+    });
+  }, [artifactToDelete, deleteMutation]);
+
+  const handleDeleteCancel = useCallback(() => {
+    setArtifactToDelete(null);
+  }, []);
+
   const { isOpen: railIsOpen, close: closeRail } = useContextRailToggle();
 
   const handleCardClick = useCallback(
@@ -1120,6 +1167,7 @@ function LibraryPageInner() {
   });
 
   const groupedLensType = GROUPED_LENS_TYPES[lens];
+  // "all" lens: flat list with no type override; grouped lenses inject a type filter
   const groupedFilters: LibraryFilters = groupedLensType
     ? { ...filters, types: [groupedLensType] }
     : filters;
@@ -1239,7 +1287,7 @@ function LibraryPageInner() {
         onFiltersChange={handleFiltersChange}
         resultCount={isLoading ? undefined : total}
         hiddenFilterSections={
-          !isRollupLens(lens) && !!groupedLensType ? ["type"] : undefined
+          !isRollupLens(lens) && !isAllLens(lens) && !!groupedLensType ? ["type"] : undefined
         }
       />
 
@@ -1323,6 +1371,8 @@ function LibraryPageInner() {
                           displayVariant="standard"
                           typeAccent
                           activeRun={artifact.active_run ?? undefined}
+                          onArchive={handleArchive}
+                          onDelete={handleDeleteRequest}
                         />
                       </li>
                     );
@@ -1396,6 +1446,31 @@ function LibraryPageInner() {
             (hidden xl:block); the overlay is rendered via TabletRailOverlay above. */}
         {railElement}
       </div>
+
+      {/* Delete confirmation dialog */}
+      <AlertDialog
+        open={!!artifactToDelete}
+        onOpenChange={(open) => { if (!open) handleDeleteCancel(); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete artifact?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this artifact from your vault. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDeleteCancel}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteConfirm}
+              disabled={deleteMutation.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

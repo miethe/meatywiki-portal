@@ -66,6 +66,8 @@ import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
 import { InboxContextRail } from "@/components/inbox/InboxContextRail";
 import { useInboxArtifacts } from "@/hooks/useInboxArtifacts";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import { useInboxPending } from "@/hooks/useInboxPending";
+import { PendingApprovalPanel } from "@/components/inbox/PendingApprovalPanel";
 import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
@@ -472,29 +474,9 @@ function SelectableCardWrapper({
             inboxGroup={inboxGroup}
             urgencyLevel={urgencyLevel}
             urgencyMinutesAgo={urgencyMinutesAgo}
+            ctaSlot={compileSlot}
           />
         </button>
-
-        {/*
-         * FE-04: CompileButton slot — positioned over the card's right cluster
-         * at the same vertical center as the existing CTA button. We use
-         * absolute positioning + pointer-events-auto so the compile button
-         * sits on top of the card without breaking the card's stretch-link.
-         *
-         * The slot replaces the stub CTA for needs_compile items, so we
-         * overlay it in the same position as the existing CTA button lives
-         * inside ArtifactCard (right edge, vertically centred).
-         */}
-        {compileSlot && (
-          <div
-            className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3"
-            aria-hidden="true"
-          >
-            <div className="pointer-events-auto flex items-center gap-2">
-              {compileSlot}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* FE-04: Inline compile error — shown below card row, auto-cleared by parent */}
@@ -603,18 +585,17 @@ export function InboxClient({ initialData }: InboxClientProps) {
   const { artifacts, hasMore, isLoading, error, loadMore, optimisticUpdateArtifact } =
     useInboxArtifacts({ initialData });
 
+  const {
+    items: pendingItems,
+    count: pendingCount,
+    isLoading: pendingLoading,
+    error: pendingError,
+    refetch: pendingRefetch,
+  } = useInboxPending();
+
   // P5-01: Group artifacts by inbox status. Recalculates only when the
   // artifacts array reference changes (load-more appends a new array).
   const groups = useMemo(() => groupArtifacts(artifacts), [artifacts]);
-
-  // P5-03: Auto-select the first item once artifacts are available.
-  // Only fires on the initial non-empty population — load-more calls do not
-  // reset the active selection.
-  useEffect(() => {
-    if (selectedItem === null && artifacts.length > 0) {
-      setSelectedItem(artifacts[0]);
-    }
-  }, [artifacts, selectedItem]);
 
   const handleSelectItem = useCallback((artifact: ArtifactCardType) => {
     setSelectedItem(artifact);
@@ -697,6 +678,21 @@ export function InboxClient({ initialData }: InboxClientProps) {
         <section aria-label="Inbox artifacts" className="min-w-0 flex-1">
           {/* sr-only h2 bridges h1 → h3 heading order (WCAG 1.3.1 heading-order) */}
           <h2 className="sr-only">Artifact list</h2>
+
+          {/* P2-03: Pending Approval panel — rendered above status groups when
+               there are pending items or the initial fetch is in-flight. */}
+          {(pendingCount > 0 || pendingLoading) && (
+            <div className="mb-6">
+              <PendingApprovalPanel
+                items={pendingItems}
+                count={pendingCount}
+                isLoading={pendingLoading}
+                error={pendingError}
+                refetch={pendingRefetch}
+              />
+            </div>
+          )}
+
           {artifacts.length === 0 && !isLoading ? (
             <InboxEmpty />
           ) : (

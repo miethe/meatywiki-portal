@@ -36,6 +36,7 @@
 
 import type React from "react";
 import Link from "next/link";
+import { MoreVertical, Archive, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ArtifactCard as ArtifactCardType, WorkflowRunStatus } from "@/types/artifact";
 import { TypeBadge } from "./type-badge";
@@ -48,6 +49,12 @@ import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { UrgencyBadge } from "./urgency-badge";
 import type { UrgencyLevel } from "./urgency-badge";
 import type { ArtifactFacet } from "@/types/artifact";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
 
 /**
  * Minimal active-run shape for Stage Tracker integration (DP3-03).
@@ -161,6 +168,12 @@ interface ArtifactCardProps {
   inboxGroup?: InboxGroup;
   urgencyLevel?: UrgencyLevel;
   urgencyMinutesAgo?: number;
+  /** When provided, replaces the default stub CTA button in the inbox right cluster. */
+  ctaSlot?: React.ReactNode;
+  /** Called with the artifact ID when the user selects "Archive" from the meatballs menu */
+  onArchive?: (id: string) => void;
+  /** Called with the artifact ID when the user selects "Delete" from the meatballs menu */
+  onDelete?: (id: string) => void;
   className?: string;
 }
 
@@ -193,6 +206,9 @@ export function ArtifactCard({
   inboxGroup,
   urgencyLevel,
   urgencyMinutesAgo,
+  ctaSlot,
+  onArchive,
+  onDelete,
   className,
 }: ArtifactCardProps) {
   const {
@@ -287,25 +303,24 @@ export function ArtifactCard({
               className="hidden sm:inline-flex"
             />
           )}
-          {/* CTA button: pointer-events-auto so clicks go through stretch link */}
-          <button
-            type="button"
-            aria-label={`${ctaLabel} — ${title}`}
-            onClick={(e) => {
-              // Prevent the stretch link from navigating on CTA click.
-              // CTA actions will be wired in future tasks (P5-03/P5-04).
-              e.preventDefault();
-              e.stopPropagation();
-            }}
-            className={cn(
-              "pointer-events-auto inline-flex h-7 items-center rounded-md border px-2.5",
-              "text-xs font-medium text-foreground",
-              "transition-colors hover:bg-accent hover:text-accent-foreground",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            )}
-          >
-            {ctaLabel}
-          </button>
+          {ctaSlot ?? (
+            <button
+              type="button"
+              aria-label={`${ctaLabel} — ${title}`}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              className={cn(
+                "pointer-events-auto inline-flex h-7 items-center rounded-md border px-2.5",
+                "text-xs font-medium text-foreground",
+                "transition-colors hover:bg-accent hover:text-accent-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              {ctaLabel}
+            </button>
+          )}
         </div>
       </article>
     );
@@ -331,6 +346,9 @@ export function ArtifactCard({
   // Excerpt: featured = 2-line clamp, hero = 3-line clamp; ignore on standard/compact
   const excerptText = (isFeatured || isHero) ? (excerpt ?? null) : null;
   const excerptClamp = isHero ? "line-clamp-3" : "line-clamp-2";
+
+  // Show the meatballs menu only when at least one callback is provided
+  const hasMeatballsMenu = !!(onArchive || onDelete);
 
   return (
     <article
@@ -519,6 +537,58 @@ export function ArtifactCard({
           </div>
         )}
       </div>
+
+      {/* Meatballs menu — absolute top-right, visible on group hover only.
+          pointer-events-auto re-enables clicks since the parent content div
+          uses pointer-events-none. stopPropagation prevents card selection
+          click from firing when the menu button or items are clicked. */}
+      {hasMeatballsMenu && (
+        <div
+          className={cn(
+            "pointer-events-auto absolute right-2 top-2",
+            "opacity-0 group-hover:opacity-100 transition-opacity",
+          )}
+          // Prevent the card's <li onClick> selection handler from triggering
+          onClick={(e) => e.stopPropagation()}
+        >
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label="Artifact actions"
+                className={cn(
+                  "inline-flex size-7 items-center justify-center rounded-md",
+                  "bg-card/80 backdrop-blur-sm border text-muted-foreground",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                )}
+              >
+                <MoreVertical aria-hidden="true" className="size-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-36">
+              {onArchive && (
+                <DropdownMenuItem
+                  onClick={() => onArchive(id)}
+                  className="gap-2 cursor-pointer"
+                >
+                  <Archive aria-hidden="true" className="size-3.5" />
+                  Archive
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
+                <DropdownMenuItem
+                  onClick={() => onDelete(id)}
+                  className="gap-2 cursor-pointer text-destructive focus:text-destructive"
+                >
+                  <Trash2 aria-hidden="true" className="size-3.5" />
+                  Delete
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      )}
     </article>
   );
 }
