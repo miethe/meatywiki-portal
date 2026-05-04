@@ -61,7 +61,10 @@ function renderItem(
   onActionComplete = jest.fn(),
 ) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { gcTime: Infinity },
+    },
   });
 
   const item: IntakePendingItem = { ...mockItem, ...overrides };

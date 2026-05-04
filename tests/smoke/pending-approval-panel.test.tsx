@@ -81,7 +81,10 @@ function renderPanel({
   refetch = jest.fn(),
 }: PanelProps = {}) {
   const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { gcTime: Infinity },
+    },
   });
 
   return render(
@@ -216,6 +219,8 @@ describe("PendingApprovalPanel", () => {
 
     expect(mockApproveIntake).toHaveBeenCalledWith("test-run-1");
     expect(mockApproveIntake).toHaveBeenCalledWith("test-run-2");
+    expect(mockApproveIntake).toHaveBeenNthCalledWith(1, "test-run-1");
+    expect(mockApproveIntake).toHaveBeenNthCalledWith(2, "test-run-2");
 
     // refetch is called after bulk approve completes
     expect(refetch).toHaveBeenCalled();

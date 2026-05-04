@@ -40,10 +40,69 @@ Object.defineProperty(globalThis, "ReadableStream", { writable: true, configurab
 Object.defineProperty(globalThis, "WritableStream", { writable: true, configurable: true, value: WritableStream });
 Object.defineProperty(globalThis, "TransformStream", { writable: true, configurable: true, value: TransformStream });
 
-// 3. MessagePort / MessageChannel — required by undici v6
-const { MessagePort, MessageChannel } = require("node:worker_threads") as typeof import("worker_threads");
+// 3. MessagePort / MessageChannel — required by undici v6.
+// Use a microtask-backed test channel so React's scheduler does not keep
+// worker_threads MessagePorts open after React Testing Library imports.
+const { MessagePort } = require("node:worker_threads") as typeof import("worker_threads");
+type MessageListener = (event: MessageEvent) => void;
+
+class JestMessagePort {
+  onmessage: MessageListener | null = null;
+  private listeners = new Set<MessageListener>();
+  private peer: JestMessagePort | null = null;
+
+  link(peer: JestMessagePort): void {
+    this.peer = peer;
+  }
+
+  postMessage(data: unknown): void {
+    const target = this.peer;
+    if (target === null) {
+      return;
+    }
+    queueMicrotask(() => target.dispatchMessage(data));
+  }
+
+  start(): void {}
+
+  close(): void {
+    this.onmessage = null;
+    this.listeners.clear();
+    this.peer = null;
+  }
+
+  addEventListener(type: string, listener: MessageListener): void {
+    if (type === "message") {
+      this.listeners.add(listener);
+    }
+  }
+
+  removeEventListener(type: string, listener: MessageListener): void {
+    if (type === "message") {
+      this.listeners.delete(listener);
+    }
+  }
+
+  private dispatchMessage(data: unknown): void {
+    const event = { data } as MessageEvent;
+    this.onmessage?.(event);
+    for (const listener of this.listeners) {
+      listener(event);
+    }
+  }
+}
+
+class JestMessageChannel {
+  port1 = new JestMessagePort();
+  port2 = new JestMessagePort();
+
+  constructor() {
+    this.port1.link(this.port2);
+    this.port2.link(this.port1);
+  }
+}
 Object.defineProperty(globalThis, "MessagePort", { writable: true, configurable: true, value: MessagePort });
-Object.defineProperty(globalThis, "MessageChannel", { writable: true, configurable: true, value: MessageChannel });
+Object.defineProperty(globalThis, "MessageChannel", { writable: true, configurable: true, value: JestMessageChannel });
 
 // 4. BroadcastChannel — required by MSW v2 ws interceptors
 const { BroadcastChannel } = require("node:worker_threads") as typeof import("worker_threads");
