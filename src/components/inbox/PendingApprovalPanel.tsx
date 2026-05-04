@@ -606,6 +606,7 @@ export function PendingApprovalPanel({
                 <li
                   key={item.run_id}
                   ref={focusRefs[index] as React.RefObject<HTMLLIElement>}
+                  tabIndex={-1}
                 >
                   <PendingApprovalItem
                     item={item}
