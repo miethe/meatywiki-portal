@@ -37,6 +37,7 @@ import { useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
+import { useWorkflowRun } from "@/hooks/useWorkflowRun";
 import { useWorkflowTimeline } from "@/hooks/useWorkflowTimeline";
 import { useRunHistory } from "@/hooks/useRunHistory";
 import { TimelinePanel } from "./timeline-panel";
@@ -45,7 +46,8 @@ import { ArtifactLineageGraph } from "./artifact-lineage-graph";
 import { RunHistoryList } from "./run-history-list";
 import { OperatorActionsBlock } from "./operator-actions-block";
 import { AuditLogPanel } from "./audit-log-panel";
-import type { WorkflowRun } from "@/types/artifact";
+import type { ArtifactRef, WorkflowRun } from "@/types/artifact";
+import type { WorkflowEvent } from "@/types/workflow-viewer";
 
 // ---------------------------------------------------------------------------
 // Template label
@@ -78,6 +80,177 @@ function relativeTime(iso: string | null | undefined): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
+function outputSource(event: WorkflowEvent): string {
+  return event.stage
+    ? `${event.stage.replace(/_/g, " ")} (${event.event_type.replace(/_/g, " ")})`
+    : event.event_type.replace(/_/g, " ");
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function formatOutputValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+interface CreatedArtifactOutput {
+  id: string;
+  title: string | null;
+  source: string;
+}
+
+interface OutputDetail {
+  key: string;
+  label: string;
+  value: string;
+}
+
+interface WorkflowOutputs {
+  artifacts: CreatedArtifactOutput[];
+  details: OutputDetail[];
+}
+
+function addArtifactOutput(
+  artifacts: CreatedArtifactOutput[],
+  seen: Set<string>,
+  id: string,
+  title: string | null | undefined,
+  source: string,
+): void {
+  if (seen.has(id)) return;
+  seen.add(id);
+  artifacts.push({
+    id,
+    title: title?.trim() || null,
+    source,
+  });
+}
+
+function isArtifactIdKey(key: string): boolean {
+  return key === "artifact_id" || key === "artifactId" || key.endsWith("_artifact_id");
+}
+
+function isArtifactIdsKey(key: string): boolean {
+  return key === "artifact_ids" || key === "artifactIds" || key.endsWith("_artifact_ids");
+}
+
+function collectArtifactOutputs(
+  value: unknown,
+  artifacts: CreatedArtifactOutput[],
+  seen: Set<string>,
+  source: string,
+  depth = 0,
+): void {
+  if (depth > 4) return;
+
+  if (Array.isArray(value)) {
+    value.forEach((item) =>
+      collectArtifactOutputs(item, artifacts, seen, source, depth + 1),
+    );
+    return;
+  }
+
+  if (!isRecord(value)) return;
+
+  for (const [key, directValue] of Object.entries(value)) {
+    const titleValue =
+      value[`${key.replace(/_artifact_ids?$/, "")}_artifact_title`] ??
+      value["artifact_title"] ??
+      value["artifactTitle"] ??
+      value["title"] ??
+      value["name"];
+
+    if (isArtifactIdKey(key) && typeof directValue === "string" && directValue.trim()) {
+      addArtifactOutput(
+        artifacts,
+        seen,
+        directValue,
+        typeof titleValue === "string" ? titleValue : null,
+        source,
+      );
+    }
+
+    if (isArtifactIdsKey(key) && Array.isArray(directValue)) {
+      directValue
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        .forEach((id) => addArtifactOutput(artifacts, seen, id, null, source));
+    }
+  }
+
+  Object.entries(value).forEach(([key, nested]) => {
+    if (key === "inputs") return;
+    collectArtifactOutputs(nested, artifacts, seen, source, depth + 1);
+  });
+}
+
+function aggregateWorkflowOutputs(events: WorkflowEvent[]): WorkflowOutputs {
+  const artifacts: CreatedArtifactOutput[] = [];
+  const details: OutputDetail[] = [];
+  const seenArtifacts = new Set<string>();
+
+  events.forEach((event) => {
+    const payload = event.event_payload;
+    if (!payload) return;
+
+    const source = outputSource(event);
+    collectArtifactOutputs(payload, artifacts, seenArtifacts, source);
+
+    (["outputs", "output_summary"] as const).forEach((field) => {
+      const value = payload[field];
+      if (value === undefined || value === null) return;
+      details.push({
+        key: `${event.id}-${field}`,
+        label: `${source} ${field.replace("_", " ")}`,
+        value: formatOutputValue(value),
+      });
+    });
+  });
+
+  return { artifacts, details };
+}
+
+function titleFromRef(ref: ArtifactRef | null): string | null {
+  const title = ref?.title?.trim();
+  return title && title.length > 0 ? title : null;
+}
+
+function primarySourceArtifact(run: WorkflowRun): ArtifactRef | null {
+  const source = run.source_artifacts?.[0];
+  if (source && (source.artifact_id.trim() || source.title?.trim())) return source;
+  if (run.artifact_id || run.artifact_title) {
+    return {
+      artifact_id: run.artifact_id ?? "",
+      title: run.artifact_title ?? null,
+    };
+  }
+  return null;
+}
+
+function createdArtifactsFromRun(run: WorkflowRun | null): CreatedArtifactOutput[] {
+  const artifacts: CreatedArtifactOutput[] = [];
+  const seen = new Set<string>();
+
+  run?.created_artifacts?.forEach((artifact) => {
+    const id = artifact.artifact_id.trim();
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    artifacts.push({
+      id,
+      title: titleFromRef(artifact),
+      source: "workflow run",
+    });
+  });
+
+  return artifacts;
+}
+
 // ---------------------------------------------------------------------------
 // Back chevron
 // ---------------------------------------------------------------------------
@@ -107,6 +280,9 @@ interface RunHeaderProps {
 
 function RunHeader({ run, runId }: RunHeaderProps) {
   const label = run ? templateLabel(run.template_id) : "Workflow Run";
+  const sourceArtifact = run ? primarySourceArtifact(run) : null;
+  const sourceTitle = titleFromRef(sourceArtifact);
+  const sourceId = sourceArtifact?.artifact_id.trim();
 
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -139,8 +315,123 @@ function RunHeader({ run, runId }: RunHeaderProps) {
         <p className="font-mono text-xs text-muted-foreground">
           {runId}
         </p>
+
+        <div className="mt-3 rounded-lg border border-border bg-card p-4">
+          <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+            Source artifact
+          </p>
+          {sourceId && sourceTitle ? (
+            <div className="mt-1 flex flex-col gap-2">
+              <Link
+                href={`/artifact/${sourceId}`}
+                className="text-sm font-medium text-primary hover:text-primary/80 hover:underline underline-offset-2"
+              >
+                {sourceTitle}
+              </Link>
+              <span className="font-mono text-xs text-muted-foreground">{sourceId}</span>
+            </div>
+          ) : sourceTitle ? (
+            <p className="mt-1 text-sm font-medium text-foreground">{sourceTitle}</p>
+          ) : (
+            <p className="mt-1 text-sm font-medium text-foreground">
+              No linked source artifact
+            </p>
+          )}
+        </div>
       </div>
     </div>
+  );
+}
+
+interface WorkflowOutputsPanelProps {
+  events: WorkflowEvent[];
+  currentRun: WorkflowRun | null;
+}
+
+function WorkflowOutputsPanel({ events, currentRun }: WorkflowOutputsPanelProps) {
+  const eventOutputs = useMemo(() => aggregateWorkflowOutputs(events), [events]);
+  const runArtifacts = useMemo(
+    () => createdArtifactsFromRun(currentRun),
+    [currentRun],
+  );
+  const outputs = useMemo(
+    () => ({
+      artifacts: runArtifacts.length > 0 ? runArtifacts : eventOutputs.artifacts,
+      details: eventOutputs.details,
+    }),
+    [eventOutputs, runArtifacts],
+  );
+
+  return (
+    <section
+      className="rounded-xl border border-border bg-card p-6"
+      aria-labelledby="workflow-outputs-heading"
+      data-testid="workflow-outputs-panel"
+    >
+      <h2 id="workflow-outputs-heading" className="text-sm font-semibold text-foreground">
+        Outputs
+      </h2>
+
+      {outputs.artifacts.length === 0 && outputs.details.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">
+          No workflow outputs recorded yet.
+        </p>
+      ) : (
+        <div className="mt-4 flex flex-col gap-5">
+          {outputs.artifacts.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground">
+                Created artifacts
+              </h3>
+              <ul className="mt-2 divide-y divide-border rounded-md border border-border">
+                {outputs.artifacts.map((artifact) => (
+                  <li key={artifact.id} className="flex flex-col gap-1 px-3 py-2">
+                    {artifact.title ? (
+                      <Link
+                        href={`/artifact/${artifact.id}`}
+                        className="text-sm font-medium text-foreground hover:text-primary hover:underline underline-offset-2"
+                      >
+                        {artifact.title}
+                      </Link>
+                    ) : (
+                      <span className="text-sm font-medium text-foreground">
+                        Untitled artifact
+                      </span>
+                    )}
+                    <span className="font-mono text-[11px] text-muted-foreground">
+                      {artifact.id}
+                    </span>
+                    <span className="text-[11px] capitalize text-muted-foreground">
+                      {artifact.source}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {outputs.details.length > 0 && (
+            <div>
+              <h3 className="text-xs font-semibold text-muted-foreground">
+                Output details
+              </h3>
+              <ul className="mt-2 flex flex-col gap-2">
+                {outputs.details.map((detail) => (
+                  <li key={detail.key} className="rounded-md border border-border p-3">
+                    <p className="text-xs font-medium capitalize text-foreground">
+                      {detail.label}
+                    </p>
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2 text-[11px] text-muted-foreground">
+                      {detail.value}
+                    </pre>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -160,15 +451,17 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
   // after any operator action completes.
   const [refreshKey, setRefreshKey] = useState(0);
 
+  const { run: fetchedRun, refetch: refetchRun } = useWorkflowRun(runId);
   const { events, stages, isLoading, error, refetch: refetchTimeline } = useWorkflowTimeline(runId);
 
   // Derive templateId from either the pre-fetched run or the first event's run metadata.
   const templateId = useMemo<string | null>(() => {
+    if (fetchedRun?.template_id) return fetchedRun.template_id;
     if (run?.template_id) return run.template_id;
     // Fallback — timeline events don't carry template_id, so default to research_synthesis_v1
     // for run history (the primary use-case in v1).
     return events.length > 0 ? "research_synthesis_v1" : null;
-  }, [run, events]);
+  }, [fetchedRun, run, events]);
 
   const {
     runs: historyRuns,
@@ -189,16 +482,18 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
   // Synthesise a WorkflowRun-like object for the header if not pre-fetched.
   // Use the best available run from history that matches this runId.
   const currentRun: WorkflowRun | null = useMemo(() => {
+    if (fetchedRun) return fetchedRun;
     if (run) return run;
     return historyRuns.find((r) => r.id === runId) ?? null;
-  }, [run, historyRuns, runId]);
+  }, [fetchedRun, run, historyRuns, runId]);
 
   // Called after any operator action succeeds — refresh timeline, history and audit log.
   const handleOperatorAction = useCallback(() => {
     setRefreshKey((k) => k + 1);
+    void refetchRun();
     void refetchTimeline();
     void refetchHistory();
-  }, [refetchTimeline, refetchHistory]);
+  }, [refetchRun, refetchTimeline, refetchHistory]);
 
   return (
     <div className="flex flex-col gap-8" data-testid="workflow-viewer-screen">
@@ -244,6 +539,8 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
             stage={selectedStage}
             data-testid="stage-context-panel"
           />
+
+          <WorkflowOutputsPanel events={events} currentRun={currentRun} />
 
           {/* Panel C: Artifact lineage graph */}
           <ArtifactLineageGraph

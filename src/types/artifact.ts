@@ -308,15 +308,30 @@ export type WorkflowTemplateId =
   | "lint_scope_v1"
   | "compile_v1";
 
+export interface ArtifactRef {
+  artifact_id: string;
+  title?: string | null;
+}
+
 export interface WorkflowRun {
   id: string; // wf-{slug}-{YYYYMMDD}-{seq}
   template_id: WorkflowTemplateId;
   workspace: ArtifactWorkspace;
   status: WorkflowRunStatus;
+  branch?: string | null;
+  fidelity_target?: string | null;
   current_stage?: number | null;
   started_at?: string | null;
   completed_at?: string | null;
-  initiator: "portal" | "cli" | "reconciler";
+  created_at?: string | null;
+  initiator?: "portal" | "cli" | "reconciler" | null;
+  trace_id?: string | null;
+  error?: string | null;
+  artifact_id?: string | null;
+  artifact_title?: string | null;
+  source_artifacts?: ArtifactRef[] | null;
+  created_artifacts?: ArtifactRef[] | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 // ---------------------------------------------------------------------------

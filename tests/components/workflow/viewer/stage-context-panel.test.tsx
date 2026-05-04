@@ -53,7 +53,9 @@ function makeStage(overrides: Partial<TimelineStage> = {}): TimelineStage {
 describe("StageContextPanel", () => {
   it("shows empty state when stage is null", () => {
     renderWithProviders(<StageContextPanel stage={null} />);
-    expect(screen.getByText(/Click a stage in the timeline/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Click a stage in the timeline/i),
+    ).toBeInTheDocument();
   });
 
   it("renders stage label in header", () => {
@@ -79,6 +81,36 @@ describe("StageContextPanel", () => {
     expect(screen.getByText("01HXYZ0000000000000000010")).toBeInTheDocument();
   });
 
+  it("shows top-level payload details instead of the empty payload message", () => {
+    const stage = makeStage({
+      events: [
+        {
+          id: "evt-summary",
+          run_id: "run-01",
+          stage: "compile",
+          event_type: "stage_complete",
+          event_payload: {
+            output_summary: "Created summary artifact",
+            raw_artifact_id: "raw-123",
+            summary_artifact_id: "summary-456",
+          },
+          created_at: "2026-04-18T10:05:00Z",
+        },
+      ],
+    });
+
+    renderWithProviders(<StageContextPanel stage={stage} />);
+
+    expect(screen.getByText("Payload Details")).toBeInTheDocument();
+    expect(screen.getByText("output_summary")).toBeInTheDocument();
+    expect(screen.getByText("Created summary artifact")).toBeInTheDocument();
+    expect(screen.getByText("raw_artifact_id")).toBeInTheDocument();
+    expect(screen.getByText("raw-123")).toBeInTheDocument();
+    expect(
+      screen.queryByText("No payload data recorded for this stage."),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows error message for failed stage", () => {
     const stage = makeStage({
       status: "error",
@@ -94,16 +126,22 @@ describe("StageContextPanel", () => {
       ],
     });
     renderWithProviders(<StageContextPanel stage={stage} />);
-    expect(screen.getByRole("alert")).toHaveTextContent("Out of memory at compile step");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Out of memory at compile step",
+    );
   });
 
   it("renders duration in header", () => {
-    renderWithProviders(<StageContextPanel stage={makeStage({ durationS: 65 })} />);
+    renderWithProviders(
+      <StageContextPanel stage={makeStage({ durationS: 65 })} />,
+    );
     expect(screen.getByText(/1m 5s/)).toBeInTheDocument();
   });
 
   it("shows 'Completed' status badge for success stage", () => {
-    renderWithProviders(<StageContextPanel stage={makeStage({ status: "success" })} />);
+    renderWithProviders(
+      <StageContextPanel stage={makeStage({ status: "success" })} />,
+    );
     expect(screen.getByRole("status")).toHaveTextContent("Completed");
   });
 

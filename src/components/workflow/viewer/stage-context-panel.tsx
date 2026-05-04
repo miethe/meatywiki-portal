@@ -18,7 +18,10 @@
  */
 
 import { cn } from "@/lib/utils";
-import type { TimelineStage, TimelineStageStatus } from "@/types/workflow-viewer";
+import type {
+  TimelineStage,
+  TimelineStageStatus,
+} from "@/types/workflow-viewer";
 
 // ---------------------------------------------------------------------------
 // Status colour helpers
@@ -26,9 +29,11 @@ import type { TimelineStage, TimelineStageStatus } from "@/types/workflow-viewer
 
 function statusBadgeClass(status: TimelineStageStatus): string {
   const map: Record<TimelineStageStatus, string> = {
-    success: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
+    success:
+      "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300",
     error: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
-    in_progress: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
+    in_progress:
+      "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",
     pending: "bg-muted text-muted-foreground",
   };
   return cn(
@@ -91,6 +96,29 @@ function KVList({
   );
 }
 
+const RESERVED_PAYLOAD_KEYS = new Set([
+  "inputs",
+  "outputs",
+  "artifact_id",
+  "artifact_ids",
+  "error",
+]);
+
+function payloadDetails(
+  payloads: NonNullable<TimelineStage["events"][number]["event_payload"]>[],
+): Record<string, unknown> | null {
+  const details: Record<string, unknown> = {};
+
+  for (const payload of payloads) {
+    for (const [key, value] of Object.entries(payload)) {
+      if (RESERVED_PAYLOAD_KEYS.has(key)) continue;
+      details[key] = value;
+    }
+  }
+
+  return Object.keys(details).length > 0 ? details : null;
+}
+
 // ---------------------------------------------------------------------------
 // Artifact ID chip
 // ---------------------------------------------------------------------------
@@ -124,7 +152,9 @@ function EmptyState() {
           d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
         />
       </svg>
-      <p className="text-sm">Click a stage in the timeline to view its context.</p>
+      <p className="text-sm">
+        Click a stage in the timeline to view its context.
+      </p>
     </div>
   );
 }
@@ -138,15 +168,15 @@ interface StageContextPanelProps {
   className?: string;
 }
 
-export function StageContextPanel({ stage, className }: StageContextPanelProps) {
+export function StageContextPanel({
+  stage,
+  className,
+}: StageContextPanelProps) {
   if (!stage) {
     return (
       <section
         aria-label="Stage context"
-        className={cn(
-          "rounded-xl border border-border bg-card p-6",
-          className,
-        )}
+        className={cn("rounded-xl border border-border bg-card p-6", className)}
       >
         <EmptyState />
       </section>
@@ -156,7 +186,9 @@ export function StageContextPanel({ stage, className }: StageContextPanelProps) 
   // Aggregate payload from all events in the stage.
   const payloads = stage.events
     .map((e) => e.event_payload)
-    .filter(Boolean) as NonNullable<typeof stage.events[0]["event_payload"]>[];
+    .filter(Boolean) as NonNullable<
+    (typeof stage.events)[0]["event_payload"]
+  >[];
 
   const inputs = payloads.find((p) => p.inputs != null)?.inputs as
     | Record<string, unknown>
@@ -174,7 +206,11 @@ export function StageContextPanel({ stage, className }: StageContextPanelProps) 
     | string[]
     | null
     | undefined;
-  const error = payloads.find((p) => p.error)?.error as string | null | undefined;
+  const error = payloads.find((p) => p.error)?.error as
+    | string
+    | null
+    | undefined;
+  const details = payloadDetails(payloads);
 
   const allArtifactIds: string[] = [
     ...(artifactId ? [artifactId] : []),
@@ -198,7 +234,10 @@ export function StageContextPanel({ stage, className }: StageContextPanelProps) 
         <div>
           <h3 className="text-base font-bold text-foreground">{stage.label}</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Duration: <span className="tabular-nums font-medium">{formatDuration(stage.durationS)}</span>
+            Duration:{" "}
+            <span className="tabular-nums font-medium">
+              {formatDuration(stage.durationS)}
+            </span>
           </p>
         </div>
         <span className={statusBadgeClass(stage.status)} role="status">
@@ -210,8 +249,13 @@ export function StageContextPanel({ stage, className }: StageContextPanelProps) 
       <div className="flex flex-col gap-5 p-6">
         {/* Error */}
         {error && (
-          <div role="alert" className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 p-3">
-            <p className="text-sm font-medium text-red-700 dark:text-red-400">{error}</p>
+          <div
+            role="alert"
+            className="rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 p-3"
+          >
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">
+              {error}
+            </p>
           </div>
         )}
 
@@ -220,6 +264,9 @@ export function StageContextPanel({ stage, className }: StageContextPanelProps) 
 
         {/* Outputs */}
         <KVList title="Outputs" data={outputs} />
+
+        {/* Top-level payload fields */}
+        <KVList title="Payload Details" data={details} />
 
         {/* Artifact lineage */}
         {allArtifactIds.length > 0 && (
@@ -236,11 +283,15 @@ export function StageContextPanel({ stage, className }: StageContextPanelProps) 
         )}
 
         {/* No payload fallback */}
-        {!inputs && !outputs && allArtifactIds.length === 0 && !error && (
-          <p className="text-sm text-muted-foreground">
-            No payload data recorded for this stage.
-          </p>
-        )}
+        {!inputs &&
+          !outputs &&
+          !details &&
+          allArtifactIds.length === 0 &&
+          !error && (
+            <p className="text-sm text-muted-foreground">
+              No payload data recorded for this stage.
+            </p>
+          )}
       </div>
     </section>
   );

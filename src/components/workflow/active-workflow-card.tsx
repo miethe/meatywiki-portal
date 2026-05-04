@@ -15,7 +15,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
 import { StageTracker } from "./stage-tracker";
-import type { WorkflowRun } from "@/types/artifact";
+import type { ArtifactRef, WorkflowRun } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
 // Template label map (matches WorkflowStatusPanel)
@@ -50,6 +50,23 @@ function stageDescription(stage: number | null | undefined): string {
   return STAGE_DESCRIPTIONS[stage] ?? `Step ${stage + 1}`;
 }
 
+function titleFromRef(ref: ArtifactRef | null): string | null {
+  const title = ref?.title?.trim();
+  return title && title.length > 0 ? title : null;
+}
+
+function primarySourceArtifact(run: WorkflowRun): ArtifactRef | null {
+  const source = run.source_artifacts?.[0];
+  if (source && (source.artifact_id.trim() || source.title?.trim())) return source;
+  if (run.artifact_id || run.artifact_title) {
+    return {
+      artifact_id: run.artifact_id ?? "",
+      title: run.artifact_title ?? null,
+    };
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
@@ -66,6 +83,9 @@ export interface ActiveWorkflowCardProps {
 export function ActiveWorkflowCard({ run, className }: ActiveWorkflowCardProps) {
   const label = templateLabel(run.template_id);
   const stageCopy = stageDescription(run.current_stage);
+  const sourceArtifact = primarySourceArtifact(run);
+  const sourceTitle = titleFromRef(sourceArtifact);
+  const sourceId = sourceArtifact?.artifact_id.trim();
 
   return (
     <article
@@ -91,6 +111,32 @@ export function ActiveWorkflowCard({ run, className }: ActiveWorkflowCardProps) 
       <p className="text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{stageCopy}</span>
       </p>
+
+      <div className="min-w-0 rounded-md bg-muted/50 px-2.5 py-2">
+        <p className="text-[10px] font-medium uppercase text-muted-foreground">
+          Source
+        </p>
+        {sourceId && sourceTitle ? (
+          <Link
+            href={`/artifact/${sourceId}`}
+            className={cn(
+              "mt-0.5 block truncate text-xs font-medium text-foreground",
+              "hover:text-primary hover:underline underline-offset-2 transition-colors",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm",
+            )}
+          >
+            {sourceTitle}
+          </Link>
+        ) : sourceTitle ? (
+          <p className="mt-0.5 truncate text-xs font-medium text-foreground">
+            {sourceTitle}
+          </p>
+        ) : (
+          <p className="mt-0.5 truncate text-xs font-medium text-foreground">
+            No linked source artifact
+          </p>
+        )}
+      </div>
 
       {/* Stage tracker */}
       <StageTracker

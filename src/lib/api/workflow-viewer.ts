@@ -17,7 +17,7 @@
  */
 
 import { apiFetch } from "./client";
-import type { WorkflowRun, ServiceModeEnvelope } from "@/types/artifact";
+import type { WorkflowRun, ServiceModeEnvelope, SingleEnvelope } from "@/types/artifact";
 import type { WorkflowEvent } from "@/types/workflow-viewer";
 
 // ---------------------------------------------------------------------------
@@ -38,20 +38,15 @@ export async function fetchWorkflowTimeline(
 }
 
 // ---------------------------------------------------------------------------
-// Single run — GET /api/workflows/runs?run_id=
-// (Fetch the run detail by listing and filtering client-side, since the
-//  backend list endpoint is the canonical read path in v1.)
+// Single run — GET /api/workflows/:run_id
 // ---------------------------------------------------------------------------
 
 export async function fetchWorkflowRun(runId: string): Promise<WorkflowRun | null> {
   try {
-    const envelope = await apiFetch<ServiceModeEnvelope<WorkflowRun>>(
-      `/workflows/runs?limit=1`,
+    const envelope = await apiFetch<SingleEnvelope<WorkflowRun>>(
+      `/workflows/${encodeURIComponent(runId)}`,
     );
-    // The list endpoint returns all runs; find the matching one.
-    // In practice, callers pass the runId from the URL and we match it.
-    const runs = envelope.data ?? [];
-    return runs.find((r) => r.id === runId) ?? null;
+    return envelope.data ?? null;
   } catch {
     return null;
   }

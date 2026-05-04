@@ -24,13 +24,16 @@
  */
 
 import Link from "next/link";
+import { BookOpen } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { getDocsUrl } from "@/lib/docs-url";
 
 interface NavItem {
   label: string;
   href: string;
   ariaLabel?: string;
+  external?: boolean;
   icon?: React.ReactNode;
 }
 
@@ -106,31 +109,40 @@ function ProjectsIcon() {
   );
 }
 
-const NAV_SECTIONS: NavSection[] = [
-  {
-    title: "Workspace",
-    items: [
-      { label: "Home", href: "/home", icon: <HomeIcon /> },
-      { label: "Inbox", href: "/inbox", icon: <InboxIcon /> },
-      { label: "Library", href: "/library", icon: <LibraryIcon /> },
-      { label: "Research", href: "/research", icon: <ResearchIcon /> },
-      { label: "Blog", href: "/blog", icon: <BlogIcon /> },
-      { label: "Projects", href: "/projects", icon: <ProjectsIcon /> },
-    ],
-  },
-  {
-    title: "Workflow OS",
-    items: [
-      { label: "Workflows", href: "/workflows", icon: <WorkflowIcon /> },
-    ],
-  },
-  {
-    title: "Admin",
-    items: [
-      { label: "Settings", href: "/settings", icon: <SettingsIcon /> },
-    ],
-  },
-];
+function getNavSections(): NavSection[] {
+  return [
+    {
+      title: "Workspace",
+      items: [
+        { label: "Home", href: "/home", icon: <HomeIcon /> },
+        { label: "Inbox", href: "/inbox", icon: <InboxIcon /> },
+        { label: "Library", href: "/library", icon: <LibraryIcon /> },
+        { label: "Research", href: "/research", icon: <ResearchIcon /> },
+        { label: "Blog", href: "/blog", icon: <BlogIcon /> },
+        { label: "Projects", href: "/projects", icon: <ProjectsIcon /> },
+      ],
+    },
+    {
+      title: "Workflow OS",
+      items: [
+        { label: "Workflows", href: "/workflows", icon: <WorkflowIcon /> },
+      ],
+    },
+    {
+      title: "Admin",
+      items: [
+        { label: "Settings", href: "/settings", icon: <SettingsIcon /> },
+        {
+          label: "Docs",
+          href: getDocsUrl(),
+          ariaLabel: "Open MeatyWiki documentation",
+          external: true,
+          icon: <BookOpen aria-hidden="true" className="size-4" strokeWidth={1.5} />,
+        },
+      ],
+    },
+  ];
+}
 
 interface NavLinkProps extends NavItem {
   isActive: boolean;
@@ -141,21 +153,39 @@ interface NavLinkProps extends NavItem {
  * NavLink — touch target meets ≥44px via min-h-[44px] on xs, reduced to h-8
  * on md+ where pointer device is assumed.
  */
-function NavLink({ label, href, ariaLabel, icon, isActive, onClick }: NavLinkProps) {
+function NavLink({ label, href, ariaLabel, external, icon, isActive, onClick }: NavLinkProps) {
+  const className = cn(
+    "flex min-h-[44px] items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors",
+    "md:h-8 md:min-h-0",
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+    isActive
+      ? "bg-accent text-accent-foreground"
+      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+  );
+
+  if (external) {
+    return (
+      <a
+        href={href}
+        aria-label={ariaLabel ?? label}
+        onClick={onClick}
+        target="_blank"
+        rel="noreferrer"
+        className={className}
+      >
+        {icon && <span className="shrink-0 text-current">{icon}</span>}
+        <span className="truncate">{label}</span>
+      </a>
+    );
+  }
+
   return (
     <Link
       href={href}
       aria-label={ariaLabel ?? label}
       aria-current={isActive ? "page" : undefined}
       onClick={onClick}
-      className={cn(
-        "flex min-h-[44px] items-center gap-2.5 rounded-md px-2.5 text-sm font-medium transition-colors",
-        "md:h-8 md:min-h-0",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-        isActive
-          ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
-      )}
+      className={className}
     >
       {icon && <span className="shrink-0 text-current">{icon}</span>}
       <span className="truncate">{label}</span>
@@ -170,13 +200,14 @@ interface ShellNavProps {
 
 export function ShellNav({ onNavClick }: ShellNavProps = {}) {
   const pathname = usePathname();
+  const navSections = getNavSections();
 
   return (
     <nav
       className="flex flex-col gap-1 p-3"
       aria-label="Primary navigation"
     >
-      {NAV_SECTIONS.map((section) => (
+      {navSections.map((section) => (
         <div key={section.title ?? "primary"} className="mb-2">
           {section.title && (
             <p className="mb-1 px-2.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -186,7 +217,9 @@ export function ShellNav({ onNavClick }: ShellNavProps = {}) {
           <div className="flex flex-col gap-0.5">
             {section.items.map((item) => {
               const isActive =
-                item.href === "/"
+                item.external
+                  ? false
+                  : item.href === "/"
                   ? pathname === "/"
                   : pathname.startsWith(item.href);
               return (

@@ -18,7 +18,11 @@
 
 import { useCallback, useEffect, useReducer } from "react";
 import { fetchWorkflowTimeline } from "@/lib/api/workflow-viewer";
-import type { WorkflowEvent, TimelineStage, TimelineStageStatus } from "@/types/workflow-viewer";
+import type {
+  WorkflowEvent,
+  TimelineStage,
+  TimelineStageStatus,
+} from "@/types/workflow-viewer";
 
 // ---------------------------------------------------------------------------
 // Stage label map — mirrors TEMPLATE_STAGES in lib/workflow/stages.ts
@@ -39,7 +43,34 @@ const STAGE_LABELS: Record<string, string> = {
 };
 
 function stageLabel(name: string): string {
-  return STAGE_LABELS[name] ?? name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  return (
+    STAGE_LABELS[name] ??
+    name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+}
+
+function isErrorEventType(type: string): boolean {
+  return (
+    type === "workflow_failed" ||
+    type === "stage_failed" ||
+    type === "stage_error"
+  );
+}
+
+function isCompletedEventType(type: string): boolean {
+  return (
+    type === "workflow_completed" ||
+    type === "stage_completed" ||
+    type === "stage_complete"
+  );
+}
+
+function isStartedEventType(type: string): boolean {
+  return (
+    type === "stage_started" ||
+    type === "stage_start" ||
+    type === "stage_progress"
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -64,7 +95,8 @@ function deriveTimelineStages(events: WorkflowEvent[]): TimelineStage[] {
 
   return Array.from(stageMap.entries()).map(([name, stageEvents]) => {
     const sorted = [...stageEvents].sort(
-      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
     );
 
     const startedAt = sorted[0]?.created_at ?? null;
@@ -72,24 +104,19 @@ function deriveTimelineStages(events: WorkflowEvent[]): TimelineStage[] {
 
     const durationS =
       startedAt && lastEventAt && startedAt !== lastEventAt
-        ? (new Date(lastEventAt).getTime() - new Date(startedAt).getTime()) / 1000
+        ? (new Date(lastEventAt).getTime() - new Date(startedAt).getTime()) /
+          1000
         : null;
 
     // Infer status from event types in this stage.
     const types = stageEvents.map((e) => e.event_type);
     let status: TimelineStageStatus = "pending";
 
-    if (types.some((t) => t === "workflow_failed" || t === "stage_failed")) {
+    if (types.some(isErrorEventType)) {
       status = "error";
-    } else if (
-      types.some(
-        (t) => t === "stage_completed" || t === "workflow_completed",
-      )
-    ) {
+    } else if (types.some(isCompletedEventType)) {
       status = "success";
-    } else if (
-      types.some((t) => t === "stage_started" || t === "stage_progress")
-    ) {
+    } else if (types.some(isStartedEventType)) {
       status = "in_progress";
     }
 
@@ -127,7 +154,13 @@ function reducer(state: TimelineState, action: TimelineAction): TimelineState {
       return { ...state, isLoading: true, error: null };
     case "FETCH_SUCCESS": {
       const stages = deriveTimelineStages(action.events);
-      return { ...state, isLoading: false, error: null, events: action.events, stages };
+      return {
+        ...state,
+        isLoading: false,
+        error: null,
+        events: action.events,
+        stages,
+      };
     }
     case "FETCH_ERROR":
       return { ...state, isLoading: false, error: action.error };

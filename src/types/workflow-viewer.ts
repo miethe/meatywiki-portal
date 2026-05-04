@@ -15,7 +15,14 @@ export interface WorkflowEvent {
   run_id: string;
   /** Stage name (e.g. "ingest_start", "classify", "compile"). */
   stage: string | null;
-  /** Event type string (e.g. "stage_started", "stage_completed", "workflow_completed"). */
+  /**
+   * Event type string.
+   *
+   * REST timeline responses can contain raw backend names such as
+   * "stage_start", "stage_complete", and "stage_error"; SSE/mocks may use
+   * frontend names such as "stage_started", "stage_completed", and
+   * "stage_failed".
+   */
   event_type: string;
   /** Payload with inputs, outputs, artifact lineage, etc. */
   event_payload: WorkflowEventPayload | null;
@@ -24,7 +31,8 @@ export interface WorkflowEvent {
 
 export interface WorkflowEventPayload {
   inputs?: Record<string, unknown> | null;
-  outputs?: Record<string, unknown> | null;
+  outputs?: unknown;
+  output_summary?: unknown;
   artifact_id?: string | null;
   artifact_ids?: string[] | null;
   /** Duration in seconds, computed client-side from event timestamps. */

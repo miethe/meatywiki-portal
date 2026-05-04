@@ -52,7 +52,7 @@ import { ContextRailProvider, useContextRailToggle } from "@/components/ui/conte
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
 import { ssePool } from "@/lib/sse/pool";
 import { cn } from "@/lib/utils";
-import type { WorkflowRun } from "@/types/artifact";
+import type { ArtifactRef, WorkflowRun } from "@/types/artifact";
 import type { RailSection } from "@/components/ui/context-rail";
 
 // ---------------------------------------------------------------------------
@@ -109,6 +109,23 @@ function formatDuration(ms: number | null): string {
   const sec = totalSec % 60;
   if (min === 0) return `${sec}s`;
   return `${min}m ${sec}s`;
+}
+
+function titleFromRef(ref: ArtifactRef | null): string | null {
+  const title = ref?.title?.trim();
+  return title && title.length > 0 ? title : null;
+}
+
+function primarySourceArtifact(run: WorkflowRun): ArtifactRef | null {
+  const source = run.source_artifacts?.[0];
+  if (source && (source.artifact_id.trim() || source.title?.trim())) return source;
+  if (run.artifact_id || run.artifact_title) {
+    return {
+      artifact_id: run.artifact_id ?? "",
+      title: run.artifact_title ?? null,
+    };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -215,6 +232,9 @@ function HistoricalWorkflowRow({ run }: HistoricalWorkflowRowProps) {
     run.started_at && run.completed_at
       ? new Date(run.completed_at).getTime() - new Date(run.started_at).getTime()
       : null;
+  const sourceArtifact = primarySourceArtifact(run);
+  const sourceTitle = titleFromRef(sourceArtifact);
+  const sourceId = sourceArtifact?.artifact_id.trim();
 
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition-colors">
@@ -231,6 +251,23 @@ function HistoricalWorkflowRow({ run }: HistoricalWorkflowRowProps) {
         </Link>
         <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/60">
           …{run.id.slice(-6)}
+        </p>
+        <p className="mt-1 max-w-[220px] truncate text-[11px] text-muted-foreground">
+          Source:{" "}
+          {sourceId && sourceTitle ? (
+            <Link
+              href={`/artifact/${sourceId}`}
+              className="font-medium text-foreground hover:text-primary hover:underline underline-offset-2"
+            >
+              {sourceTitle}
+            </Link>
+          ) : sourceTitle ? (
+            <span className="font-medium text-foreground">{sourceTitle}</span>
+          ) : (
+            <span className="font-medium text-foreground">
+              No linked source artifact
+            </span>
+          )}
         </p>
       </td>
       <td className="px-2 py-2.5 text-xs text-muted-foreground capitalize">
