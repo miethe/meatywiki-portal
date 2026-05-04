@@ -1145,7 +1145,7 @@ function LibraryPageInner() {
   const { isOpen: railIsOpen, close: closeRail } = useContextRailToggle();
 
   const handleCardClick = useCallback(
-    (artifact: ArtifactCardType, _e: React.MouseEvent<HTMLLIElement>) => {
+    (artifact: ArtifactCardType) => {
       // Update selection state as a side-effect; do NOT call preventDefault so
       // the card's stretch <Link href="/artifact/:id"> navigates normally.
       setSelectedArtifact((prev) =>
@@ -1352,7 +1352,7 @@ function LibraryPageInner() {
                     return (
                       <li
                         key={artifact.id}
-                        onClick={(e) => handleCardClick(artifact, e)}
+                        onClick={() => handleCardClick(artifact)}
                         aria-current={isSelected ? "true" : undefined}
                         title={
                           isSelected
