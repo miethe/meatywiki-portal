@@ -59,6 +59,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import {
   StickyNote,
   Archive,
@@ -83,7 +84,10 @@ import { useDerivatives } from "@/hooks/useDerivatives";
 import { DerivativesList } from "@/components/workflow/derivatives-list";
 import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { ContradictionFlag } from "@/components/artifact/contradiction-flag";
-import { ContextRail, type ContextRailAction } from "@/components/layout/ContextRail";
+import {
+  ContextRail,
+  type ContextRailAction,
+} from "@/components/layout/ContextRail";
 import { ArtifactTitleBlock } from "@/components/artifact/artifact-title-block";
 import {
   useArtifactBacklinks,
@@ -104,8 +108,12 @@ import {
 } from "@/components/inline-edit";
 import type { ArtifactPatchFields } from "@/lib/api/artifacts";
 import { useArtifactFieldSave } from "./useArtifactFieldSave";
-import type { ArtifactDetail } from "@/types/artifact";
-import { useArchiveArtifact, useDeleteArtifact } from "@/hooks/use-artifact-actions";
+import type { ArtifactDetail, ServiceModeEnvelope } from "@/types/artifact";
+import {
+  useArchiveArtifact,
+  useDeleteArtifact,
+} from "@/hooks/use-artifact-actions";
+import { ApiError } from "@/lib/api/client";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -116,6 +124,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { getContextPack, listContextPackVersions } from "@/lib/api/projects";
+import type { ContextPack, ContextPackVersion } from "@/types/projects";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -135,6 +145,54 @@ function isSourceType(artifactType: string): boolean {
   return SOURCE_TYPES.has(artifactType) || artifactType.startsWith("raw_");
 }
 
+function isContextPackArtifact(artifact: ArtifactDetail): boolean {
+  const artifactType = (
+    artifact as ArtifactDetail & { artifact_type?: string | null }
+  ).artifact_type;
+  return artifact.type === "context_pack" || artifactType === "context_pack";
+}
+
+function formatContextPackDate(value?: string | null): string {
+  if (!value) return "Not recorded";
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function isNotFoundError(error: Error | null): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
+function artifactFromContextPack(pack: ContextPack): ArtifactDetail {
+  return {
+    id: pack.pack_id,
+    workspace: "projects",
+    type: "context_pack",
+    subtype: null,
+    title: pack.name,
+    status: "active",
+    schema_version: "1.0.0",
+    created: pack.created_at ?? null,
+    updated: pack.updated_at ?? null,
+    file_path: `projects/${pack.pack_id}`,
+    metadata: null,
+    summary: pack.description ?? null,
+    slug: pack.pack_id,
+    content_hash: null,
+    frontmatter_jsonb: {
+      description: pack.description ?? null,
+      artifact_ids: pack.artifact_ids,
+      version: pack.version,
+    },
+    raw_content: null,
+    compiled_content: null,
+    draft_content: null,
+    artifact_edges: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Edge type label map (shared with backlinks UI)
 // ---------------------------------------------------------------------------
@@ -150,16 +208,22 @@ const EDGE_TYPE_LABELS: Record<string, string> = {
 
 const EDGE_TYPE_COLOURS: Record<string, string> = {
   derived_from: "bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300",
-  supports: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-  relates_to: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
-  supersedes: "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
-  contradicts: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300",
-  contains: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
+  supports:
+    "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+  relates_to:
+    "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  supersedes:
+    "bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300",
+  contradicts:
+    "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300",
+  contains:
+    "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
 };
 
 function EdgeTypeBadge({ edgeType }: { edgeType: EdgeType }) {
   const label = EDGE_TYPE_LABELS[edgeType] ?? edgeType;
-  const colour = EDGE_TYPE_COLOURS[edgeType] ?? "bg-muted text-muted-foreground";
+  const colour =
+    EDGE_TYPE_COLOURS[edgeType] ?? "bg-muted text-muted-foreground";
   return (
     <span
       aria-label={`Edge type: ${label}`}
@@ -177,7 +241,14 @@ function EdgeTypeBadge({ edgeType }: { edgeType: EdgeType }) {
 // Tab definition
 // ---------------------------------------------------------------------------
 
-const BASE_TABS = ["Source", "Knowledge", "Draft", "Workflow OS", "Backlinks", "Processing"] as const;
+const BASE_TABS = [
+  "Source",
+  "Knowledge",
+  "Draft",
+  "Workflow OS",
+  "Backlinks",
+  "Processing",
+] as const;
 type TabId = (typeof BASE_TABS)[number] | "Derivatives";
 
 function tabPanelId(tab: TabId) {
@@ -263,7 +334,13 @@ function useToast() {
   return { toast, show, dismiss };
 }
 
-function ToastBanner({ toast, onDismiss }: { toast: ToastMessage; onDismiss: () => void }) {
+function ToastBanner({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastMessage;
+  onDismiss: () => void;
+}) {
   const isSuccess = toast.kind === "success";
   return (
     <div
@@ -290,7 +367,10 @@ function ToastBanner({ toast, onDismiss }: { toast: ToastMessage; onDismiss: () 
         onClick={onDismiss}
         className="ml-1 rounded p-0.5 opacity-60 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <ChevronDown aria-hidden="true" className="h-3.5 w-3.5 rotate-[270deg]" />
+        <ChevronDown
+          aria-hidden="true"
+          className="h-3.5 w-3.5 rotate-[270deg]"
+        />
       </button>
     </div>
   );
@@ -304,9 +384,16 @@ function ToastBanner({ toast, onDismiss }: { toast: ToastMessage; onDismiss: () 
 
 function DerivativesSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Loading derivatives" className="flex flex-col gap-2 animate-pulse">
+    <div
+      aria-busy="true"
+      aria-label="Loading derivatives"
+      className="flex flex-col gap-2 animate-pulse"
+    >
       {[1, 2, 3].map((i) => (
-        <div key={i} className="flex items-center gap-2 rounded-md border px-3 py-2">
+        <div
+          key={i}
+          className="flex items-center gap-2 rounded-md border px-3 py-2"
+        >
           <div className="h-4 w-16 rounded-sm bg-muted" />
           <div className="h-4 flex-1 rounded bg-muted" />
           <div className="h-4 w-10 rounded-sm bg-muted" />
@@ -326,9 +413,7 @@ function DerivativesPanel({ artifactId }: { artifactId: string }) {
 
   if (isNotFound) {
     // Backend returned 404 not_a_source or not_found — show empty state gracefully
-    return (
-      <DerivativesList derivatives={[]} />
-    );
+    return <DerivativesList derivatives={[]} />;
   }
 
   if (isError && error) {
@@ -337,7 +422,9 @@ function DerivativesPanel({ artifactId }: { artifactId: string }) {
         role="alert"
         className="rounded-md border border-destructive/30 bg-destructive/5 px-6 py-6 text-center"
       >
-        <p className="text-sm font-semibold text-destructive">Failed to load derivatives</p>
+        <p className="text-sm font-semibold text-destructive">
+          Failed to load derivatives
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
         <button
           type="button"
@@ -399,7 +486,9 @@ function BacklinkRow({ item }: { item: BacklinkItem }) {
           >
             {item.artifact_id}
           </Link>
-          <span className="ml-1.5 text-[11px] text-muted-foreground">(not indexed)</span>
+          <span className="ml-1.5 text-[11px] text-muted-foreground">
+            (not indexed)
+          </span>
         </span>
       )}
     </li>
@@ -441,7 +530,11 @@ function BacklinksSection({
           {emptyHint}
         </p>
       ) : (
-        <ul role="list" aria-label={listAriaLabel} className="flex flex-col gap-1.5">
+        <ul
+          role="list"
+          aria-label={listAriaLabel}
+          className="flex flex-col gap-1.5"
+        >
           {items.map((item) => (
             <BacklinkRow key={`${item.artifact_id}-${item.type}`} item={item} />
           ))}
@@ -475,7 +568,11 @@ function BacklinksTab({ artifactId }: { artifactId: string }) {
   // Loading skeleton
   if (isLoading) {
     return (
-      <div aria-busy="true" aria-label="Backlinks loading" className="flex flex-col gap-6">
+      <div
+        aria-busy="true"
+        aria-label="Backlinks loading"
+        className="flex flex-col gap-6"
+      >
         {[0, 1].map((section) => (
           <div key={section} className="flex flex-col gap-2">
             <div className="flex animate-pulse items-center gap-1.5">
@@ -506,7 +603,9 @@ function BacklinksTab({ artifactId }: { artifactId: string }) {
         role="alert"
         className="flex flex-col items-center justify-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 py-12 text-center"
       >
-        <p className="text-sm font-medium text-foreground">Failed to load backlinks</p>
+        <p className="text-sm font-medium text-foreground">
+          Failed to load backlinks
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
         <button
           type="button"
@@ -588,10 +687,15 @@ function BacklinksTab({ artifactId }: { artifactId: string }) {
           className="flex flex-col items-center justify-center gap-4 rounded-md border border-dashed py-16 text-center"
         >
           <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-            <ArrowDownLeft aria-hidden="true" className="size-6 text-muted-foreground" />
+            <ArrowDownLeft
+              aria-hidden="true"
+              className="size-6 text-muted-foreground"
+            />
           </div>
           <div className="max-w-xs">
-            <p className="text-sm font-medium text-foreground">No backlinks found</p>
+            <p className="text-sm font-medium text-foreground">
+              No backlinks found
+            </p>
             <p className="mt-1.5 text-xs text-muted-foreground">
               {edgeType
                 ? `No edges of type "${EDGE_TYPE_LABELS[edgeType] ?? edgeType}" found.`
@@ -628,13 +732,260 @@ function BacklinksTab({ artifactId }: { artifactId: string }) {
           <h3 id="backlinks-all-heading" className="sr-only">
             Backlinks ({items.length})
           </h3>
-          <ul role="list" aria-label="Backlinks" className="flex flex-col gap-1.5">
+          <ul
+            role="list"
+            aria-label="Backlinks"
+            className="flex flex-col gap-1.5"
+          >
             {items.map((item) => (
-              <BacklinkRow key={`${item.artifact_id}-${item.type}`} item={item} />
+              <BacklinkRow
+                key={`${item.artifact_id}-${item.type}`}
+                item={item}
+              />
             ))}
           </ul>
         </section>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Context-pack detail view (Portal v2 P2-3-08)
+// ---------------------------------------------------------------------------
+
+interface ContextPackDetailViewProps {
+  packId: string;
+  pack: ContextPack | undefined;
+  versions: ContextPackVersion[];
+  isLoading: boolean;
+  error: Error | null;
+  onRetry: () => void;
+}
+
+function ContextPackDetailView({
+  packId,
+  pack,
+  versions,
+  isLoading,
+  error,
+  onRetry,
+}: ContextPackDetailViewProps) {
+  if (isLoading) {
+    return (
+      <div
+        aria-busy="true"
+        aria-label="Loading context pack"
+        className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]"
+      >
+        <div className="rounded-md border bg-card p-5">
+          <div className="flex animate-pulse flex-col gap-3">
+            <div className="h-4 w-32 rounded bg-muted" />
+            <div className="h-6 w-2/3 rounded bg-muted" />
+            <div className="h-4 w-full rounded bg-muted" />
+            <div className="h-4 w-3/4 rounded bg-muted" />
+          </div>
+        </div>
+        <div className="rounded-md border bg-card p-4">
+          <div className="flex animate-pulse flex-col gap-3">
+            <div className="h-4 w-28 rounded bg-muted" />
+            <div className="h-12 rounded bg-muted" />
+            <div className="h-12 rounded bg-muted" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-destructive/30 bg-destructive/5 px-6 py-8 text-center"
+      >
+        <p className="text-sm font-semibold text-destructive">
+          Failed to load context pack
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className={cn(
+            "mt-4 inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive",
+            "transition-colors hover:bg-destructive/10",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (!pack) {
+    return (
+      <div
+        role="status"
+        className="rounded-md border border-dashed px-6 py-8 text-center text-sm text-muted-foreground"
+      >
+        Context pack overlay data is not available.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      aria-label="Context pack detail"
+      className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]"
+    >
+      <section className="min-w-0 rounded-md border bg-card p-5">
+        <div className="flex flex-col gap-5">
+          <div>
+            <p className="text-xs font-medium uppercase text-muted-foreground">
+              Context pack
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">
+              {pack.name}
+            </h2>
+            {pack.description ? (
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                {pack.description}
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-muted-foreground">
+                No description recorded.
+              </p>
+            )}
+          </div>
+
+          <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-md border bg-background px-3 py-2">
+              <dt className="text-xs font-medium text-muted-foreground">
+                Pack ID
+              </dt>
+              <dd className="mt-1 break-all font-mono text-xs text-foreground">
+                {pack.pack_id || packId}
+              </dd>
+            </div>
+            <div className="rounded-md border bg-background px-3 py-2">
+              <dt className="text-xs font-medium text-muted-foreground">
+                Current version
+              </dt>
+              <dd className="mt-1 font-mono text-xs text-foreground">
+                v{pack.version}
+              </dd>
+            </div>
+            <div className="rounded-md border bg-background px-3 py-2">
+              <dt className="text-xs font-medium text-muted-foreground">
+                Members
+              </dt>
+              <dd className="mt-1 font-mono text-xs text-foreground">
+                {pack.artifact_count ?? pack.artifact_ids.length}
+              </dd>
+            </div>
+            <div className="rounded-md border bg-background px-3 py-2">
+              <dt className="text-xs font-medium text-muted-foreground">
+                Updated
+              </dt>
+              <dd className="mt-1 text-xs text-foreground">
+                {formatContextPackDate(pack.updated_at)}
+              </dd>
+            </div>
+          </dl>
+
+          <section aria-labelledby="context-pack-members-heading">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h3
+                id="context-pack-members-heading"
+                className="text-sm font-semibold text-foreground"
+              >
+                Member artifacts
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                {pack.artifact_ids.length} selected
+              </span>
+            </div>
+            {pack.artifact_ids.length === 0 ? (
+              <p className="rounded-md border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+                This context pack has no member artifacts.
+              </p>
+            ) : (
+              <ul
+                role="list"
+                aria-label="Context pack member artifacts"
+                className="flex flex-col gap-2"
+              >
+                {pack.artifact_ids.map((artifactId) => (
+                  <li
+                    key={artifactId}
+                    className="flex min-w-0 items-center justify-between gap-3 rounded-md border bg-background px-3 py-2.5"
+                  >
+                    <Link
+                      href={`/artifact/${artifactId}`}
+                      className={cn(
+                        "min-w-0 truncate font-mono text-xs text-foreground",
+                        "hover:underline underline-offset-2",
+                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+                      )}
+                    >
+                      {artifactId}
+                    </Link>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      Artifact
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      </section>
+
+      <aside
+        aria-labelledby="context-pack-versions-heading"
+        className="rounded-md border bg-card p-4"
+      >
+        <h3
+          id="context-pack-versions-heading"
+          className="text-sm font-semibold text-foreground"
+        >
+          Version history
+        </h3>
+        {versions.length === 0 ? (
+          <p className="mt-3 rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+            No versions recorded.
+          </p>
+        ) : (
+          <ol
+            className="mt-3 flex flex-col gap-2"
+            aria-label="Context pack versions"
+          >
+            {versions.map((version) => (
+              <li
+                key={`${version.version}-${version.updated_at}`}
+                className="rounded-md border bg-background px-3 py-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs font-semibold text-foreground">
+                    v{version.version}
+                  </span>
+                  <time
+                    dateTime={version.updated_at}
+                    className="text-[11px] text-muted-foreground"
+                  >
+                    {formatContextPackDate(version.updated_at)}
+                  </time>
+                </div>
+                {version.description && (
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                    {version.description}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+        )}
+      </aside>
     </div>
   );
 }
@@ -706,7 +1057,9 @@ function NotFoundState({ id }: { id: string }) {
         role="alert"
         className="rounded-md border border-destructive/30 bg-destructive/5 px-6 py-8 text-center"
       >
-        <p className="text-sm font-semibold text-destructive">Artifact not found</p>
+        <p className="text-sm font-semibold text-destructive">
+          Artifact not found
+        </p>
         <p className="mt-1 font-mono text-xs text-muted-foreground">{id}</p>
         <p className="mt-3 text-xs text-muted-foreground">
           This artifact may have been deleted or the ID is incorrect.
@@ -732,7 +1085,9 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
       role="alert"
       className="rounded-md border border-destructive/30 bg-destructive/5 px-6 py-8 text-center"
     >
-      <p className="text-sm font-semibold text-destructive">Failed to load artifact</p>
+      <p className="text-sm font-semibold text-destructive">
+        Failed to load artifact
+      </p>
       <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
       <button
         type="button"
@@ -760,7 +1115,9 @@ function SourceReader({ content }: { content: string | null | undefined }) {
         role="status"
         className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-12 text-center"
       >
-        <p className="text-sm text-muted-foreground">No source content available.</p>
+        <p className="text-sm text-muted-foreground">
+          No source content available.
+        </p>
         <p className="text-xs text-muted-foreground/60">
           Source content is populated after the first vault read.
         </p>
@@ -791,7 +1148,9 @@ function KnowledgeReader({ content }: { content: string | null | undefined }) {
         role="status"
         className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-12 text-center"
       >
-        <p className="text-sm text-muted-foreground">No compiled content yet.</p>
+        <p className="text-sm text-muted-foreground">
+          No compiled content yet.
+        </p>
         <p className="text-xs text-muted-foreground/60">
           Run Compile to generate the knowledge reader output.
         </p>
@@ -851,7 +1210,6 @@ function DraftReader({ content }: { content: string | null | undefined }) {
 // Migrated from header row to ContextRail action column.
 // ---------------------------------------------------------------------------
 
-
 // ---------------------------------------------------------------------------
 // Editable metadata section (P2-06)
 //
@@ -892,11 +1250,16 @@ function MetaRow({
   );
 }
 
-function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionProps) {
+function EditableMetadataSection({
+  artifact,
+  onSave,
+}: EditableMetadataSectionProps) {
   // Tags and owners have special diff semantics — their onSave wrappers handle
   // the tags_add / tags_remove transformation so the generic handler isn't used.
-  const currentTags = (artifact.frontmatter_jsonb?.["tags"] as string[] | null) ?? [];
-  const currentOwners = (artifact.frontmatter_jsonb?.["owners"] as string[] | null) ?? [];
+  const currentTags =
+    (artifact.frontmatter_jsonb?.["tags"] as string[] | null) ?? [];
+  const currentOwners =
+    (artifact.frontmatter_jsonb?.["owners"] as string[] | null) ?? [];
 
   const handleTagsSave = useCallback(
     async (newTags: string[]) => {
@@ -933,7 +1296,7 @@ function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionPr
       {/* 2. description */}
       <MetaRow label="Description">
         <InlineTextarea
-          value={artifact.frontmatter_jsonb?.["description"] as string ?? ""}
+          value={(artifact.frontmatter_jsonb?.["description"] as string) ?? ""}
           onSave={(v) => onSave("description", v)}
           label="Description"
           rows={2}
@@ -976,7 +1339,9 @@ function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionPr
       {/* 6. domain */}
       <MetaRow label="Domain">
         <InlineChipEditor
-          values={(artifact.frontmatter_jsonb?.["domain"] as string[] | null) ?? []}
+          values={
+            (artifact.frontmatter_jsonb?.["domain"] as string[] | null) ?? []
+          }
           onSave={(v) => onSave("domain", v)}
           label="Domain"
           placeholder="Add domain…"
@@ -986,7 +1351,7 @@ function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionPr
       {/* 7. project */}
       <MetaRow label="Project">
         <InlineTextField
-          value={artifact.frontmatter_jsonb?.["project"] as string ?? ""}
+          value={(artifact.frontmatter_jsonb?.["project"] as string) ?? ""}
           onSave={(v) => onSave("project", v)}
           label="Project"
           placeholder="Project name"
@@ -997,8 +1362,7 @@ function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionPr
       <MetaRow label="Freshness">
         <InlineSelect
           value={
-            (artifact.frontmatter_jsonb?.["freshness_class"] as string) ??
-            ""
+            (artifact.frontmatter_jsonb?.["freshness_class"] as string) ?? ""
           }
           options={FRESHNESS_CLASS_OPTIONS}
           onSave={(v) => onSave("freshness_class", v)}
@@ -1024,7 +1388,7 @@ function EditableMetadataSection({ artifact, onSave }: EditableMetadataSectionPr
       {/* 10. series */}
       <MetaRow label="Series">
         <InlineTextField
-          value={artifact.frontmatter_jsonb?.["series"] as string ?? ""}
+          value={(artifact.frontmatter_jsonb?.["series"] as string) ?? ""}
           onSave={(v) => onSave("series", v)}
           label="Series"
           placeholder="Series name"
@@ -1075,9 +1439,41 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const [activeTab, setActiveTab] = useState<TabId>("Source");
   const { artifact, isLoading, isError, error, isNotFound, refetch } =
     useArtifact(id);
+  const packId = artifact?.id ?? id;
+  const shouldFetchContextPack =
+    (artifact ? isContextPackArtifact(artifact) : false) || isNotFound;
+  const contextPackQuery = useQuery<ContextPack, Error>({
+    queryKey: ["projects", "context-pack", packId],
+    queryFn: () => getContextPack(packId),
+    enabled: shouldFetchContextPack,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const contextPackVersionsQuery = useQuery<
+    ServiceModeEnvelope<ContextPackVersion>,
+    Error
+  >({
+    queryKey: ["projects", "context-pack", packId, "versions"],
+    queryFn: () => listContextPackVersions(packId, { limit: 20 }),
+    enabled: shouldFetchContextPack && Boolean(contextPackQuery.data),
+    staleTime: 30_000,
+    retry: false,
+  });
+  const effectiveArtifact =
+    artifact ??
+    (contextPackQuery.data
+      ? artifactFromContextPack(contextPackQuery.data)
+      : undefined);
+  const isContextPack = effectiveArtifact
+    ? isContextPackArtifact(effectiveArtifact)
+    : false;
 
   // ---- Toast notifications (P2-06) ----
-  const { toast: activeToast, show: showToast, dismiss: dismissToast } = useToast();
+  const {
+    toast: activeToast,
+    show: showToast,
+    dismiss: dismissToast,
+  } = useToast();
 
   // ---- Per-field save handler (extracted to useArtifactFieldSave — P2-07) ----
   const { handleFieldSave } = useArtifactFieldSave({
@@ -1088,7 +1484,11 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   // Compile success feedback: auto-clears after 3 seconds (FE-03).
   const [compileSuccess, setCompileSuccess] = useState(false);
 
-  const { compile, isCompiling, error: compileError } = useCompileArtifact({
+  const {
+    compile,
+    isCompiling,
+    error: compileError,
+  } = useCompileArtifact({
     artifactId: id,
     onSuccess: () => {
       setCompileSuccess(true);
@@ -1154,24 +1554,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     );
   }
 
-  if (isNotFound) {
-    return (
-      <div className="h-full overflow-y-auto p-4 md:p-6">
-        <NotFoundState id={id} />
-      </div>
-    );
-  }
-
-  if (isError && error) {
-    return (
-      <div className="h-full overflow-y-auto p-4 md:p-6">
-        <ErrorState error={error} onRetry={refetch} />
-      </div>
-    );
-  }
-
-  // Guard: artifact may still be undefined if query is disabled
-  if (!artifact) {
+  if (isNotFound && contextPackQuery.isLoading) {
     return (
       <div className="h-full overflow-y-auto p-4 md:p-6">
         <DetailSkeleton />
@@ -1179,11 +1562,57 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     );
   }
 
+  if (isNotFound && isNotFoundError(contextPackQuery.error)) {
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <NotFoundState id={id} />
+      </div>
+    );
+  }
+
+  if (isNotFound && contextPackQuery.error) {
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <ErrorState
+          error={contextPackQuery.error}
+          onRetry={() => void contextPackQuery.refetch()}
+        />
+      </div>
+    );
+  }
+
+  if (isNotFound && !contextPackQuery.data) {
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <NotFoundState id={id} />
+      </div>
+    );
+  }
+
+  if (isError && error && !isNotFound) {
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <ErrorState error={error} onRetry={refetch} />
+      </div>
+    );
+  }
+
+  // Guard: detail may still be undefined if both queries are disabled or pending.
+  if (!effectiveArtifact) {
+    return (
+      <div className="h-full overflow-y-auto p-4 md:p-6">
+        <DetailSkeleton />
+      </div>
+    );
+  }
+  const detailArtifact = effectiveArtifact;
+
   // Determine whether this artifact is a source type (raw_* | source_summary).
   // The Derivatives tab is only visible for source-type artifacts.
-  const showDerivativesTab = isSourceType(artifact.type);
+  const showDerivativesTab =
+    !isContextPack && isSourceType(detailArtifact.type);
 
-  // Build the list of visible tabs for this artifact.
+  // Build the list of visible tabs for this detailArtifact.
   const visibleTabs: TabId[] = showDerivativesTab
     ? [...BASE_TABS, "Derivatives"]
     : [...BASE_TABS];
@@ -1192,9 +1621,10 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   // The status field is typed as ArtifactStatus ("draft"|"active"|"archived"|"stale")
   // but the backend may return "needs_review" before the type is widened — treat
   // it as a runtime string comparison for forward-compatibility.
-  const artifactStatus = artifact.status as string;
+  const artifactStatus = detailArtifact.status as string;
   const showCompileAction =
-    artifactStatus === "needs_review" || artifactStatus === "inbox";
+    !isContextPack &&
+    (artifactStatus === "needs_review" || artifactStatus === "inbox");
 
   // Build rail actions dynamically so Compile Now can have a real onClick
   // and can be conditionally excluded for statuses that don't need it.
@@ -1263,21 +1693,31 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* Locked top region — title + key-detail badges (does not scroll)    */}
       {/* ------------------------------------------------------------------ */}
       <div className="flex shrink-0 flex-col gap-4">
-        <ArtifactTitleBlock artifact={artifact} />
+        <ArtifactTitleBlock artifact={detailArtifact} />
 
         <div className="flex flex-col gap-2">
           {/* Lens Badge Set — FULL variant, above the tab bar per manifest §3.4 */}
-          <LensBadgeSet artifact={artifact} variant="detail" />
+          <LensBadgeSet artifact={detailArtifact} variant="detail" />
 
           {/* Type / workspace / indicator badge row */}
           <div className="flex flex-wrap items-center gap-2">
-            <TypeBadge type={artifact.type} />
-            <WorkspaceBadge workspace={artifact.workspace} />
+            <TypeBadge type={detailArtifact.type} />
+            <WorkspaceBadge workspace={detailArtifact.workspace} />
             <ArtifactFreshnessBadge
-              freshness={artifact.frontmatter_jsonb?.["lens_freshness"] as string | null | undefined}
-              staleAfter={artifact.frontmatter_jsonb?.["stale_after"] as string | null | undefined}
+              freshness={
+                detailArtifact.frontmatter_jsonb?.["lens_freshness"] as
+                  | string
+                  | null
+                  | undefined
+              }
+              staleAfter={
+                detailArtifact.frontmatter_jsonb?.["stale_after"] as
+                  | string
+                  | null
+                  | undefined
+              }
             />
-            <ContradictionFlag artifactId={artifact.id} />
+            <ContradictionFlag artifactId={detailArtifact.id} />
           </div>
         </div>
       </div>
@@ -1291,128 +1731,151 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
         {/* the locked top region. pr-1 keeps cards clear of the scrollbar.  */}
         <div className="flex h-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
           {/* Handoff Chain ribbon (P4-04) */}
-          <HandoffChainRibbon artifact={artifact} />
+          <HandoffChainRibbon artifact={detailArtifact} />
 
           {/* Inline-editable metadata section (P2-06) */}
-          <EditableMetadataSection artifact={artifact} onSave={handleFieldSave} />
+          <EditableMetadataSection
+            artifact={detailArtifact}
+            onSave={handleFieldSave}
+          />
 
-          {/* Tab bar — sticky at top of content scroll so the active tab
-              stays reachable while reader content scrolls beneath it.
-              Outer wrapper provides height; inner div handles horizontal
-              overflow (CSS coerces overflow-y to auto when overflow-x is
-              non-visible, collapsing height to 0 in flex columns). */}
-          <div className="sticky top-0 z-10 shrink-0 border-b bg-background">
-            <div
-              role="tablist"
-              aria-label="Artifact readers"
-              className="-mx-1 flex overflow-x-auto px-1 scrollbar-none [-webkit-overflow-scrolling:touch]"
-            >
-              {visibleTabs.map((tab) => (
-                <button
-                  key={tab}
-                  id={tabButtonId(tab)}
-                  role="tab"
-                  type="button"
-                  aria-selected={tab === activeTab}
-                  aria-controls={tabPanelId(tab)}
-                  onClick={() => setActiveTab(tab)}
-                  className={cn(
-                    "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    tab === activeTab
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
-                  )}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Reader panels */}
-          <div className="min-w-0 flex-1">
-          {/* Source tab */}
-          <div
-            id={tabPanelId("Source")}
-            role="tabpanel"
-            aria-labelledby={tabButtonId("Source")}
-            hidden={activeTab !== "Source"}
-          >
-            <SourceReader content={artifact.raw_content} />
-          </div>
-
-          {/* Knowledge tab */}
-          <div
-            id={tabPanelId("Knowledge")}
-            role="tabpanel"
-            aria-labelledby={tabButtonId("Knowledge")}
-            hidden={activeTab !== "Knowledge"}
-          >
-            <KnowledgeReader content={artifact.compiled_content} />
-          </div>
-
-          {/* Draft tab */}
-          <div
-            id={tabPanelId("Draft")}
-            role="tabpanel"
-            aria-labelledby={tabButtonId("Draft")}
-            hidden={activeTab !== "Draft"}
-          >
-            <DraftReader content={artifact.draft_content} />
-          </div>
-
-          {/* Workflow OS tab */}
-          <div
-            id={tabPanelId("Workflow OS")}
-            role="tabpanel"
-            aria-labelledby={tabButtonId("Workflow OS")}
-            hidden={activeTab !== "Workflow OS"}
-          >
-            <WorkflowOSTab
-              artifact={artifact}
-              enabled={activeTab === "Workflow OS"}
+          {isContextPack ? (
+            <ContextPackDetailView
+              packId={packId}
+              pack={contextPackQuery.data}
+              versions={contextPackVersionsQuery.data?.data ?? []}
+              isLoading={
+                contextPackQuery.isLoading || contextPackVersionsQuery.isLoading
+              }
+              error={
+                contextPackQuery.error ?? contextPackVersionsQuery.error ?? null
+              }
+              onRetry={() => {
+                void contextPackQuery.refetch();
+                void contextPackVersionsQuery.refetch();
+              }}
             />
-          </div>
+          ) : (
+            <>
+              {/* Tab bar — sticky at top of content scroll so the active tab
+                  stays reachable while reader content scrolls beneath it.
+                  Outer wrapper provides height; inner div handles horizontal
+                  overflow (CSS coerces overflow-y to auto when overflow-x is
+                  non-visible, collapsing height to 0 in flex columns). */}
+              <div className="sticky top-0 z-10 shrink-0 border-b bg-background">
+                <div
+                  role="tablist"
+                  aria-label="Artifact readers"
+                  className="-mx-1 flex overflow-x-auto px-1 scrollbar-none [-webkit-overflow-scrolling:touch]"
+                >
+                  {visibleTabs.map((tab) => (
+                    <button
+                      key={tab}
+                      id={tabButtonId(tab)}
+                      role="tab"
+                      type="button"
+                      aria-selected={tab === activeTab}
+                      aria-controls={tabPanelId(tab)}
+                      onClick={() => setActiveTab(tab)}
+                      className={cn(
+                        "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
+                        "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                        tab === activeTab
+                          ? "border-primary text-foreground"
+                          : "border-transparent text-muted-foreground hover:border-border hover:text-foreground",
+                      )}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Backlinks tab (P7-04) */}
-          <div
-            id={tabPanelId("Backlinks")}
-            role="tabpanel"
-            aria-labelledby={tabButtonId("Backlinks")}
-            hidden={activeTab !== "Backlinks"}
-          >
-            {activeTab === "Backlinks" && (
-              <BacklinksTab artifactId={artifact.id} />
-            )}
-          </div>
+              {/* Reader panels */}
+              <div className="min-w-0 flex-1">
+                {/* Source tab */}
+                <div
+                  id={tabPanelId("Source")}
+                  role="tabpanel"
+                  aria-labelledby={tabButtonId("Source")}
+                  hidden={activeTab !== "Source"}
+                >
+                  <SourceReader content={detailArtifact.raw_content} />
+                </div>
 
-          {/* Processing history tab (P2-02) */}
-          <div
-            id={tabPanelId("Processing")}
-            role="tabpanel"
-            aria-labelledby={tabButtonId("Processing")}
-            hidden={activeTab !== "Processing"}
-          >
-            <ProcessingHistoryTab artifactId={artifact.id} />
-          </div>
+                {/* Knowledge tab */}
+                <div
+                  id={tabPanelId("Knowledge")}
+                  role="tabpanel"
+                  aria-labelledby={tabButtonId("Knowledge")}
+                  hidden={activeTab !== "Knowledge"}
+                >
+                  <KnowledgeReader content={detailArtifact.compiled_content} />
+                </div>
 
-          {/* Derivatives tab — source-type artifacts only (DETAIL-03) */}
-          {showDerivativesTab && (
-            <div
-              id={tabPanelId("Derivatives")}
-              role="tabpanel"
-              aria-labelledby={tabButtonId("Derivatives")}
-              hidden={activeTab !== "Derivatives"}
-            >
-              <DerivativesPanel artifactId={artifact.id} />
-            </div>
+                {/* Draft tab */}
+                <div
+                  id={tabPanelId("Draft")}
+                  role="tabpanel"
+                  aria-labelledby={tabButtonId("Draft")}
+                  hidden={activeTab !== "Draft"}
+                >
+                  <DraftReader content={detailArtifact.draft_content} />
+                </div>
+
+                {/* Workflow OS tab */}
+                <div
+                  id={tabPanelId("Workflow OS")}
+                  role="tabpanel"
+                  aria-labelledby={tabButtonId("Workflow OS")}
+                  hidden={activeTab !== "Workflow OS"}
+                >
+                  <WorkflowOSTab
+                    artifact={detailArtifact}
+                    enabled={activeTab === "Workflow OS"}
+                  />
+                </div>
+
+                {/* Backlinks tab (P7-04) */}
+                <div
+                  id={tabPanelId("Backlinks")}
+                  role="tabpanel"
+                  aria-labelledby={tabButtonId("Backlinks")}
+                  hidden={activeTab !== "Backlinks"}
+                >
+                  {activeTab === "Backlinks" && (
+                    <BacklinksTab artifactId={detailArtifact.id} />
+                  )}
+                </div>
+
+                {/* Processing history tab (P2-02) */}
+                <div
+                  id={tabPanelId("Processing")}
+                  role="tabpanel"
+                  aria-labelledby={tabButtonId("Processing")}
+                  hidden={activeTab !== "Processing"}
+                >
+                  <ProcessingHistoryTab artifactId={detailArtifact.id} />
+                </div>
+
+                {/* Derivatives tab — source-type artifacts only (DETAIL-03) */}
+                {showDerivativesTab && (
+                  <div
+                    id={tabPanelId("Derivatives")}
+                    role="tabpanel"
+                    aria-labelledby={tabButtonId("Derivatives")}
+                    hidden={activeTab !== "Derivatives"}
+                  >
+                    <DerivativesPanel artifactId={detailArtifact.id} />
+                  </div>
+                )}
+              </div>
+            </>
           )}
-        </div>
 
           {/* Activity Timeline (P4-04) — full-width feed at bottom of      */}
           {/* the scrollable content column.                                  */}
-          <ActivityTimeline artifactId={artifact.id} />
+          <ActivityTimeline artifactId={detailArtifact.id} />
         </div>
 
         {/* ContextRail — inline right-column rail (ADR-DPI-002 Option A.1).
@@ -1434,7 +1897,10 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
                 "dark:border-emerald-500/20 dark:bg-emerald-950/30 dark:text-emerald-400",
               )}
             >
-              <span aria-hidden="true" className="size-1.5 rounded-full bg-emerald-500" />
+              <span
+                aria-hidden="true"
+                className="size-1.5 rounded-full bg-emerald-500"
+              />
               Compile job queued
             </div>
           )}
@@ -1452,8 +1918,8 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           )}
           <ContextRail
             variant="generic"
-            artifactId={artifact.id}
-            artifact={artifact}
+            artifactId={detailArtifact.id}
+            artifact={detailArtifact}
             actions={railActions}
             ariaLabel="Artifact context"
           />
@@ -1470,17 +1936,22 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* Delete confirmation dialog */}
       <AlertDialog
         open={showDeleteConfirm}
-        onOpenChange={(open) => { if (!open) setShowDeleteConfirm(false); }}
+        onOpenChange={(open) => {
+          if (!open) setShowDeleteConfirm(false);
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete artifact?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently remove this artifact from your vault. This action cannot be undone.
+              This will permanently remove this artifact from your vault. This
+              action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setShowDeleteConfirm(false)}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
               disabled={deleteMutation.isPending}
