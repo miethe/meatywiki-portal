@@ -18,7 +18,14 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
-import { LayoutGrid, List, AlertCircle, FolderKanban } from "lucide-react";
+import Link from "next/link";
+import {
+  LayoutGrid,
+  List,
+  AlertCircle,
+  FolderKanban,
+  PackagePlus,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   ArtifactCard,
@@ -65,7 +72,11 @@ interface ViewToggleProps {
 
 function ViewToggle({ view, onChange }: ViewToggleProps) {
   return (
-    <div role="group" aria-label="View layout" className="flex rounded-md border">
+    <div
+      role="group"
+      aria-label="View layout"
+      className="flex rounded-md border"
+    >
       <button
         type="button"
         aria-label="List view"
@@ -113,11 +124,16 @@ function EmptyState({ hasFilters }: { hasFilters: boolean }) {
       className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-16 text-center"
     >
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/30">
-        <FolderKanban aria-hidden="true" className="size-6 text-amber-600 dark:text-amber-400" />
+        <FolderKanban
+          aria-hidden="true"
+          className="size-6 text-amber-600 dark:text-amber-400"
+        />
       </div>
       <div>
         <p className="text-sm font-medium text-foreground">
-          {hasFilters ? "No matching project artifacts" : "No project artifacts yet"}
+          {hasFilters
+            ? "No matching project artifacts"
+            : "No project artifacts yet"}
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
           {hasFilters
@@ -141,7 +157,9 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
     >
       <AlertCircle aria-hidden="true" className="size-8 text-destructive" />
       <div>
-        <p className="text-sm font-medium text-foreground">Failed to load project artifacts</p>
+        <p className="text-sm font-medium text-foreground">
+          Failed to load project artifacts
+        </p>
         <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
       </div>
       <button
@@ -212,7 +230,11 @@ export default function ProjectsPage() {
     (next: Partial<LibraryFilters>) => {
       setFilters((prev) => {
         // Enforce the locked facet — never let a partial update override it
-        const updated: LibraryFilters = { ...prev, ...next, facet: PROJECTS_FACET };
+        const updated: LibraryFilters = {
+          ...prev,
+          ...next,
+          facet: PROJECTS_FACET,
+        };
         syncToUrl({
           lensFidelity: updated.lensFidelity,
           lensFreshness: updated.lensFreshness,
@@ -260,10 +282,23 @@ export default function ProjectsPage() {
           </p>
         </div>
 
-        <ViewToggle
-          view={mounted ? viewMode : "grid"}
-          onChange={handleViewChange}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/projects/new"
+            className={cn(
+              "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground sm:h-9 sm:min-h-0",
+              "transition-colors hover:bg-primary/90",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            )}
+          >
+            <PackagePlus aria-hidden="true" className="size-4" />
+            New context pack
+          </Link>
+          <ViewToggle
+            view={mounted ? viewMode : "grid"}
+            onChange={handleViewChange}
+          />
+        </div>
       </div>
 
       {/* Filter bar — facet row hidden (lockedFacet="projects"), rest user-editable */}
