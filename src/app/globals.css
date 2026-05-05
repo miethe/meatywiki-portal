@@ -206,6 +206,52 @@
 }
 
 /**
+ * Decision Framework — weight slider styling (P2-5-03)
+ *
+ * Cross-browser range input using CSS variables for the filled-track gradient.
+ * --slider-pct is set inline by WeightSlider based on the current value.
+ */
+@layer utilities {
+  .decision-weight-slider {
+    /* Firefox: filled track via box-shadow trick */
+    background: linear-gradient(
+      to right,
+      hsl(var(--primary)) 0%,
+      hsl(var(--primary)) var(--slider-pct, 50%),
+      hsl(var(--border)) var(--slider-pct, 50%),
+      hsl(var(--border)) 100%
+    );
+  }
+
+  .decision-weight-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: hsl(var(--primary));
+    cursor: pointer;
+    border: 2px solid hsl(var(--background));
+    box-shadow: 0 0 0 1px hsl(var(--primary));
+    transition: box-shadow 120ms ease;
+  }
+
+  .decision-weight-slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 0 3px hsl(var(--primary) / 0.25);
+  }
+
+  .decision-weight-slider::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: hsl(var(--primary));
+    cursor: pointer;
+    border: 2px solid hsl(var(--background));
+    box-shadow: 0 0 0 1px hsl(var(--primary));
+  }
+}
+
+/**
  * Portal v1.5 editorial typography utilities — design spec §6.3
  *
  * .text-display-xl  — 48/56, 500, display serif  (hero headings)
