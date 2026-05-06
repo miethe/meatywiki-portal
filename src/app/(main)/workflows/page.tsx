@@ -51,6 +51,7 @@ import { ContextRail } from "@/components/ui/context-rail";
 import { ContextRailProvider, useContextRailToggle } from "@/components/ui/context-rail-context";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
 import { ssePool } from "@/lib/sse/pool";
+import { RoutingRecommendationCard } from "@/components/artifact/routing-recommendation-card";
 import { cn } from "@/lib/utils";
 import type { ArtifactRef, WorkflowRun } from "@/types/artifact";
 import type { RailSection } from "@/components/ui/context-rail";
@@ -350,19 +351,35 @@ function ActiveWorkflowsSection({ activeRuns, isLoading }: ActiveWorkflowsSectio
         "md:flex-wrap md:overflow-x-visible",
       )}
     >
-      {activeRuns.slice(0, 6).map((run) => (
-        <div
-          key={run.id}
-          role="listitem"
-          className={cn(
-            "snap-start shrink-0",
-            // Mobile: fixed card width; md+: grow to fill half of available space
-            "w-[260px] md:w-[calc(50%-0.5rem)] md:min-w-[220px]",
-          )}
-        >
-          <ActiveWorkflowCard run={run} className="h-full" />
-        </div>
-      ))}
+      {activeRuns.slice(0, 6).map((run) => {
+        // Derive source artifact ID for routing recommendation (P2-4-08)
+        const sourceArtifactId =
+          run.source_artifacts?.[0]?.artifact_id?.trim() || run.artifact_id?.trim() || null;
+        return (
+          <div
+            key={run.id}
+            role="listitem"
+            className={cn(
+              "snap-start shrink-0 flex flex-col gap-2",
+              // Mobile: fixed card width; md+: grow to fill half of available space
+              "w-[260px] md:w-[calc(50%-0.5rem)] md:min-w-[220px]",
+            )}
+          >
+            <ActiveWorkflowCard run={run} className="flex-1" />
+            {/* Routing suggestion strip (P2-4-08) — shown when source artifact is known */}
+            {sourceArtifactId && (
+              <RoutingRecommendationCard
+                artifactId={sourceArtifactId}
+                variant="run"
+                onRunWorkflow={(templateSlug) => {
+                  // TODO: open initiation wizard pre-seeded with template (P2-4-08 follow-up)
+                  console.info("[WorkflowsDashboard] Queue workflow:", templateSlug, "for", sourceArtifactId);
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -554,9 +571,24 @@ function WorkflowsPageInner() {
             </p>
           </div>
 
-          {/* CTAs: "New Initiation" (page-level) + InitiationWizardDialog (top bar) */}
+          {/* CTAs: Ops Dashboard link, Refresh, "New Initiation" */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Page-level "New Initiation" CTA per Stitch §4.6 */}
+            {/* Ops Dashboard shortcut — Screen C */}
+            <Link
+              href="/workflows/ops"
+              className={cn(
+                "inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-xs font-medium sm:h-8 sm:min-h-0",
+                "border border-input bg-background text-foreground",
+                "transition-colors hover:bg-accent hover:text-accent-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              )}
+              aria-label="Open Ops Dashboard"
+            >
+              <Activity aria-hidden="true" className="size-3.5" />
+              Ops
+            </Link>
+
+            {/* Page-level refresh */}
             <button
               type="button"
               onClick={() => void refetch()}

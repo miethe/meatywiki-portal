@@ -20,17 +20,15 @@
  *   - status: multi-value (?status=active&status=draft) — multi-select in Library
  *   - sort: updated | created | title  (field name)
  *   - order: asc | desc
+ *   - tag[]: repeatable tag filter, AND semantics
+ *   - date_from/date_to: created date range
+ *   - card_context: include enriched summary/linked/activity card fields
  *   - cursor: opaque pagination token
  *   - limit: page size
  *
- * NOTE: tag filter is NOT implemented — backend does not support tag query param
- * in v1. When backend adds tag filtering, add `tags?: string[]` to params and
- * append each tag as ?tags=foo&tags=bar.
- *
  * Preview field note:
- *   The backend ArtifactCard DTO does NOT include a preview/summary field on
- *   list responses (design spec §4). The `preview` field on the frontend type
- *   remains undefined for all list-view items in v1.
+ *   Library callers request card_context=true so cards/sheets can render summary
+ *   and linked/activity context without a per-card detail fetch.
  */
 
 import { apiFetch } from "./client";
@@ -98,11 +96,14 @@ export interface ListArtifactsParams {
   order?: SortOrder;
   cursor?: string | null;
   limit?: number;
-  /**
-   * @deprecated use type[] array instead. Kept for P3-03 back-compat.
-   * Will be removed when P3-03 is updated.
-   */
-  tags?: string;
+  /** Tag filters. Arrays serialise as repeatable ?tag[]= values. */
+  tags?: string | string[];
+  /** Date lower bound (YYYY-MM-DD). Serialised as ?date_from=. */
+  dateFrom?: string;
+  /** Date upper bound (YYYY-MM-DD). Serialised as ?date_to=. */
+  dateTo?: string;
+  /** Request enriched card fields for preview-first Library UI. */
+  cardContext?: boolean;
   /**
    * Lens fidelity filter (P4-09). Repeatable; ORed within the param.
    * Maps to ?lens_fidelity=high&lens_fidelity=medium on the backend.
@@ -159,6 +160,9 @@ export async function listArtifacts(
     cursor,
     limit = 50,
     tags,
+    dateFrom,
+    dateTo,
+    cardContext,
     lensFidelity,
     lensFreshness,
     lensVerification,
@@ -192,7 +196,15 @@ export async function listArtifacts(
   if (sort) query.set("sort", sort);
   if (order) query.set("order", order);
   if (cursor) query.set("cursor", cursor);
-  if (tags) query.set("tags", tags); // legacy P3-03 compat
+  if (tags) {
+    const tagValues = Array.isArray(tags) ? tags : [tags];
+    for (const tag of tagValues) {
+      if (tag) query.append("tag[]", tag);
+    }
+  }
+  if (dateFrom) query.set("date_from", dateFrom);
+  if (dateTo) query.set("date_to", dateTo);
+  if (cardContext) query.set("card_context", "true");
   query.set("limit", String(limit));
 
   // Lens filters (P4-09) — each value appended as a separate query param
@@ -327,6 +339,39 @@ export async function getRoutingRecommendation(
   return apiFetch<RoutingRecommendation>(
     `/artifacts/${encodeURIComponent(id)}/routing-recommendation`,
     { method: "GET" },
+  );
+}
+// ---------------------------------------------------------------------------
+// ML routing recommendation (P2-4-08) — GET /api/artifacts/:id/routing
+// ---------------------------------------------------------------------------
+
+/**
+ * ML-based routing recommendation returned by
+ * GET /api/artifacts/:id/routing?recommend=true (P2-4-08).
+ *
+ * ```next_template``` is null when no recommendation is available.
+ * ```confidence_score``` is a float in [0.0, 1.0].
+ */
+export interface MLRoutingRecommendation {
+  next_template: string | null;
+  confidence_score: number;
+  rationale: string | null;
+}
+
+/**
+ * Fetch the ML-based routing recommendation for an artifact.
+ *
+ * Calls GET /api/artifacts/{artifact_id}/routing?recommend=true.
+ * Returns null next_template when no recommendation matches.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}/routing (P2-4-08)
+ */
+export async function getMLRoutingRecommendation(
+  id: string,
+): Promise<MLRoutingRecommendation> {
+  return apiFetch<MLRoutingRecommendation>(
+    `/artifacts/${encodeURIComponent(id)}/routing?recommend=true`,
+    { method: 'GET' },
   );
 }
 

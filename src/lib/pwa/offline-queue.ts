@@ -17,6 +17,10 @@
  * Retry policy: up to 3 attempts with exponential backoff (1s → 2s → 4s).
  * After 3 failures the record moves to failed_queue.
  *
+ * Queue bound: offline_queue is capped at MAX_QUEUE_SIZE (100) items.
+ * When the bound is exceeded on enqueue, the oldest item is silently
+ * discarded (FIFO eviction) and a console.warn is emitted.
+ *
  * Custom event dispatched on queue mutations:
  *   window.dispatchEvent(new CustomEvent('offline-queue-change'))
  * This lets useOfflineQueue hook react without polling.
@@ -34,6 +38,9 @@ const MAX_RETRIES = 3;
 
 /** Base backoff delay in ms. Actual delay = BASE_BACKOFF_MS * 2^attempt. */
 const BASE_BACKOFF_MS = 1000;
+
+/** Maximum number of items held in offline_queue at any time. */
+const MAX_QUEUE_SIZE = 100;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -170,8 +177,23 @@ export class OfflineQueueManager {
    *
    * Security: Authorization header is stripped before storage.
    * Token is re-added from the browser cookie on replay.
+   *
+   * Queue bound: if offline_queue is at MAX_QUEUE_SIZE (100) when this is
+   * called, the oldest item is discarded (FIFO eviction) before the new
+   * record is added. A console.warn is emitted on eviction; no UI toast is
+   * raised (silent discard by design).
    */
   static async enqueue(params: EnqueueParams): Promise<number> {
+    // --- Queue-bound check (FIFO eviction when at capacity) -----------------
+    const { queued: currentCount } = await OfflineQueueManager.count();
+    if (currentCount >= MAX_QUEUE_SIZE) {
+      console.warn(
+        `[OfflineQueue] Offline queue full (${MAX_QUEUE_SIZE} items), discarding oldest entry`,
+      );
+      await OfflineQueueManager.dequeueNext();
+    }
+    // ------------------------------------------------------------------------
+
     const db = await openDb();
 
     const record: QueueRecord = {

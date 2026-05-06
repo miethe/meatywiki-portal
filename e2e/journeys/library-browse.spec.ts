@@ -155,7 +155,7 @@ test.describe("Journey 3: Library Browse", () => {
     }
   });
 
-  test("artifact cards are clickable and navigate to detail", async ({
+  test("artifact cards open preview sheet and explicit action navigates to detail", async ({
     authenticatedPage: page,
     skipIfBackendDown, // eslint-disable-line @typescript-eslint/no-unused-vars
   }) => {
@@ -177,8 +177,18 @@ test.describe("Journey 3: Library Browse", () => {
       const href = await firstLink.getAttribute("href");
       expect(href).toMatch(/\/artifact\//);
 
-      // Click through to detail
+      // Plain click opens the preview sheet instead of navigating immediately.
       await firstLink.click();
+      const previewSheet = page.getByRole("dialog");
+      await expect(previewSheet).toBeVisible({ timeout: 10_000 });
+      await expect(page).toHaveURL(/\/library/);
+
+      // The explicit action still navigates to the full detail page.
+      const openFullPage = previewSheet.getByRole("link", {
+        name: /Open full page/i,
+      });
+      await expect(openFullPage).toHaveAttribute("href", /\/artifact\//);
+      await openFullPage.click();
       await expect(page).toHaveURL(/\/artifact\//, { timeout: 10_000 });
     } else {
       test.info().annotations.push({

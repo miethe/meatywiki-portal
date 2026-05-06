@@ -71,6 +71,9 @@ export function useLibraryRollup(
     lensFidelity = [],
     lensFreshness = [],
     lensVerification = [],
+    dateFrom,
+    dateTo,
+    tags = [],
     // types is part of LibraryFilters but the backend ignores it when
     // view=source_rollup. We include it only in the query key so that lens
     // switches from a flat-type view trigger a fresh rollup fetch.
@@ -92,7 +95,20 @@ export function useLibraryRollup(
       "rollup",
       // types included in key so switching from a flat-type lens triggers a fresh fetch;
       // the backend ignores types when view=source_rollup (see JSDoc above).
-      { rollupLens, types, statuses, sort, order, facet, lensFidelity, lensFreshness, lensVerification },
+      {
+        rollupLens,
+        types,
+        statuses,
+        sort,
+        order,
+        facet,
+        dateFrom,
+        dateTo,
+        tags,
+        lensFidelity,
+        lensFreshness,
+        lensVerification,
+      },
     ],
     queryFn: async ({ pageParam }) => {
       return listArtifactsRollup({
@@ -103,6 +119,10 @@ export function useLibraryRollup(
         sort,
         order,
         rollupLens,
+        dateFrom,
+        dateTo,
+        tags: tags.length > 0 ? tags : undefined,
+        cardContext: true,
         lensFidelity: lensFidelity.length > 0 ? lensFidelity : undefined,
         lensFreshness: lensFreshness.length > 0 ? lensFreshness : undefined,
         lensVerification: lensVerification.length > 0 ? lensVerification : undefined,

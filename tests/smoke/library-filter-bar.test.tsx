@@ -20,6 +20,7 @@ const baseFilters: LibraryFilters = {
   statuses: [],
   sort: "updated",
   order: "desc",
+  tags: [],
   lensFidelity: [],
   lensFreshness: [],
   lensVerification: [],
@@ -70,21 +71,45 @@ describe("LibraryFilterBar", () => {
           ...baseFilters,
           types: ["concept"],
           statuses: ["active"],
+          tags: ["ml"],
           lensFidelity: ["high"],
         }}
         onFiltersChange={onFiltersChange}
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /clear filters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /clear all/i }));
 
     expect(onFiltersChange).toHaveBeenCalledWith({
       types: [],
       statuses: [],
+      facet: undefined,
+      dateFrom: undefined,
+      dateTo: undefined,
+      tags: [],
       lensFidelity: [],
       lensFreshness: [],
       lensVerification: [],
     });
+  });
+
+  it("emits tag filter updates and shows active chips", () => {
+    const onFiltersChange = jest.fn();
+
+    renderWithProviders(
+      <LibraryFilterBar
+        filters={{ ...baseFilters, tags: ["existing"] }}
+        onFiltersChange={onFiltersChange}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText(/tags/i), {
+      target: { value: "new-tag" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^add$/i }));
+
+    expect(onFiltersChange).toHaveBeenCalledWith({ tags: ["existing", "new-tag"] });
+    expect(screen.getByRole("button", { name: /tag: existing/i })).toBeInTheDocument();
   });
 });
 
@@ -175,7 +200,7 @@ describe("LibraryFilterBar — Lens Filter Panel (P4-09)", () => {
     expect(onFiltersChange).toHaveBeenCalledWith({ lensVerification: ["verified"] });
   });
 
-  it("clears only lens filters when 'Clear lens filters' is clicked", () => {
+  it("clears a quality filter from its active chip", () => {
     const onFiltersChange = jest.fn();
     renderWithProviders(
       <LibraryFilterBar
@@ -189,11 +214,9 @@ describe("LibraryFilterBar — Lens Filter Panel (P4-09)", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /clear lens filters/i }));
+    fireEvent.click(screen.getByRole("button", { name: /quality: high/i }));
     expect(onFiltersChange).toHaveBeenCalledWith({
       lensFidelity: [],
-      lensFreshness: [],
-      lensVerification: [],
     });
   });
 
@@ -246,9 +269,12 @@ describe("useLensFilterUrlSync", () => {
   });
 
   it("readFromUrl parses lens params from URL", () => {
-    setSearch("?lens_fidelity=high&lens_freshness=current&lens_verification=verified");
+    setSearch("?date_from=2026-05-01&date_to=2026-05-05&tag[]=ml&lens_fidelity=high&lens_freshness=current&lens_verification=verified");
     const { result } = renderHook(() => useLensFilterUrlSync());
     const read = result.current.readFromUrl();
+    expect(read!.dateFrom).toBe("2026-05-01");
+    expect(read!.dateTo).toBe("2026-05-05");
+    expect(read!.tags).toEqual(["ml"]);
     expect(read!.lensFidelity).toEqual(["high"]);
     expect(read!.lensFreshness).toEqual(["current"]);
     expect(read!.lensVerification).toEqual(["verified"]);
@@ -267,6 +293,9 @@ describe("useLensFilterUrlSync", () => {
 
     act(() => {
       result.current.syncToUrl({
+        dateFrom: undefined,
+        dateTo: undefined,
+        tags: [],
         lensFidelity: ["high", "medium"],
         lensFreshness: ["current"],
         lensVerification: [],
@@ -296,6 +325,9 @@ describe("useLensFilterUrlSync", () => {
 
     act(() => {
       result.current.syncToUrl({
+        dateFrom: "2026-05-01",
+        dateTo: undefined,
+        tags: ["ml"],
         lensFidelity: ["high"],
         lensFreshness: [],
         lensVerification: [],
@@ -305,6 +337,8 @@ describe("useLensFilterUrlSync", () => {
     const [[, , url]] = (window.history.replaceState as jest.Mock).mock.calls;
     expect(url).toContain("workspace=library");
     expect(url).toContain("status=active");
+    expect(url).toContain("date_from=2026-05-01");
+    expect(url).toContain("tag%5B%5D=ml");
     expect(url).toContain("lens_fidelity=high");
   });
 
@@ -314,6 +348,9 @@ describe("useLensFilterUrlSync", () => {
 
     act(() => {
       result.current.syncToUrl({
+        dateFrom: undefined,
+        dateTo: undefined,
+        tags: [],
         lensFidelity: [],
         lensFreshness: [],
         lensVerification: [],

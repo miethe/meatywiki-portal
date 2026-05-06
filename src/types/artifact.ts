@@ -100,6 +100,28 @@ export interface ArtifactMetadataCard {
 }
 
 // ---------------------------------------------------------------------------
+// Enriched card context (GET /api/artifacts?card_context=true)
+// ---------------------------------------------------------------------------
+
+export type ArtifactCardLinkDirection = "incoming" | "outgoing";
+
+export interface ArtifactLinkedPreview {
+  artifact_id: string;
+  title: string | null;
+  artifact_type?: string | null;
+  subtype?: string | null;
+  relationship_type: string;
+  direction: ArtifactCardLinkDirection | string;
+}
+
+export interface ArtifactGraphContext {
+  incoming_count: number;
+  outgoing_count: number;
+  relationship_counts: Record<string, number>;
+  linked_previews: ArtifactLinkedPreview[];
+}
+
+// ---------------------------------------------------------------------------
 // Artifact status / workspace / facet
 // ---------------------------------------------------------------------------
 
@@ -140,8 +162,13 @@ export interface ArtifactCard {
   updated?: string | null;
   file_path: string;
   metadata?: ArtifactMetadataCard | null;
+  series?: string | null;
+  owners?: string[];
+  publish_state?: string | null;
   /** Brief excerpt for card preview — backend may include via summary field */
   preview?: string | null;
+  /** Lightweight graph context projected when ?card_context=true is requested. */
+  graph_context?: ArtifactGraphContext | null;
   /** Active workflow run for this artifact, if any */
   workflow_status?: WorkflowRunStatus | null;
   /**
