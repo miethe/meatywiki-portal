@@ -36,7 +36,7 @@
 
 import type React from "react";
 import Link from "next/link";
-import { MoreVertical, Archive, Trash2 } from "lucide-react";
+import { MoreVertical, Archive, Trash2, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ArtifactCard as ArtifactCardType, WorkflowRunStatus } from "@/types/artifact";
 import { TypeBadge } from "./type-badge";
@@ -75,7 +75,12 @@ const FACET_BADGE_WORKSPACES = new Set<string>(["blog", "projects"]);
  * Display variants for ArtifactCard (Stitch Reskin P2-02, design spec §3).
  * Orthogonal to the existing layout `variant` ('list'|'grid').
  */
-export type ArtifactCardDisplayVariant = "standard" | "featured" | "compact" | "hero";
+export type ArtifactCardDisplayVariant =
+  | "standard"
+  | "featured"
+  | "compact"
+  | "hero"
+  | "workbench";
 
 /**
  * Left-edge type-accent stripe colors, derived from the same type→color
@@ -156,6 +161,14 @@ interface ArtifactCardProps {
    */
   activeRun?: ActiveRunShape | null;
   /**
+   * Optional card link click handler. Library uses this to open the preview
+   * sheet on plain click while preserving the anchor href for modifier-clicks.
+   */
+  onCardClick?: (
+    event: React.MouseEvent<HTMLAnchorElement>,
+    artifact: ArtifactCardType,
+  ) => void;
+  /**
    * Inbox mode (P5-02): when set, overrides card layout to the triage row
    * design — type chip + title (bold) + 1-line preview (truncated) +
    * UrgencyBadge (right-aligned) + contextual CTA button.
@@ -203,6 +216,7 @@ export function ArtifactCard({
   thumbnail,
   typeAccent = true,
   activeRun,
+  onCardClick,
   inboxGroup,
   urgencyLevel,
   urgencyMinutesAgo,
@@ -220,6 +234,7 @@ export function ArtifactCard({
     updated,
     workflow_status,
     preview,
+    graph_context,
     research_origin,
     derivative_count,
   } = artifact;
@@ -239,6 +254,9 @@ export function ArtifactCard({
   const isHero = displayVariant === "hero";
   const isFeatured = displayVariant === "featured";
   const isCompact = displayVariant === "compact";
+  const isWorkbench = displayVariant === "workbench";
+  const connectionCount =
+    (graph_context?.incoming_count ?? 0) + (graph_context?.outgoing_count ?? 0);
 
   // ---------------------------------------------------------------------------
   // Inbox mode render path (P5-02)
@@ -355,13 +373,16 @@ export function ArtifactCard({
       className={cn(
         "group relative border bg-card transition-shadow",
         // Base radius per display variant
-        isHero ? "rounded-[var(--radius-editorial,0.75rem)] shadow-[var(--portal-shadow-hero)]" : "rounded-md hover:shadow-sm",
+        isHero
+          ? "rounded-[var(--radius-editorial,0.75rem)] shadow-[var(--portal-shadow-hero)]"
+          : "rounded-md hover:shadow-sm",
         // Layout direction (existing behavior preserved)
-        variant === "list" && !isCompact && "flex items-start gap-3 p-3",
-        variant === "grid" && !isHero && !isCompact && "flex flex-col gap-2 p-4",
+        variant === "list" && !isCompact && !isWorkbench && "flex items-start gap-3 p-3",
+        variant === "grid" && !isHero && !isCompact && !isWorkbench && "flex flex-col gap-2 p-4",
         // Display variant overrides
         isHero && "flex flex-col gap-3 p-6",
         isCompact && "flex items-center gap-2 p-2",
+        isWorkbench && "flex min-h-[168px] flex-col gap-2 p-3",
         // P5-06 research_origin styling hook
         isResearchOrigin && "ring-1 ring-teal-400/50",
         // Accent stripe is applied via inline style (see accentStyle); no extra class needed
@@ -381,6 +402,7 @@ export function ArtifactCard({
           "absolute inset-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           isHero ? "rounded-[var(--radius-editorial,0.75rem)]" : "rounded-md",
         )}
+        onClick={(event) => onCardClick?.(event, artifact)}
         tabIndex={0}
       />
 
@@ -404,7 +426,7 @@ export function ArtifactCard({
         className={cn(
           "pointer-events-none relative flex min-w-0 flex-col",
           variant === "list" && !isCompact && "flex-1",
-          isCompact ? "gap-0.5" : isHero ? "gap-2" : "gap-1.5",
+          isCompact ? "gap-0.5" : isHero ? "gap-2" : isWorkbench ? "gap-2" : "gap-1.5",
         )}
       >
         {/*
@@ -484,7 +506,38 @@ export function ArtifactCard({
 
         {/* Preview text (standard/grid only — same as existing behavior) */}
         {!excerptText && !isCompact && preview && (
-          <p className="line-clamp-2 text-xs text-muted-foreground">{preview}</p>
+          <p
+            className={cn(
+              "text-xs text-muted-foreground",
+              isWorkbench ? "line-clamp-3 leading-relaxed" : "line-clamp-2",
+            )}
+          >
+            {preview}
+          </p>
+        )}
+
+        {isWorkbench && (
+          <div className="mt-auto flex min-h-5 flex-wrap items-center gap-1.5 pt-1">
+            {(artifact.owners ?? []).slice(0, 2).map((owner) => (
+              <span
+                key={owner}
+                className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                {owner}
+              </span>
+            ))}
+            {artifact.series && (
+              <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {artifact.series}
+              </span>
+            )}
+            {connectionCount > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <Link2 aria-hidden="true" className="size-3" />
+                {connectionCount}
+              </span>
+            )}
+          </div>
         )}
 
         {/* Footer row: freshness badge + derivative count + timestamps

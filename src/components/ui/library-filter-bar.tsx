@@ -152,18 +152,6 @@ function MultiSelectChips({
           </button>
         );
       })}
-      {selected.length > 0 && (
-        <button
-          type="button"
-          aria-label={`Clear ${label} filter`}
-          onClick={() => onChange([])}
-          className="ml-0.5 inline-flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-5"
-        >
-          <svg aria-hidden="true" className="size-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18 18 6M6 6l12 12" />
-          </svg>
-        </button>
-      )}
     </div>
   );
 }
@@ -280,28 +268,179 @@ function DateRangeInputs({ dateFrom, dateTo, onChange }: DateRangeInputsProps) {
         />
       </div>
       {(dateFrom || dateTo) && (
-        <button
-          type="button"
-          aria-label="Clear date range filter"
-          onClick={() => onChange(undefined, undefined)}
-          className="inline-flex size-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:size-5"
-        >
-          <svg
-            aria-hidden="true"
-            className="size-3"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.5}
-              d="M6 18 18 6M6 6l12 12"
-            />
-          </svg>
-        </button>
+        <span className="text-[10px] text-muted-foreground">Active</span>
       )}
+    </div>
+  );
+}
+
+interface TagFilterInputProps {
+  tags: string[];
+  onChange: (tags: string[]) => void;
+}
+
+function normaliseTag(value: string): string {
+  return value.trim().replace(/^#/, "");
+}
+
+function TagFilterInput({ tags, onChange }: TagFilterInputProps) {
+  const [draft, setDraft] = useState("");
+
+  function addDraft() {
+    const tag = normaliseTag(draft);
+    if (!tag || tags.includes(tag)) {
+      setDraft("");
+      return;
+    }
+    onChange([...tags, tag]);
+    setDraft("");
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <label
+        htmlFor="library-tag-filter"
+        className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+      >
+        Tags
+      </label>
+      <input
+        id="library-tag-filter"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === ",") {
+            event.preventDefault();
+            addDraft();
+          }
+        }}
+        placeholder="Add tag"
+        className={cn(
+          "h-6 min-h-[44px] w-28 rounded-sm border border-input bg-background px-2 text-[11px] text-foreground sm:min-h-0",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        )}
+      />
+      <button
+        type="button"
+        onClick={addDraft}
+        className={cn(
+          "h-6 min-h-[44px] rounded-sm border px-2 text-[11px] font-medium text-muted-foreground sm:min-h-0",
+          "transition-colors hover:bg-accent hover:text-accent-foreground",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        )}
+      >
+        Add
+      </button>
+    </div>
+  );
+}
+
+interface ActiveFilterChipsProps {
+  filters: LibraryFilters;
+  lockedFacet?: ArtifactFacet;
+  onFiltersChange: (next: Partial<LibraryFilters>) => void;
+}
+
+function optionLabel(options: readonly { value: string; label: string }[], value: string) {
+  return options.find((option) => option.value === value)?.label ?? humaniseFilterValue(value);
+}
+
+function humaniseFilterValue(value: string): string {
+  return value.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function ActiveFilterChips({
+  filters,
+  lockedFacet,
+  onFiltersChange,
+}: ActiveFilterChipsProps) {
+  const tags = filters.tags ?? [];
+  const chips: { key: string; label: string; clear: () => void }[] = [
+    ...filters.types.map((type) => ({
+      key: `type-${type}`,
+      label: `Type: ${optionLabel(KNOWN_ARTIFACT_TYPES, type)}`,
+      clear: () => onFiltersChange({ types: filters.types.filter((v) => v !== type) }),
+    })),
+    ...filters.statuses.map((status) => ({
+      key: `status-${status}`,
+      label: `Status: ${optionLabel(KNOWN_STATUSES, status)}`,
+      clear: () =>
+        onFiltersChange({
+          statuses: filters.statuses.filter((v) => v !== status),
+        }),
+    })),
+    !lockedFacet && filters.facet
+      ? {
+          key: `workspace-${filters.facet}`,
+          label: `Workspace: ${optionLabel(FACET_OPTIONS, filters.facet)}`,
+          clear: () => onFiltersChange({ facet: undefined }),
+        }
+      : null,
+    filters.dateFrom
+      ? {
+          key: "date-from",
+          label: `Date from: ${filters.dateFrom}`,
+          clear: () => onFiltersChange({ dateFrom: undefined }),
+        }
+      : null,
+    filters.dateTo
+      ? {
+          key: "date-to",
+          label: `Date to: ${filters.dateTo}`,
+          clear: () => onFiltersChange({ dateTo: undefined }),
+        }
+      : null,
+    ...tags.map((tag) => ({
+      key: `tag-${tag}`,
+      label: `Tag: ${tag}`,
+      clear: () => onFiltersChange({ tags: tags.filter((v) => v !== tag) }),
+    })),
+    ...filters.lensFidelity.map((value) => ({
+      key: `fidelity-${value}`,
+      label: `Quality: ${humaniseFilterValue(value)}`,
+      clear: () =>
+        onFiltersChange({
+          lensFidelity: filters.lensFidelity.filter((v) => v !== value),
+        }),
+    })),
+    ...filters.lensFreshness.map((value) => ({
+      key: `freshness-${value}`,
+      label: `Quality: ${humaniseFilterValue(value)}`,
+      clear: () =>
+        onFiltersChange({
+          lensFreshness: filters.lensFreshness.filter((v) => v !== value),
+        }),
+    })),
+    ...filters.lensVerification.map((value) => ({
+      key: `verification-${value}`,
+      label: `Quality: ${humaniseFilterValue(value)}`,
+      clear: () =>
+        onFiltersChange({
+          lensVerification: filters.lensVerification.filter((v) => v !== value),
+        }),
+    })),
+  ].filter((chip): chip is { key: string; label: string; clear: () => void } => chip !== null);
+
+  if (chips.length === 0) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1 border-t px-3 py-2">
+      <span className="mr-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Active
+      </span>
+      {chips.map((chip) => (
+        <button
+          key={chip.key}
+          type="button"
+          onClick={chip.clear}
+          className={cn(
+            "inline-flex h-6 items-center rounded-sm bg-primary/10 px-2 text-[11px] font-medium text-primary",
+            "transition-colors hover:bg-primary/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          {chip.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -365,6 +504,7 @@ export function LibraryFilterBar({
     facet,
     dateFrom,
     dateTo,
+    tags = [],
     lensFidelity = [],
     lensFreshness = [],
     lensVerification = [],
@@ -382,6 +522,7 @@ export function LibraryFilterBar({
     statuses.length +
     activeFacetCount +
     activeDateCount +
+    tags.length +
     lensFidelity.length +
     lensFreshness.length +
     lensVerification.length;
@@ -393,6 +534,7 @@ export function LibraryFilterBar({
       facet: lockedFacet, // keep locked facet if set
       dateFrom: undefined,
       dateTo: undefined,
+      tags: [],
       lensFidelity: [],
       lensFreshness: [],
       lensVerification: [],
@@ -437,7 +579,7 @@ export function LibraryFilterBar({
         {/* Facet filter — hidden when lockedFacet is set (filtered-view screens) */}
         {!lockedFacet && (
           <MultiSelectChips
-            label="Facet"
+            label="Workspace"
             options={FACET_OPTIONS}
             selected={facet ? [facet] : []}
             onChange={(next) => {
@@ -515,7 +657,7 @@ export function LibraryFilterBar({
               d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2a1 1 0 01-.293.707L13 13.414V19a1 1 0 01-.553.894l-4 2A1 1 0 017 21v-7.586L3.293 6.707A1 1 0 013 6V4z"
             />
           </svg>
-          Lens
+          Quality
           {hasActiveLensFilters && (
             <ActiveFilterCount
               count={lensFidelity.length + lensFreshness.length + lensVerification.length}
@@ -543,13 +685,13 @@ export function LibraryFilterBar({
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
               )}
             >
-              Clear filters
+              Clear all
             </button>
           )}
         </div>
       </div>
 
-      {/* Date range row — always visible when not hidden by lockedFacet context */}
+      {/* Date and tag row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t px-3 py-2">
         <DateRangeInputs
           dateFrom={dateFrom}
@@ -558,7 +700,17 @@ export function LibraryFilterBar({
             onFiltersChange({ dateFrom: from, dateTo: to })
           }
         />
+        <TagFilterInput
+          tags={tags}
+          onChange={(next) => onFiltersChange({ tags: next })}
+        />
       </div>
+
+      <ActiveFilterChips
+        filters={filters}
+        lockedFacet={lockedFacet}
+        onFiltersChange={onFiltersChange}
+      />
 
       {/* Lens filter panel (P4-09) — collapsible */}
       {lensOpen && (
@@ -604,21 +756,6 @@ export function LibraryFilterBar({
             }
           />
 
-          {/* Clear lens filters only */}
-          {hasActiveLensFilters && (
-            <button
-              type="button"
-              onClick={() =>
-                onFiltersChange({ lensFidelity: [], lensFreshness: [], lensVerification: [] })
-              }
-              className={cn(
-                "ml-auto text-[11px] text-muted-foreground underline-offset-2 hover:underline",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-              )}
-            >
-              Clear lens filters
-            </button>
-          )}
         </div>
       )}
     </div>
@@ -695,7 +832,7 @@ export function useLibraryLensUrlSync() {
  * callback to push state changes to the URL.
  *
  * URL param names mirror backend API param names:
- *   lens_fidelity, lens_freshness, lens_verification
+ *   date_from, date_to, tag[], lens_fidelity, lens_freshness, lens_verification
  *
  * The hook is intentionally side-effect-free — it does not subscribe to router
  * events. Pages should call syncToUrl whenever filters change.
@@ -707,11 +844,14 @@ export function useLensFilterUrlSync() {
    */
   function readFromUrl(): Pick<
     LibraryFilters,
-    "lensFidelity" | "lensFreshness" | "lensVerification"
+    "dateFrom" | "dateTo" | "tags" | "lensFidelity" | "lensFreshness" | "lensVerification"
   > | null {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
     return {
+      dateFrom: params.get("date_from") ?? undefined,
+      dateTo: params.get("date_to") ?? undefined,
+      tags: params.getAll("tag[]").filter(Boolean),
       lensFidelity: (params.getAll("lens_fidelity") as LensFidelity[]).filter(
         (v): v is LensFidelity => ["high", "medium", "low"].includes(v),
       ),
@@ -732,16 +872,25 @@ export function useLensFilterUrlSync() {
    * query params already present in the URL.
    */
   function syncToUrl(
-    filters: Pick<LibraryFilters, "lensFidelity" | "lensFreshness" | "lensVerification">,
+    filters: Pick<
+      LibraryFilters,
+      "dateFrom" | "dateTo" | "tags" | "lensFidelity" | "lensFreshness" | "lensVerification"
+    >,
   ): void {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
 
-    // Replace lens params — delete then re-append
+    // Replace filter params — delete then re-append.
+    params.delete("date_from");
+    params.delete("date_to");
+    params.delete("tag[]");
     params.delete("lens_fidelity");
     params.delete("lens_freshness");
     params.delete("lens_verification");
 
+    if (filters.dateFrom) params.set("date_from", filters.dateFrom);
+    if (filters.dateTo) params.set("date_to", filters.dateTo);
+    for (const tag of filters.tags ?? []) params.append("tag[]", tag);
     for (const v of filters.lensFidelity) params.append("lens_fidelity", v);
     for (const v of filters.lensFreshness) params.append("lens_freshness", v);
     for (const v of filters.lensVerification) params.append("lens_verification", v);

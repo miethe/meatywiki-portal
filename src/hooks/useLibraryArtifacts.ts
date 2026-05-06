@@ -49,14 +49,16 @@ export interface LibraryFilters {
   facet?: ArtifactFacet;
   /**
    * Date range filter: ISO 8601 date string (YYYY-MM-DD) for lower bound.
-   * Serialised as ?date_from= — backend support is reserved (MISMATCH-04).
+   * Serialised as ?date_from=.
    */
   dateFrom?: string;
   /**
    * Date range filter: ISO 8601 date string (YYYY-MM-DD) for upper bound.
-   * Serialised as ?date_to= — backend support is reserved (MISMATCH-04).
+   * Serialised as ?date_to=.
    */
   dateTo?: string;
+  /** Tag filters. Serialised as repeatable ?tag[]= params with AND semantics. */
+  tags?: string[];
   /** Lens fidelity filter — empty array means "all fidelity levels" (P4-09) */
   lensFidelity: LensFidelity[];
   /** Lens freshness filter — empty array means "all freshness classes" (P4-09) */
@@ -73,6 +75,7 @@ export const DEFAULT_LIBRARY_FILTERS: LibraryFilters = {
   facet: undefined,
   dateFrom: undefined,
   dateTo: undefined,
+  tags: [],
   lensFidelity: [],
   lensFreshness: [],
   lensVerification: [],
@@ -106,6 +109,7 @@ export function useLibraryArtifacts(
     facet,
     dateFrom,
     dateTo,
+    tags = [],
     lensFidelity,
     lensFreshness,
     lensVerification,
@@ -124,7 +128,19 @@ export function useLibraryArtifacts(
     queryKey: [
       "artifacts",
       "library",
-      { types, statuses, sort, order, facet, dateFrom, dateTo, lensFidelity, lensFreshness, lensVerification },
+      {
+        types,
+        statuses,
+        sort,
+        order,
+        facet,
+        dateFrom,
+        dateTo,
+        tags,
+        lensFidelity,
+        lensFreshness,
+        lensVerification,
+      },
     ],
     queryFn: async ({ pageParam }) => {
       return listArtifacts({
@@ -137,12 +153,15 @@ export function useLibraryArtifacts(
         status: statuses.length > 0 ? statuses : undefined,
         sort,
         order,
+        dateFrom,
+        dateTo,
+        tags: tags.length > 0 ? tags : undefined,
+        cardContext: true,
         lensFidelity: lensFidelity.length > 0 ? lensFidelity : undefined,
         lensFreshness: lensFreshness.length > 0 ? lensFreshness : undefined,
         lensVerification: lensVerification.length > 0 ? lensVerification : undefined,
         cursor: pageParam as string | null,
         limit: PAGE_SIZE,
-        // dateFrom/dateTo reserved — not yet a real backend param (MISMATCH-04)
       });
     },
     initialPageParam: null as string | null,

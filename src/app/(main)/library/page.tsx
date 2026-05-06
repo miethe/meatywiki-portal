@@ -54,6 +54,7 @@
  */
 
 import { useState, useCallback, useEffect, useMemo } from "react";
+import type { MouseEvent } from "react";
 import Link from "next/link";
 import {
   LayoutGrid,
@@ -79,6 +80,7 @@ import {
 import { useArchiveArtifact, useDeleteArtifact } from "@/hooks/use-artifact-actions";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
+import { ArtifactPreviewSheet } from "@/components/library/artifact-preview-sheet";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
 import {
   LibraryFilterBar,
@@ -1053,6 +1055,9 @@ function LibraryPageInner() {
       setFilters((prev) => {
         const updated = { ...prev, ...next };
         syncToUrl({
+          dateFrom: updated.dateFrom,
+          dateTo: updated.dateTo,
+          tags: updated.tags ?? [],
           lensFidelity: updated.lensFidelity,
           lensFreshness: updated.lensFreshness,
           lensVerification: updated.lensVerification,
@@ -1098,17 +1103,8 @@ function LibraryPageInner() {
     archiveFilters.archivalStatuses.length;
 
   // -------------------------------------------------------------------------
-  // P3-03: Selected artifact state
-  //
-  // Design decision: click-to-navigate + select.
-  //   - Plain left-click navigates to /artifact/:id via the card's stretch
-  //     <Link>. Selection state is set as a side-effect so the ContextRail
-  //     updates before the page transition completes.
-  //   - Cmd/ctrl+click opens the artifact in a new tab (browser native).
-  //   - Clicking the already-selected card deselects it without blocking
-  //     navigation.
-  //   - Selection clears automatically when lens or filters change.
-  // -------------------------------------------------------------------------
+  // Preview-first Library state. Plain card clicks open the preview sheet.
+  // Cmd/Ctrl clicks keep the native anchor navigation to /artifact/:id.
   const [selectedArtifact, setSelectedArtifact] = useState<ArtifactCardType | null>(null);
 
   // -------------------------------------------------------------------------
@@ -1145,15 +1141,19 @@ function LibraryPageInner() {
   const { isOpen: railIsOpen, close: closeRail } = useContextRailToggle();
 
   const handleCardClick = useCallback(
-    (artifact: ArtifactCardType) => {
-      // Update selection state as a side-effect; do NOT call preventDefault so
-      // the card's stretch <Link href="/artifact/:id"> navigates normally.
-      setSelectedArtifact((prev) =>
-        prev?.id === artifact.id ? null : artifact,
-      );
+    (event: MouseEvent<HTMLAnchorElement>, artifact: ArtifactCardType) => {
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      setSelectedArtifact(artifact);
     },
     [],
   );
+
+  const closePreviewSheet = useCallback(() => {
+    setSelectedArtifact(null);
+  }, []);
 
   // Clear selection when the artifact list context changes
   useEffect(() => {
@@ -1193,6 +1193,7 @@ function LibraryPageInner() {
     !!filters.facet ||
     !!filters.dateFrom ||
     !!filters.dateTo ||
+    (filters.tags?.length ?? 0) > 0 ||
     filters.lensFidelity.length > 0 ||
     filters.lensFreshness.length > 0 ||
     filters.lensVerification.length > 0 ||
@@ -1241,6 +1242,12 @@ function LibraryPageInner() {
         onClose={closeMobileFilters}
         filters={archiveFilters}
         onFiltersChange={handleArchiveFilterChange}
+      />
+
+      <ArtifactPreviewSheet
+        artifact={selectedArtifact}
+        open={selectedArtifact !== null}
+        onClose={closePreviewSheet}
       />
 
       {/* Tablet ContextRail overlay — fixed right panel, md–xl only */}
@@ -1325,7 +1332,7 @@ function LibraryPageInner() {
               <ul
                 role="list"
                 className={cn(
-                  "grid gap-4",
+                  "grid gap-3",
                   viewMode === "grid"
                     ? // 2-col masonry-style grid; dense packing fills gaps
                       "grid-cols-1 sm:grid-cols-2 [grid-auto-flow:dense]"
@@ -1352,12 +1359,11 @@ function LibraryPageInner() {
                     return (
                       <li
                         key={artifact.id}
-                        onClick={() => handleCardClick(artifact)}
                         aria-current={isSelected ? "true" : undefined}
                         title={
                           isSelected
-                            ? "Click to deselect"
-                            : "Click to preview • Cmd+click to open"
+                            ? "Preview open"
+                            : "Click to preview, Cmd/Ctrl-click to open"
                         }
                         className={cn(
                           "cursor-pointer rounded-md transition-all",
@@ -1368,9 +1374,10 @@ function LibraryPageInner() {
                         <ArtifactCard
                           artifact={artifact}
                           variant={viewMode}
-                          displayVariant="standard"
+                          displayVariant={viewMode === "grid" ? "workbench" : "standard"}
                           typeAccent
                           activeRun={artifact.active_run ?? undefined}
+                          onCardClick={handleCardClick}
                           onArchive={handleArchive}
                           onDelete={handleDeleteRequest}
                         />
