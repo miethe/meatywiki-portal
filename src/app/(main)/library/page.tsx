@@ -1374,7 +1374,7 @@ function LibraryPageInner() {
                         <ArtifactCard
                           artifact={artifact}
                           variant={viewMode}
-                          displayVariant={viewMode === "grid" ? "workbench" : "standard"}
+                          displayVariant="workbench"
                           typeAccent
                           activeRun={artifact.active_run ?? undefined}
                           onCardClick={handleCardClick}

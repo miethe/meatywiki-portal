@@ -19,7 +19,7 @@
  *   - created date shown in footer alongside updated date
  *
  * Stitch Reskin P2-02 additions (portal-v1.5-stitch-reskin design spec §3):
- *   - `displayVariant` prop: 'standard' | 'featured' | 'compact' | 'hero'
+ *   - `displayVariant` prop: 'standard' | 'featured' | 'compact' | 'hero' | 'workbench'
  *     (default 'standard' — existing callsites rendering 'list'/'grid' are
  *     unchanged; the old `variant` prop continues to control layout direction)
  *   - `excerpt` prop: shown on featured (2-line clamp) and hero (3-line clamp)
@@ -255,8 +255,13 @@ export function ArtifactCard({
   const isFeatured = displayVariant === "featured";
   const isCompact = displayVariant === "compact";
   const isWorkbench = displayVariant === "workbench";
-  const connectionCount =
+  const graphConnectionCount =
     (graph_context?.incoming_count ?? 0) + (graph_context?.outgoing_count ?? 0);
+  const derivativeConnectionCount =
+    typeof derivative_count === "number" && derivative_count > 0 ? derivative_count : 0;
+  const connectionCount = graphConnectionCount || derivativeConnectionCount;
+  const connectionLabel = graphConnectionCount > 0 ? "Links" : "Derivatives";
+  const stateLabel = artifact.publish_state || artifact.status;
 
   // ---------------------------------------------------------------------------
   // Inbox mode render path (P5-02)
@@ -371,10 +376,12 @@ export function ArtifactCard({
   return (
     <article
       className={cn(
-        "group relative border bg-card transition-shadow",
+        "group relative border bg-card transition-all",
         // Base radius per display variant
         isHero
           ? "rounded-[var(--radius-editorial,0.75rem)] shadow-[var(--portal-shadow-hero)]"
+          : isWorkbench
+          ? "overflow-hidden rounded-md border-border/80 bg-background shadow-sm hover:border-primary/50 hover:shadow-md"
           : "rounded-md hover:shadow-sm",
         // Layout direction (existing behavior preserved)
         variant === "list" && !isCompact && !isWorkbench && "flex items-start gap-3 p-3",
@@ -382,7 +389,7 @@ export function ArtifactCard({
         // Display variant overrides
         isHero && "flex flex-col gap-3 p-6",
         isCompact && "flex items-center gap-2 p-2",
-        isWorkbench && "flex min-h-[168px] flex-col gap-2 p-3",
+        isWorkbench && "flex min-h-[210px] flex-col gap-2 p-3",
         // P5-06 research_origin styling hook
         isResearchOrigin && "ring-1 ring-teal-400/50",
         // Accent stripe is applied via inline style (see accentStyle); no extra class needed
@@ -471,6 +478,8 @@ export function ArtifactCard({
               ? "font-display text-xl font-semibold tracking-tight"
               : isCompact
               ? "truncate text-xs font-medium"
+              : isWorkbench
+              ? "line-clamp-2 text-[15px] font-semibold tracking-tight"
               : "text-sm font-medium",
           )}
         >
@@ -505,44 +514,68 @@ export function ArtifactCard({
         )}
 
         {/* Preview text (standard/grid only — same as existing behavior) */}
-        {!excerptText && !isCompact && preview && (
+        {!excerptText && !isCompact && (preview || isWorkbench) && (
           <p
             className={cn(
-              "text-xs text-muted-foreground",
-              isWorkbench ? "line-clamp-3 leading-relaxed" : "line-clamp-2",
+              isWorkbench
+                ? "min-h-[56px] rounded-md border bg-muted/35 p-2 text-xs leading-relaxed text-foreground/80 line-clamp-3"
+                : "text-xs text-muted-foreground line-clamp-2",
             )}
           >
-            {preview}
+            {preview || "No preview available yet."}
           </p>
         )}
 
         {isWorkbench && (
-          <div className="mt-auto flex min-h-5 flex-wrap items-center gap-1.5 pt-1">
-            {(artifact.owners ?? []).slice(0, 2).map((owner) => (
-              <span
-                key={owner}
-                className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-              >
-                {owner}
-              </span>
-            ))}
-            {artifact.series && (
-              <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {artifact.series}
-              </span>
-            )}
-            {connectionCount > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-sm border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+          <div className="mt-auto grid grid-cols-3 gap-1.5 rounded-md border bg-card p-2 text-[11px]">
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                Updated
+              </p>
+              <p className="truncate font-semibold text-foreground">
+                {updatedTime || "Unknown"}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                {connectionLabel}
+              </p>
+              <p className="inline-flex items-center gap-1 font-semibold text-foreground">
                 <Link2 aria-hidden="true" className="size-3" />
                 {connectionCount}
-              </span>
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-medium uppercase text-muted-foreground">
+                State
+              </p>
+              <p className="truncate font-semibold capitalize text-foreground">
+                {stateLabel.replace(/_/g, " ")}
+              </p>
+            </div>
+            {((artifact.owners ?? []).length > 0 || artifact.series) && (
+              <div className="col-span-3 flex min-w-0 flex-wrap items-center gap-1 border-t pt-1.5">
+                {(artifact.owners ?? []).slice(0, 2).map((owner) => (
+                  <span
+                    key={owner}
+                    className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                  >
+                    {owner}
+                  </span>
+                ))}
+                {artifact.series && (
+                  <span className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    {artifact.series}
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}
 
         {/* Footer row: freshness badge + derivative count + timestamps
             Compact shows only updated timestamp inline */}
-        {isCompact ? (
+        {isWorkbench ? null : isCompact ? (
           <div className="flex shrink-0 items-center gap-1 text-[10px] text-muted-foreground">
             {updated && updatedTime && (
               <time dateTime={updated} title={`Updated: ${new Date(updated).toLocaleDateString()}`}>
