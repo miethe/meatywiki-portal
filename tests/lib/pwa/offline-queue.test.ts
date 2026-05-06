@@ -331,3 +331,80 @@ describe("OfflineQueueManager.listFailed", () => {
     expect(failedItems[0].headers["Authorization"]).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Queue bound (MAX_QUEUE_SIZE = 100)
+// ---------------------------------------------------------------------------
+
+describe("OfflineQueueManager queue bound", () => {
+  it("caps the queue at 100 items — oldest is evicted when limit is reached", async () => {
+    // Fill queue to exactly 100 items.
+    for (let i = 0; i < 100; i++) {
+      await OfflineQueueManager.enqueue({
+        endpoint: "/api/intake/note",
+        method: "POST",
+        bodyJson: { seq: i },
+      });
+    }
+
+    const { queued: countBefore } = await OfflineQueueManager.count();
+    expect(countBefore).toBe(100);
+
+    // The first item in the queue (seq=0) is the oldest.
+    const allBefore = await OfflineQueueManager.listQueued();
+    expect((allBefore[0].bodyJson as { seq: number }).seq).toBe(0);
+
+    // Enqueue one more — should evict seq=0 and keep the queue at 100.
+    await OfflineQueueManager.enqueue({
+      endpoint: "/api/intake/note",
+      method: "POST",
+      bodyJson: { seq: 100 },
+    });
+
+    const { queued: countAfter } = await OfflineQueueManager.count();
+    expect(countAfter).toBe(100);
+
+    // seq=0 must be gone; seq=100 must be present at the tail.
+    const allAfter = await OfflineQueueManager.listQueued();
+    const seqs = allAfter.map((r) => (r.bodyJson as { seq: number }).seq);
+    expect(seqs).not.toContain(0);
+    expect(seqs).toContain(100);
+  });
+
+  it("emits a console.warn when the oldest item is evicted", async () => {
+    // console.warn is already spied on in beforeEach.
+    for (let i = 0; i < 100; i++) {
+      await OfflineQueueManager.enqueue({
+        endpoint: "/api/intake/note",
+        method: "POST",
+        bodyJson: { seq: i },
+      });
+    }
+
+    // Reset the spy call history so only the overflow warn is captured.
+    (console.warn as jest.Mock).mockClear();
+
+    await OfflineQueueManager.enqueue({
+      endpoint: "/api/intake/note",
+      method: "POST",
+      bodyJson: { seq: 100 },
+    });
+
+    expect(console.warn).toHaveBeenCalledWith(
+      expect.stringMatching(/Offline queue full.*100.*discarding oldest/i),
+    );
+  });
+
+  it("never exceeds 100 items when enqueuing many items beyond the limit", async () => {
+    for (let i = 0; i < 150; i++) {
+      await OfflineQueueManager.enqueue({
+        endpoint: "/api/intake/note",
+        method: "POST",
+        bodyJson: { seq: i },
+      });
+    }
+
+    const { queued } = await OfflineQueueManager.count();
+    expect(queued).toBe(100);
+  });
+});
