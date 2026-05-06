@@ -7,7 +7,7 @@
  *   2. The same filter state feeds identical params for Library and Research
  *      calls (ensuring cross-screen behaviour is consistent by construction —
  *      both screens build their useInfiniteQuery call on the same API).
- *   3. Clearing filters via the "Clear filters" control resets filter state.
+ *   3. Clearing filters via the "Clear all" control resets filter state.
  */
 
 import React from "react";
@@ -158,7 +158,7 @@ describe("LibraryFilterBar — user interaction reaches onFiltersChange", () => 
     expect(fidelityCalls.at(-1)?.[0]).toMatchObject({ lensFidelity: ["high"] });
   });
 
-  it("Clear filters resets all multi-select fields to empty arrays", async () => {
+  it("Clear all resets all multi-select fields to empty arrays", async () => {
     const user = userEvent.setup();
     const onChange = jest.fn();
 
@@ -175,7 +175,7 @@ describe("LibraryFilterBar — user interaction reaches onFiltersChange", () => 
       <Harness initial={activeFilters} onChange={onChange} />,
     );
 
-    const clearBtn = await screen.findByRole("button", { name: /^Clear filters$/i });
+    const clearBtn = await screen.findByRole("button", { name: /^Clear all$/i });
     await act(async () => {
       await user.click(clearBtn);
     });

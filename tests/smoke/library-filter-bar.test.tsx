@@ -10,7 +10,7 @@
  */
 
 import React from "react";
-import { fireEvent, renderWithProviders, screen } from "../utils/render";
+import { fireEvent, renderWithProviders, screen, waitFor } from "../utils/render";
 import { LibraryFilterBar, useLensFilterUrlSync } from "@/components/ui/library-filter-bar";
 import type { LibraryFilters } from "@/hooks/useLibraryArtifacts";
 import { renderHook, act } from "@testing-library/react";
@@ -287,7 +287,7 @@ describe("useLensFilterUrlSync", () => {
     expect(read!.lensFidelity).toEqual(["high"]); // "bad_value" filtered out
   });
 
-  it("syncToUrl calls replaceState with correct URL", () => {
+  it("syncToUrl defers replaceState with correct URL", async () => {
     setSearch("?workspace=library");
     const { result } = renderHook(() => useLensFilterUrlSync());
 
@@ -302,24 +302,28 @@ describe("useLensFilterUrlSync", () => {
       });
     });
 
-    expect(window.history.replaceState).toHaveBeenCalledWith(
-      null,
-      "",
-      expect.stringContaining("lens_fidelity=high"),
-    );
-    expect(window.history.replaceState).toHaveBeenCalledWith(
-      null,
-      "",
-      expect.stringContaining("lens_fidelity=medium"),
-    );
-    expect(window.history.replaceState).toHaveBeenCalledWith(
-      null,
-      "",
-      expect.stringContaining("lens_freshness=current"),
-    );
+    expect(window.history.replaceState).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(window.history.replaceState).toHaveBeenCalledWith(
+        null,
+        "",
+        expect.stringContaining("lens_fidelity=high"),
+      );
+      expect(window.history.replaceState).toHaveBeenCalledWith(
+        null,
+        "",
+        expect.stringContaining("lens_fidelity=medium"),
+      );
+      expect(window.history.replaceState).toHaveBeenCalledWith(
+        null,
+        "",
+        expect.stringContaining("lens_freshness=current"),
+      );
+    });
   });
 
-  it("syncToUrl preserves non-lens params", () => {
+  it("syncToUrl preserves non-lens params", async () => {
     setSearch("?workspace=library&status=active");
     const { result } = renderHook(() => useLensFilterUrlSync());
 
@@ -334,6 +338,9 @@ describe("useLensFilterUrlSync", () => {
       });
     });
 
+    await waitFor(() => {
+      expect(window.history.replaceState).toHaveBeenCalledTimes(1);
+    });
     const [[, , url]] = (window.history.replaceState as jest.Mock).mock.calls;
     expect(url).toContain("workspace=library");
     expect(url).toContain("status=active");
@@ -342,7 +349,7 @@ describe("useLensFilterUrlSync", () => {
     expect(url).toContain("lens_fidelity=high");
   });
 
-  it("syncToUrl clears lens params when all arrays are empty", () => {
+  it("syncToUrl clears lens params when all arrays are empty", async () => {
     setSearch("?lens_fidelity=high");
     const { result } = renderHook(() => useLensFilterUrlSync());
 
@@ -357,7 +364,44 @@ describe("useLensFilterUrlSync", () => {
       });
     });
 
+    await waitFor(() => {
+      expect(window.history.replaceState).toHaveBeenCalledTimes(1);
+    });
     const [[, , url]] = (window.history.replaceState as jest.Mock).mock.calls;
     expect(url).not.toContain("lens_fidelity");
+  });
+
+  it("syncToUrl coalesces multiple same-tick filter changes into one URL write", async () => {
+    setSearch("?workspace=library");
+    const { result } = renderHook(() => useLensFilterUrlSync());
+
+    act(() => {
+      result.current.syncToUrl({
+        dateFrom: undefined,
+        dateTo: undefined,
+        tags: [],
+        lensFidelity: ["high"],
+        lensFreshness: [],
+        lensVerification: [],
+      });
+      result.current.syncToUrl({
+        dateFrom: undefined,
+        dateTo: undefined,
+        tags: [],
+        lensFidelity: ["medium"],
+        lensFreshness: ["current"],
+        lensVerification: [],
+      });
+    });
+
+    expect(window.history.replaceState).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(window.history.replaceState).toHaveBeenCalledTimes(1);
+    });
+    const [[, , url]] = (window.history.replaceState as jest.Mock).mock.calls;
+    expect(url).toContain("lens_fidelity=medium");
+    expect(url).toContain("lens_freshness=current");
+    expect(url).not.toContain("lens_fidelity=high");
   });
 });

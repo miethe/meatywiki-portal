@@ -26,7 +26,7 @@
  * Type labels are normalized through the shared artifact-type presentation map.
  */
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { getArtifactTypeLabel } from "@/lib/artifact-type-presentation";
 import type { ArtifactSortField, SortOrder } from "@/lib/api/artifacts";
@@ -859,14 +859,35 @@ export function useLibraryLensUrlSync() {
  * events. Pages should call syncToUrl whenever filters change.
  */
 export function useLensFilterUrlSync() {
+  const pendingUrlRef = useRef<string | null>(null);
+  const pendingTimerRef = useRef<number | null>(null);
+
+  const flushPendingUrl = useCallback(() => {
+    pendingTimerRef.current = null;
+    const nextUrl = pendingUrlRef.current;
+    pendingUrlRef.current = null;
+    if (!nextUrl || typeof window === "undefined") return;
+
+    window.history.replaceState(null, "", nextUrl);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (typeof window !== "undefined" && pendingTimerRef.current !== null) {
+        window.clearTimeout(pendingTimerRef.current);
+      }
+    },
+    [],
+  );
+
   /**
    * Read lens filter values from the current window.location.search.
    * Returns null when running server-side (no window object).
    */
-  function readFromUrl(): Pick<
+  const readFromUrl = useCallback((): Pick<
     LibraryFilters,
     "dateFrom" | "dateTo" | "tags" | "lensFidelity" | "lensFreshness" | "lensVerification"
-  > | null {
+  > | null => {
     if (typeof window === "undefined") return null;
     const params = new URLSearchParams(window.location.search);
     return {
@@ -885,19 +906,19 @@ export function useLensFilterUrlSync() {
         ["verified", "disputed", "unverified"].includes(v),
       ),
     };
-  }
+  }, []);
 
   /**
    * Push the given lens filter values to the URL without triggering a
    * navigation (uses history.replaceState).  Also preserves all non-lens
    * query params already present in the URL.
    */
-  function syncToUrl(
+  const syncToUrl = useCallback((
     filters: Pick<
       LibraryFilters,
       "dateFrom" | "dateTo" | "tags" | "lensFidelity" | "lensFreshness" | "lensVerification"
     >,
-  ): void {
+  ): void => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
 
@@ -921,8 +942,12 @@ export function useLensFilterUrlSync() {
       ? `${window.location.pathname}?${qs}`
       : window.location.pathname;
 
-    window.history.replaceState(null, "", newUrl);
-  }
+    pendingUrlRef.current = newUrl;
+    if (pendingTimerRef.current !== null) {
+      window.clearTimeout(pendingTimerRef.current);
+    }
+    pendingTimerRef.current = window.setTimeout(flushPendingUrl, 0);
+  }, [flushPendingUrl]);
 
   return { readFromUrl, syncToUrl };
 }
