@@ -9,6 +9,7 @@ import type {
 } from "@/types/artifact";
 import { TypeBadge } from "@/components/ui/type-badge";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
+import { getArtifactTypeLabel } from "@/lib/artifact-type-presentation";
 import {
   Dialog,
   DialogContent,
@@ -56,7 +57,7 @@ function Properties({ artifact }: { artifact: ArtifactCard }) {
   const rows = [
     ["Workspace", humanise(artifact.workspace)],
     ["Status", humanise(artifact.status)],
-    ["Type", humanise(artifact.type)],
+    ["Type", getArtifactTypeLabel(artifact.type)],
     artifact.subtype ? ["Subtype", humanise(artifact.subtype)] : null,
     artifact.created ? ["Created", formatDateTime(artifact.created)] : null,
     artifact.updated ? ["Updated", formatDateTime(artifact.updated)] : null,

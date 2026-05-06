@@ -23,11 +23,12 @@
  * Accessibility: every interactive control has an accessible label; chip buttons use
  * aria-pressed. The lens section uses aria-expanded on the toggle button.
  *
- * Note: Tags filter omitted — backend does not support tag query param in v1.
+ * Type labels are normalized through the shared artifact-type presentation map.
  */
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { getArtifactTypeLabel } from "@/lib/artifact-type-presentation";
 import type { ArtifactSortField, SortOrder } from "@/lib/api/artifacts";
 import type {
   ArtifactFacet,
@@ -43,14 +44,34 @@ import type { LibraryFilters } from "@/hooks/useLibraryArtifacts";
 // ---------------------------------------------------------------------------
 
 export const KNOWN_ARTIFACT_TYPES = [
-  { value: "raw_note", label: "Note" },
-  { value: "concept", label: "Concept" },
-  { value: "entity", label: "Entity" },
-  { value: "topic", label: "Topic" },
-  { value: "synthesis", label: "Synthesis" },
-  { value: "evidence", label: "Evidence" },
-  { value: "glossary", label: "Glossary" },
-] as const;
+  "raw_note",
+  "raw_url",
+  "raw_upload",
+  "raw_transcript",
+  "raw_import",
+  "source_summary",
+  "concept",
+  "entity",
+  "topic_note",
+  "synthesis",
+  "evidence_matrix",
+  "contradiction_matrix",
+  "glossary_term",
+  "blog_idea",
+  "blog_outline",
+  "blog_draft",
+  "context_pack",
+  "brief",
+  "prd",
+  "adr",
+  "implementation_plan",
+  "decision",
+  "risk",
+  "memory_item",
+].map((value) => ({ value, label: getArtifactTypeLabel(value) })) as readonly {
+  value: string;
+  label: string;
+}[];
 
 export const KNOWN_STATUSES: { value: ArtifactStatus; label: string }[] = [
   { value: "active", label: "Active" },

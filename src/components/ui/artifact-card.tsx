@@ -49,6 +49,7 @@ import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { UrgencyBadge } from "./urgency-badge";
 import type { UrgencyLevel } from "./urgency-badge";
 import type { ArtifactFacet } from "@/types/artifact";
+import { getArtifactTypeAccentColor } from "@/lib/artifact-type-presentation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -82,23 +83,8 @@ export type ArtifactCardDisplayVariant =
   | "hero"
   | "workbench";
 
-/**
- * Left-edge type-accent stripe colors, derived from the same type→color
- * palette used by TypeBadge (design spec §3.1, §3 Stitch Reskin).
- * Values use CSS custom properties where possible for dark-mode parity.
- */
-const TYPE_ACCENT_COLORS: Record<string, string> = {
-  raw_note: "hsl(var(--muted-foreground))",
-  concept: "#3b82f6",   // blue-500
-  entity: "#8b5cf6",    // violet-500
-  topic: "#f59e0b",     // amber-500
-  synthesis: "#10b981", // emerald-500
-  evidence: "#f43f5e",  // rose-500
-  glossary: "#64748b",  // slate-500
-};
-
 function typeAccentColor(type: string): string {
-  return TYPE_ACCENT_COLORS[type] ?? "hsl(var(--border))";
+  return getArtifactTypeAccentColor(type);
 }
 
 /**
@@ -208,6 +194,14 @@ function formatRelativeTime(iso?: string | null): string {
   }
 }
 
+function humaniseValue(value: string): string {
+  return value.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
+function shortWorkflowId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 10)}…` : value;
+}
+
 export function ArtifactCard({
   artifact,
   variant = "list",
@@ -237,6 +231,7 @@ export function ArtifactCard({
     graph_context,
     research_origin,
     derivative_count,
+    workflow_id,
   } = artifact;
 
   // Stage Tracker contract (DP3-03): render compact tracker only for active runs.
@@ -262,6 +257,11 @@ export function ArtifactCard({
   const connectionCount = graphConnectionCount || derivativeConnectionCount;
   const connectionLabel = graphConnectionCount > 0 ? "Links" : "Derivatives";
   const stateLabel = artifact.publish_state || artifact.status;
+  const linkedPreviewItems = graph_context?.linked_previews?.slice(0, 2) ?? [];
+  const derivativePreviewItems = artifact.derivatives_preview?.slice(0, 2) ?? [];
+  const relationCounts = Object.entries(graph_context?.relationship_counts ?? {})
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 2);
 
   // ---------------------------------------------------------------------------
   // Inbox mode render path (P5-02)
@@ -462,6 +462,38 @@ export function ArtifactCard({
           </div>
         )}
 
+        {isWorkbench &&
+          (isResearchOrigin || workflow_id || activeRun || relationCounts.length > 0) && (
+            <div className="flex flex-wrap items-center gap-1">
+              {isResearchOrigin && (
+                <span className="rounded-sm border border-teal-300 bg-teal-50 px-1.5 py-0.5 text-[10px] font-semibold text-teal-800 dark:border-teal-700 dark:bg-teal-950/45 dark:text-teal-200">
+                  Research
+                </span>
+              )}
+              {workflow_id && (
+                <span
+                  className="rounded-sm border border-fuchsia-300 bg-fuchsia-50 px-1.5 py-0.5 text-[10px] font-semibold text-fuchsia-800 dark:border-fuchsia-700 dark:bg-fuchsia-950/45 dark:text-fuchsia-200"
+                  title={`Workflow: ${workflow_id}`}
+                >
+                  Workflow {shortWorkflowId(workflow_id)}
+                </span>
+              )}
+              {activeRun && (
+                <span className="rounded-sm border border-primary/25 bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                  Run {humaniseValue(activeRun.status)}
+                </span>
+              )}
+              {relationCounts.map(([relationship, count]) => (
+                <span
+                  key={relationship}
+                  className="rounded-sm border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                >
+                  {humaniseValue(relationship)} {count}
+                </span>
+              ))}
+            </div>
+          )}
+
         {/* Compact: inline single-row badges + title */}
         {isCompact && (
           <div className="flex items-center gap-1.5 min-w-0">
@@ -524,6 +556,44 @@ export function ArtifactCard({
           >
             {preview || "No preview available yet."}
           </p>
+        )}
+
+        {isWorkbench && (linkedPreviewItems.length > 0 || derivativePreviewItems.length > 0) && (
+          <div className="space-y-1">
+            <p className="text-[10px] font-semibold uppercase text-muted-foreground">
+              {linkedPreviewItems.length > 0 ? "Linked Items" : "Compiled Items"}
+            </p>
+            <ul className="space-y-1">
+              {linkedPreviewItems.length > 0
+                ? linkedPreviewItems.map((item) => (
+                    <li
+                      key={`${item.direction}-${item.relationship_type}-${item.artifact_id}`}
+                      className="flex min-w-0 items-center gap-1.5 rounded-sm border bg-card px-1.5 py-1"
+                    >
+                      {item.artifact_type && (
+                        <TypeBadge type={item.artifact_type} className="shrink-0" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
+                        {item.title ?? item.artifact_id}
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {humaniseValue(item.direction)}
+                      </span>
+                    </li>
+                  ))
+                : derivativePreviewItems.map((item) => (
+                    <li
+                      key={item.id}
+                      className="flex min-w-0 items-center gap-1.5 rounded-sm border bg-card px-1.5 py-1"
+                    >
+                      <TypeBadge type={item.artifact_type} className="shrink-0" />
+                      <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
+                        {item.title ?? item.id}
+                      </span>
+                    </li>
+                  ))}
+            </ul>
+          </div>
         )}
 
         {isWorkbench && (
