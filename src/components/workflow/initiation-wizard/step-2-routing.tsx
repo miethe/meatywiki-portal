@@ -173,7 +173,7 @@ export function Step2Routing({
           </p>
           <RoutingRecommendationCard
             artifactId={artifactId}
-            onStart={(templateSlug) => {
+            onRunWorkflow={(templateSlug: string) => {
               // Find the template by slug and select it.
               const tpl = templates.find((t) => t.slug === templateSlug);
               if (tpl) onSelectTemplate(tpl.id);

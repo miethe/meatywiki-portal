@@ -37,6 +37,7 @@ import { StageTracker } from "@/components/workflow/stage-tracker";
 import { HandoffChain } from "@/components/artifact/HandoffChain";
 import { useArtifactWorkflowRuns } from "@/hooks/useArtifactWorkflowRuns";
 import type { ArtifactDetail, WorkflowRun, WorkflowRunStatus } from "@/types/artifact";
+import { RoutingRecommendationCard } from "@/components/artifact/routing-recommendation-card";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -493,6 +494,16 @@ export function WorkflowOSTab({ artifact, enabled }: WorkflowOSTabProps) {
       {/* DP3-02: badge stays populated from frontmatter regardless of run   */}
       {/* history; renders "no signal" state when all lens fields are null.  */}
       <LensSection artifact={artifact} />
+
+      {/* Routing recommendation (P2-4-08) — shown when ML engine has a suggestion */}
+      <RoutingRecommendationCard
+        artifactId={artifact.id}
+        variant="artifact"
+        onRunWorkflow={(templateSlug) => {
+          // TODO: open initiation wizard pre-seeded with templateSlug (P2-4-08 follow-up)
+          console.info("[WorkflowOSTab] Run workflow queued:", templateSlug);
+        }}
+      />
 
       {/* Divider */}
       <hr className="border-border" />

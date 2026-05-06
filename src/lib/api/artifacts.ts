@@ -341,6 +341,39 @@ export async function getRoutingRecommendation(
     { method: "GET" },
   );
 }
+// ---------------------------------------------------------------------------
+// ML routing recommendation (P2-4-08) — GET /api/artifacts/:id/routing
+// ---------------------------------------------------------------------------
+
+/**
+ * ML-based routing recommendation returned by
+ * GET /api/artifacts/:id/routing?recommend=true (P2-4-08).
+ *
+ * ```next_template``` is null when no recommendation is available.
+ * ```confidence_score``` is a float in [0.0, 1.0].
+ */
+export interface MLRoutingRecommendation {
+  next_template: string | null;
+  confidence_score: number;
+  rationale: string | null;
+}
+
+/**
+ * Fetch the ML-based routing recommendation for an artifact.
+ *
+ * Calls GET /api/artifacts/{artifact_id}/routing?recommend=true.
+ * Returns null next_template when no recommendation matches.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}/routing (P2-4-08)
+ */
+export async function getMLRoutingRecommendation(
+  id: string,
+): Promise<MLRoutingRecommendation> {
+  return apiFetch<MLRoutingRecommendation>(
+    `/artifacts/${encodeURIComponent(id)}/routing?recommend=true`,
+    { method: 'GET' },
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Quality gates (Portal v1.5 P1.5-1-05)
