@@ -3,6 +3,16 @@ const nextConfig = {
   // Strict mode for catching potential issues early
   reactStrictMode: true,
 
+  // Transpile sigma.js and graphology — they ship as ESM-only packages and
+  // Next.js requires explicit transpilation for non-CJS node_modules.
+  transpilePackages: [
+    "sigma",
+    "graphology",
+    "graphology-layout",
+    "graphology-layout-forceatlas2",
+    "@react-sigma/core",
+  ],
+
   // Rewrites to proxy API calls to the backend during development
   // In production, set MEATYWIKI_PORTAL_API_URL and handle via middleware
   async rewrites() {

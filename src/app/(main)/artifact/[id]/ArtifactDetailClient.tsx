@@ -126,6 +126,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getContextPack, listContextPackVersions } from "@/lib/api/projects";
 import type { ContextPack, ContextPackVersion } from "@/types/projects";
+import { ArtifactMiniGraph } from "@/components/artifact/ArtifactMiniGraph";
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)
@@ -1923,6 +1924,24 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
             actions={railActions}
             ariaLabel="Artifact context"
           />
+
+          {/* Knowledge graph neighborhood (v2.1 mini-graph) */}
+          {!isContextPack && (
+            <section
+              aria-labelledby="mini-graph-heading"
+              className="mt-4 flex flex-col gap-2"
+            >
+              <h3
+                id="mini-graph-heading"
+                className="text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Knowledge graph
+              </h3>
+              {/* ArtifactMiniGraph is dynamically imported (ssr: false) so it
+                  never blocks the detail page render. Sigma needs WebGL/window. */}
+              <ArtifactMiniGraph artifactId={detailArtifact.id} hops={2} />
+            </section>
+          )}
         </aside>
       </div>
 
