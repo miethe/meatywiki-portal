@@ -126,7 +126,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getContextPack, listContextPackVersions } from "@/lib/api/projects";
 import type { ContextPack, ContextPackVersion } from "@/types/projects";
-import { ArtifactMiniGraph } from "@/components/artifact/ArtifactMiniGraph";
+import dynamic from "next/dynamic";
+
+const ArtifactMiniGraph = dynamic(
+  () => import("@/components/artifact/ArtifactMiniGraph").then((m) => m.ArtifactMiniGraph),
+  { ssr: false },
+);
 
 // ---------------------------------------------------------------------------
 // Source-type classification (mirrors API-01 service-layer predicates)

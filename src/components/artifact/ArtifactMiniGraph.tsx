@@ -41,7 +41,6 @@ import {
   type KeyboardEvent,
 } from "react";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { SigmaContainer, useRegisterEvents, useSigma } from "@react-sigma/core";
 import Graph from "graphology";
 import circularLayout from "graphology-layout/circular";
@@ -1013,24 +1012,4 @@ export function ArtifactMiniGraphInner({
 // Dynamic export — prevents SSR since sigma needs window / WebGL
 // ---------------------------------------------------------------------------
 
-/**
- * ArtifactMiniGraph — dynamically imported to skip SSR.
- *
- * Usage:
- *   import { ArtifactMiniGraph } from "@/components/artifact/ArtifactMiniGraph";
- *   <ArtifactMiniGraph artifactId={id} hops={2} />
- *
- * Bundle note (P4-07): sigma.js + graphology + FA2 contribute ~130–145 KB gzipped
- * to the dynamic chunk. This stays within the 150 KB budget. The dynamic import
- * with ssr:false ensures this chunk is not included in the SSR bundle.
- */
-export const ArtifactMiniGraph = dynamic(
-  () =>
-    import("./ArtifactMiniGraph").then((mod) => ({
-      default: mod.ArtifactMiniGraphInner,
-    })),
-  {
-    ssr: false,
-    loading: () => <GraphSkeleton />,
-  },
-);
+export { ArtifactMiniGraphInner as ArtifactMiniGraph };
