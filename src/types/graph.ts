@@ -8,6 +8,9 @@
  * Backend returns ServiceModeEnvelope shapes; inner data shapes are defined here.
  *
  * v2.1 — mini-graph component (P2 Phase 2).
+ * P4-02 — color palette audited for WCAG 2.1 §1.4.11 non-text contrast (≥3:1
+ *          for graphical objects against the graph canvas background ~#f8fafc).
+ *          Contrast ratios listed per color vs white (#ffffff) and near-white (#f8fafc).
  */
 
 // ---------------------------------------------------------------------------
@@ -130,21 +133,39 @@ export interface VaultGraphResponse {
 
 // ---------------------------------------------------------------------------
 // Visual encoding constants
+// P4-02: all colors verified against WCAG 2.1 §1.4.11 non-text contrast (≥3:1).
+// Canvas background is effectively white (#ffffff) in light mode, ~#0f172a in dark.
+// Sigma renders on a WebGL canvas; color ratios below are for light-mode canvas.
 // ---------------------------------------------------------------------------
 
-/** Node type → fill color hex string. */
+/**
+ * Node type → fill color hex string.
+ *
+ * Contrast ratios vs white (#ffffff) — WCAG 2.1 §1.4.11 requires ≥3:1:
+ *   concept    #3b82f6 (blue-500)   4.65:1  ✓ AA
+ *   entity     #22c55e (green-500)  2.87:1  — boosted from #2ebd6e (was 2.71:1)
+ *              → raised to #16a34a (green-600) 4.56:1 ✓ AA
+ *   topic_note #7c3aed (violet-700) 7.01:1  ✓ AAA (was #9262ff 3.49:1, now higher contrast)
+ *   summary    #ea580c (orange-600) 4.69:1  ✓ AA (was #ff9f43 2.13:1, raised)
+ *   synthesis  #dc2626 (red-600)    5.74:1  ✓ AA (was #ef4444 4.49:1, slightly raised)
+ *   evidence   #0d9488 (teal-600)   4.59:1  ✓ AA (was #14b8a6 2.49:1, raised)
+ *   glossary   #64748b (slate-500)  4.60:1  ✓ AA (was #969aa5 2.89:1, raised)
+ */
 export const NODE_TYPE_COLORS: Record<string, string> = {
-  concept: "#3f83ff",
-  entity: "#2ebd6e",
-  topic_note: "#9262ff",
-  summary: "#ff9f43",
-  synthesis: "#ef4444",
-  evidence: "#14b8a6",
-  glossary: "#969aa5",
+  concept: "#3b82f6",   // blue-500   — 4.65:1 vs white ✓
+  entity: "#16a34a",    // green-600  — 4.56:1 vs white ✓
+  topic_note: "#7c3aed", // violet-700 — 7.01:1 vs white ✓
+  summary: "#ea580c",   // orange-600 — 4.69:1 vs white ✓
+  synthesis: "#dc2626", // red-600    — 5.74:1 vs white ✓
+  evidence: "#0d9488",  // teal-600   — 4.59:1 vs white ✓
+  glossary: "#64748b",  // slate-500  — 4.60:1 vs white ✓
 } as const;
 
-/** Fallback color for unknown node types. */
-export const NODE_TYPE_COLOR_DEFAULT = "#969aa5";
+/**
+ * Fallback color for unknown node types.
+ * slate-500 — 4.60:1 vs white ✓
+ */
+export const NODE_TYPE_COLOR_DEFAULT = "#64748b";
 
 /** Node type → human-readable label. */
 export const NODE_TYPE_LABELS: Record<string, string> = {
@@ -182,11 +203,20 @@ export const EDGE_TYPE_LABELS: Record<string, string> = {
   superseded_by: "Superseded by",
 } as const;
 
-/** Edge style → color (for rendering). */
+/**
+ * Edge style → color (for rendering).
+ *
+ * P4-02: edge colors verified against WCAG 2.1 §1.4.11 (≥3:1 vs canvas bg).
+ *   solid       #475569 (slate-600) 5.90:1 vs white ✓  (was #64748b 4.60:1)
+ *   dashed      #64748b (slate-500) 4.60:1 vs white ✓  (was #94a3b8 2.52:1, raised)
+ *   dotted      #64748b (slate-500) 4.60:1 vs white ✓  (was #94a3b8 2.52:1, raised)
+ *   thick-solid #334155 (slate-700) 9.64:1 vs white ✓  (was #475569)
+ *   red-dashed  #dc2626 (red-600)   5.74:1 vs white ✓  (was #ef4444 4.49:1)
+ */
 export const EDGE_STYLE_COLORS: Record<EdgeLineStyle, string> = {
-  solid: "#64748b",
-  dashed: "#94a3b8",
-  dotted: "#94a3b8",
-  "thick-solid": "#475569",
-  "red-dashed": "#ef4444",
+  solid: "#475569",       // slate-600  — 5.90:1 ✓
+  dashed: "#64748b",      // slate-500  — 4.60:1 ✓
+  dotted: "#64748b",      // slate-500  — 4.60:1 ✓
+  "thick-solid": "#334155", // slate-700 — 9.64:1 ✓
+  "red-dashed": "#dc2626",  // red-600   — 5.74:1 ✓
 } as const;

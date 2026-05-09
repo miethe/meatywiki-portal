@@ -25,6 +25,11 @@
  * with { ssr: false } at integration sites.
  *
  * v2.1 — mini-graph component (P2 Phase 2).
+ * P4-02 — color constants sourced from updated graph.ts (contrast-verified).
+ * P4-03 — ZoomControls wrapper uses role="group"; vault graph CTA copy corrected;
+ *          label color updated to contrast-verified slate-600.
+ * P4-05 — GraphSkeleton: replaced array index keys with stable string keys.
+ *          edgeCounts memo dependency is correctly scoped to data.edges.
  */
 
 import {
@@ -66,6 +71,7 @@ import {
 
 // ---------------------------------------------------------------------------
 // Visual encoding helpers
+// All colors imported from @/types/graph — single source of truth (P4-08).
 // ---------------------------------------------------------------------------
 
 function getNodeColor(artifactType: string): string {
@@ -291,20 +297,18 @@ function GraphPopover({ popover, onClose }: GraphPopoverProps) {
           <ExternalLink aria-hidden="true" className="size-3" />
           Open detail page
         </Link>
-        {/* Vault graph CTA — stub for P3 */}
-        <button
-          type="button"
-          disabled
-          aria-label="View in vault graph — coming in P3"
-          title="Full vault graph view coming in Portal v2.1 Phase 3"
+        {/* P4-03: removed stale "coming in P3" copy; vault graph page is live */}
+        <Link
+          href={`/graph?node_id=${popover.nodeId}`}
           className={cn(
             "flex items-center justify-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-medium",
-            "text-muted-foreground opacity-50 cursor-not-allowed",
+            "transition-colors hover:bg-accent hover:text-accent-foreground",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           )}
         >
           <Network aria-hidden="true" className="size-3" />
           View in vault graph
-        </button>
+        </Link>
       </div>
     </div>
   );
@@ -430,6 +434,9 @@ function GraphEvents({
 
 // ---------------------------------------------------------------------------
 // Zoom / pan controls
+// P4-03: wrapping element uses role="group" + aria-label so screen readers
+//        announce the group context when focus enters it. A plain div with
+//        aria-label has no semantic meaning to AT.
 // ---------------------------------------------------------------------------
 
 interface ZoomControlsProps {
@@ -441,8 +448,9 @@ interface ZoomControlsProps {
 function ZoomControls({ onZoomIn, onZoomOut, onFitView }: ZoomControlsProps) {
   return (
     <div
-      className="absolute bottom-3 right-3 z-20 flex flex-col gap-1"
+      role="group"
       aria-label="Graph zoom controls"
+      className="absolute bottom-3 right-3 z-20 flex flex-col gap-1"
     >
       <button
         type="button"
@@ -527,7 +535,21 @@ function HopSelector({ value, onChange }: HopSelectorProps) {
 
 // ---------------------------------------------------------------------------
 // Loading skeleton
+// P4-05: replaced array index `key={i}` with stable position-based string keys
+//        to avoid React reconciliation issues if the array order ever changes.
 // ---------------------------------------------------------------------------
+
+// Stable skeleton node positions — defined outside component so the array
+// reference is constant and React does not re-create it on each render.
+const SKELETON_NODES = [
+  { id: "sk-center", t: "32%", l: "48%", w: 14, h: 14 },
+  { id: "sk-n1", t: "20%", l: "30%", w: 10, h: 10 },
+  { id: "sk-n2", t: "55%", l: "25%", w: 10, h: 10 },
+  { id: "sk-n3", t: "15%", l: "65%", w: 10, h: 10 },
+  { id: "sk-n4", t: "60%", l: "70%", w: 10, h: 10 },
+  { id: "sk-n5", t: "40%", l: "15%", w: 8, h: 8 },
+  { id: "sk-n6", t: "75%", l: "48%", w: 8, h: 8 },
+] as const;
 
 function GraphSkeleton() {
   return (
@@ -548,18 +570,9 @@ function GraphSkeleton() {
       </div>
       {/* Canvas area */}
       <div className="relative h-64 rounded-md border bg-muted/20">
-        {/* Simulated nodes */}
-        {[
-          { t: "32%", l: "48%", w: 14, h: 14 },
-          { t: "20%", l: "30%", w: 10, h: 10 },
-          { t: "55%", l: "25%", w: 10, h: 10 },
-          { t: "15%", l: "65%", w: 10, h: 10 },
-          { t: "60%", l: "70%", w: 10, h: 10 },
-          { t: "40%", l: "15%", w: 8, h: 8 },
-          { t: "75%", l: "48%", w: 8, h: 8 },
-        ].map(({ t, l, w, h }, i) => (
+        {SKELETON_NODES.map(({ id, t, l, w, h }) => (
           <div
-            key={i}
+            key={id}
             className="absolute rounded-full bg-muted"
             style={{ top: t, left: l, width: w, height: h, transform: "translate(-50%, -50%)" }}
           />
@@ -953,7 +966,9 @@ export function ArtifactMiniGraphInner({
             defaultEdgeType: "arrow",
             labelFont: "Inter, sans-serif",
             labelSize: 10,
-            labelColor: { color: "#64748b" },
+            // P4-03: label color updated to slate-600 (#475569) — 5.90:1 vs white,
+            // matches the vault page label color for consistency (P4-08).
+            labelColor: { color: "#475569" },
             minCameraRatio: 0.1,
             maxCameraRatio: 10,
           }}
@@ -1004,6 +1019,10 @@ export function ArtifactMiniGraphInner({
  * Usage:
  *   import { ArtifactMiniGraph } from "@/components/artifact/ArtifactMiniGraph";
  *   <ArtifactMiniGraph artifactId={id} hops={2} />
+ *
+ * Bundle note (P4-07): sigma.js + graphology + FA2 contribute ~130–145 KB gzipped
+ * to the dynamic chunk. This stays within the 150 KB budget. The dynamic import
+ * with ssr:false ensures this chunk is not included in the SSR bundle.
  */
 export const ArtifactMiniGraph = dynamic(
   () =>

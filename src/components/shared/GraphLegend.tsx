@@ -11,6 +11,8 @@
  * Reusable by ArtifactMiniGraph (P2) and the vault graph page (P3).
  *
  * v2.1 — mini-graph component (P2 Phase 2).
+ * P4-03 — removed duplicate `hidden` attribute + className logic (was applied twice).
+ * P4-04 — legend toggle button is already focus-visible; no changes needed.
  */
 
 import { useState } from "react";
@@ -202,7 +204,7 @@ function EdgeSwatch({ style, width = 32, height = 12 }: EdgeSwatchProps) {
           y1={y}
           x2={width - 2}
           y2={y}
-          stroke="#ef4444"
+          stroke={color}
           strokeWidth={1.5}
           strokeDasharray="4 3"
         />
@@ -269,14 +271,11 @@ export function GraphLegend({
         />
       </button>
 
-      {/* Body */}
+      {/* Body — use the HTML `hidden` attribute only (not a duplicate className) */}
       <div
         id="graph-legend-body"
         hidden={!expanded}
-        className={cn(
-          "border-t px-3 py-2.5 flex flex-col gap-3",
-          !expanded && "hidden",
-        )}
+        className="border-t px-3 py-2.5 flex flex-col gap-3"
       >
         {/* Node types */}
         <section aria-labelledby="legend-nodes-heading">

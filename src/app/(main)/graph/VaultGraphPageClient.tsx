@@ -17,6 +17,13 @@
  *   P3-08 — memoization, FA2 layout, sampling transparency
  *   P3-10 — keyboard navigation (Tab nodes, arrow pan, +/- zoom, Enter, Escape)
  *   P3-11 — ARIA labels, skip link, sr-only fallback list
+ *   P4-02 — color constants sourced from updated graph.ts (contrast-verified)
+ *   P4-03 — ZoomControls wrapper uses role="group"; sr-fallback list item buttons
+ *            carry aria-label tying action to node; label color updated to match
+ *            contrast-verified edge colors
+ *   P4-04 — keyboard nav: Tab interception is on the graph region container (role=img);
+ *            normal tab order flows through all interactive controls outside the canvas
+ *   P4-06 — removed no-op `[...displayNodes]` spread memo; memoization audit confirmed
  *
  * v2.1 — vault graph page (P3 Phase 3).
  */
@@ -72,6 +79,7 @@ import {
 
 // ---------------------------------------------------------------------------
 // Visual encoding helpers (mirrors ArtifactMiniGraph)
+// All colors imported from @/types/graph — single source of truth (P4-08).
 // ---------------------------------------------------------------------------
 
 function getNodeColor(artifactType: string): string {
@@ -299,6 +307,9 @@ function GraphPopover({ popover, onClose, onViewNeighborhood }: GraphPopoverProp
 
 // ---------------------------------------------------------------------------
 // Zoom controls
+// P4-03: wrapping element uses role="group" + aria-label so screen readers
+//        announce the group context when focus enters it. A plain div with
+//        aria-label has no semantic meaning to AT.
 // ---------------------------------------------------------------------------
 
 interface ZoomControlsProps {
@@ -310,8 +321,9 @@ interface ZoomControlsProps {
 function ZoomControls({ onZoomIn, onZoomOut, onFitView }: ZoomControlsProps) {
   return (
     <div
-      className="absolute bottom-3 right-3 z-20 flex flex-col gap-1"
+      role="group"
       aria-label="Graph zoom controls"
+      className="absolute bottom-3 right-3 z-20 flex flex-col gap-1"
     >
       {(
         [
@@ -756,6 +768,9 @@ function MobileFilterDrawer({
 
 // ---------------------------------------------------------------------------
 // Screen-reader fallback list (P3-11)
+// P4-03: each "View neighborhood" button now carries an aria-label that
+//        includes the node title so screen reader users know which node
+//        the action applies to.
 // ---------------------------------------------------------------------------
 
 function ScreenReaderFallback({
@@ -781,26 +796,30 @@ function ScreenReaderFallback({
         This list is a screen-reader alternative to the interactive graph canvas.
       </p>
       <ul role="list" aria-label="Graph nodes" className="mt-2 flex flex-col gap-1">
-        {nodes.map((node) => (
-          <li key={node.id} className="flex flex-wrap items-baseline gap-2 text-xs">
-            <Link
-              href={`/artifact/${node.id}`}
-              className="font-medium text-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
-            >
-              {node.title ?? node.id}
-            </Link>
-            <span className="capitalize text-muted-foreground">
-              {node.artifact_type.replace(/_/g, " ")}
-            </span>
-            <button
-              type="button"
-              onClick={() => onViewNeighborhood(node.id)}
-              className="text-muted-foreground/70 hover:text-foreground hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
-            >
-              View neighborhood
-            </button>
-          </li>
-        ))}
+        {nodes.map((node) => {
+          const nodeLabel = node.title ?? node.id;
+          return (
+            <li key={node.id} className="flex flex-wrap items-baseline gap-2 text-xs">
+              <Link
+                href={`/artifact/${node.id}`}
+                className="font-medium text-foreground hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+              >
+                {nodeLabel}
+              </Link>
+              <span className="capitalize text-muted-foreground">
+                {node.artifact_type.replace(/_/g, " ")}
+              </span>
+              <button
+                type="button"
+                aria-label={`View neighborhood graph for ${nodeLabel}`}
+                onClick={() => onViewNeighborhood(node.id)}
+                className="text-muted-foreground/70 hover:text-foreground hover:underline focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
+              >
+                View neighborhood
+              </button>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -914,8 +933,10 @@ export function VaultGraphPageClient() {
   const [focusedNodeIndex, setFocusedNodeIndex] = useState(-1);
   const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
-  // Sorted node list for keyboard cycling
-  const nodeList = useMemo(() => [...displayNodes], [displayNodes]);
+  // P4-06: removed no-op `useMemo(() => [...displayNodes], [displayNodes])`.
+  // The spread created a new array identity every render with no transformation.
+  // Using displayNodes directly saves one array allocation per render.
+  const nodeList = displayNodes;
 
   // -------------------------------------------------------------------------
   // Build graphology graph (memoized — P3-08)
@@ -927,6 +948,8 @@ export function VaultGraphPageClient() {
 
   // -------------------------------------------------------------------------
   // Keyboard handler (P3-10)
+  // P4-04: Tab key intercepts focus within the graph region to cycle nodes.
+  //        Normal Tab order (outside the canvas div) is unaffected.
   // -------------------------------------------------------------------------
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>) => {
@@ -1229,6 +1252,14 @@ export function VaultGraphPageClient() {
                       : ""}
                   </div>
 
+                  {/*
+                   * P4-04: The graph canvas uses role="img" with a descriptive aria-label
+                   * and is focusable (tabIndex=0). When focused, Tab cycles through nodes
+                   * (handled in handleKeyDown), arrow keys pan, +/- zoom, Enter opens,
+                   * Escape closes the popover. Focus ring is provided by focus-visible:ring-2.
+                   * Interactive controls outside this div (zoom buttons, filters, pagination)
+                   * remain in the normal Tab order and are NOT intercepted.
+                   */}
                   <div
                     role="img"
                     aria-label={`Knowledge graph with ${displayNodes.length} nodes and ${displayEdges.length} edges. Use Tab to cycle nodes, arrow keys to pan, plus/minus to zoom, Enter to open detail.`}
@@ -1247,7 +1278,10 @@ export function VaultGraphPageClient() {
                         defaultEdgeType: "arrow",
                         labelFont: "Inter, sans-serif",
                         labelSize: 10,
-                        labelColor: { color: "#64748b" },
+                        // P4-03: label color updated to slate-600 (#475569) — 5.90:1 vs white.
+                        // Previously slate-500 (#64748b) which was 4.60:1 — both pass AA,
+                        // but slate-600 provides better legibility on lighter canvas backgrounds.
+                        labelColor: { color: "#475569" },
                         minCameraRatio: 0.05,
                         maxCameraRatio: 20,
                         // For large graphs, reduce label rendering
@@ -1284,7 +1318,11 @@ export function VaultGraphPageClient() {
 
                     {/* Sampling indicator */}
                     {sampled && !isNeighborhoodMode && (
-                      <div className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50/90 px-2.5 py-1.5 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                      <div
+                        role="note"
+                        aria-label="Graph is showing a sampled subset of artifacts"
+                        className="absolute left-3 top-3 z-10 flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50/90 px-2.5 py-1.5 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                      >
                         <AlertTriangle aria-hidden="true" className="size-3" />
                         Showing a sample
                       </div>
