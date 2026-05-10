@@ -59,7 +59,7 @@ async function fetchArtifactNeighborhood(
     `/portal/graph/neighborhood?${params.toString()}`,
     { method: "GET" },
   );
-  return response.data;
+  return response;
 }
 
 // ---------------------------------------------------------------------------

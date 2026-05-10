@@ -65,7 +65,7 @@ async function fetchVaultGraph(
     `/portal/graph/vault?${params.toString()}`,
     { method: "GET" },
   );
-  return response.data;
+  return response;
 }
 
 // ---------------------------------------------------------------------------

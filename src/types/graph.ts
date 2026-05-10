@@ -75,14 +75,14 @@ export interface NeighborhoodGraphData {
 }
 
 /**
- * Full response envelope from GET /api/portal/graph/neighborhood.
+ * Response from GET /api/portal/graph/neighborhood.
+ *
+ * The graph endpoints return the payload directly (no ServiceModeEnvelope
+ * wrapper). The ETag is a top-level field, not nested in a `meta` block.
  */
-export interface NeighborhoodGraphResponse {
-  data: NeighborhoodGraphData;
-  meta: {
-    etag: string | null;
-  };
-}
+export type NeighborhoodGraphResponse = NeighborhoodGraphData & {
+  etag: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Vault graph types
@@ -122,14 +122,14 @@ export interface VaultGraphData {
 }
 
 /**
- * Full response envelope from GET /api/portal/graph/vault.
+ * Response from GET /api/portal/graph/vault.
+ *
+ * The graph endpoints return the payload directly (no ServiceModeEnvelope
+ * wrapper). The ETag is a top-level field, not nested in a `meta` block.
  */
-export interface VaultGraphResponse {
-  data: VaultGraphData;
-  meta: {
-    etag: string | null;
-  };
-}
+export type VaultGraphResponse = VaultGraphData & {
+  etag: string | null;
+};
 
 // ---------------------------------------------------------------------------
 // Visual encoding constants
