@@ -7,7 +7,7 @@
  *   - GET /api/artifacts/:id via useArtifact (TanStack Query)
  *   - Loading skeleton, 404 state, generic error state
  *   - Tabs: Source | Knowledge | Draft | Workflow OS | Backlinks
- *   - Source Reader: raw markdown in <pre><code> with monospace styling
+ *   - Source Reader: raw markdown via ArticleViewer variant="editorial" (M-02)
  *   - Knowledge Reader: compiled content (compiled_content field)
  *   - Draft Reader: synthesis/draft content or empty state if absent
  *   - Workflow OS tab: WorkflowOSTab (P4-10)
@@ -41,7 +41,7 @@
  *   - Minimal in-component toast notifications (no external library).
  *
  * Rendering decisions:
- *   - raw_content: displayed in <pre><code> block — no dangerouslySetInnerHTML.
+ *   - raw_content: rendered via ArticleViewer variant="editorial" (M-02). No dangerouslySetInnerHTML.
  *   - compiled_content: rendered via ArticleViewer from @miethe/ui (PU6-01).
  *     ArticleViewer handles HTML sanitization internally (rehype-sanitize).
  *     No dangerouslySetInnerHTML on any markdown content path.
@@ -1111,7 +1111,13 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Source Reader — raw markdown / text
+// Source Reader — raw markdown rendered via ArticleViewer (M-02)
+//
+// Variant decision: @miethe/ui ArticleViewer exposes "editorial" | "compact" |
+// "technical" — no "source" variant exists. We use variant="editorial" to match
+// the typography ruleset of the Knowledge and Draft tabs (visual consistency).
+// A data-variant="source" attribute on the wrapper is provided for any
+// optional CSS distinction without introducing a new upstream variant.
 // ---------------------------------------------------------------------------
 
 function SourceReader({ content }: { content: string | null | undefined }) {
@@ -1132,10 +1138,16 @@ function SourceReader({ content }: { content: string | null | undefined }) {
   }
 
   return (
-    <div className="overflow-auto rounded-md border bg-muted/30">
-      <pre className="whitespace-pre-wrap break-words p-4 font-mono text-sm leading-relaxed text-foreground/80">
-        <code>{content}</code>
-      </pre>
+    <div data-variant="source">
+      <ArticleViewer
+        content={content}
+        format="auto"
+        variant="editorial"
+        frontmatter="hide"
+        sanitize={true}
+        generateHeadingIds={true}
+        className="rounded-md border bg-card p-6"
+      />
     </div>
   );
 }
