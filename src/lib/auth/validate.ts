@@ -1,16 +1,19 @@
 /**
  * Token validation against the backend Portal API.
  *
- * Assumed backend contract for `POST /api/auth/session`:
- *   Request body:  { token: string }
- *   Success (200): { valid: true, expires_at?: string }
- *   Failure (401): { valid: false, error?: string }
- *   Failure (4xx): any error envelope
+ * Backend contract for `GET /api/auth/validate`:
+ *   Auth:          Authorization: Bearer <token> header
+ *   Success (200): { valid: true, user_id: "local" }
+ *   Failure (401): returned by BearerTokenAuthMiddleware when token is
+ *                  missing or invalid; body may be { error: string } or
+ *                  { detail: string }
+ *   Other 4xx/5xx: unexpected error envelope
  *
- * The frontend sends the candidate token; the backend validates it against
- * its own `$MEATYWIKI_PORTAL_TOKEN` environment variable and returns whether
- * the token is accepted. No session ID is issued by the backend — the token
- * itself is the credential and is stored verbatim in the HttpOnly cookie.
+ * The frontend sends the candidate token as a Bearer header; the backend
+ * validates it against its own `$MEATYWIKI_PORTAL_TOKEN` environment variable
+ * and returns whether the token is accepted. No session ID is issued by the
+ * backend — the token itself is the credential and is stored verbatim in the
+ * HttpOnly cookie.
  *
  * If the backend returns 200 with { valid: true }, the frontend sets the
  * HttpOnly cookie and considers the user authenticated.
@@ -35,9 +38,9 @@ export interface ValidationResult {
  * { valid: true } for any non-empty token (still requires non-empty so the
  * cookie has a meaningful value).
  *
- * Otherwise, sends `POST <backend>/api/auth/session` with the token in the
- * request body. Network or parse errors are treated as invalid tokens
- * (fail-closed).
+ * Otherwise, sends `GET <backend>/api/auth/validate` with the token in an
+ * Authorization: Bearer header. Network or parse errors are treated as
+ * invalid tokens (fail-closed).
  */
 export async function validateTokenWithBackend(
   token: string,
@@ -50,10 +53,9 @@ export async function validateTokenWithBackend(
   }
 
   try {
-    const response = await fetch(`${getApiBase()}/api/auth/session`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
+    const response = await fetch(`${getApiBase()}/api/auth/validate`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
       // Short timeout — backend is local; long waits indicate it's down
       signal: AbortSignal.timeout(5000),
     });

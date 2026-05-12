@@ -219,8 +219,8 @@ export const handlers = [
   // ------------------------------------------------------------------
   // Auth / Session
   // ------------------------------------------------------------------
-  http.post(`${API_BASE}/api/auth/session`, () => {
-    return HttpResponse.json({ ok: true });
+  http.get(`${API_BASE}/api/auth/validate`, () => {
+    return HttpResponse.json({ valid: true, user_id: "local" });
   }),
 
   http.delete(`${API_BASE}/api/auth/session`, () => {
