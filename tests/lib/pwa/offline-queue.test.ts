@@ -407,4 +407,68 @@ describe("OfflineQueueManager queue bound", () => {
     const { queued } = await OfflineQueueManager.count();
     expect(queued).toBe(100);
   });
+
+  it("dispatches an 'offline-queue-eviction' CustomEvent when the oldest item is evicted", async () => {
+    // Fill queue to exactly 100 items.
+    for (let i = 0; i < 100; i++) {
+      await OfflineQueueManager.enqueue({
+        endpoint: "/api/intake/note",
+        method: "POST",
+        bodyJson: { seq: i },
+      });
+    }
+
+    // Spy on window.dispatchEvent to capture CustomEvent dispatches.
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+    dispatchSpy.mockClear();
+
+    // Enqueue one more — triggers eviction.
+    await OfflineQueueManager.enqueue({
+      endpoint: "/api/intake/note",
+      method: "POST",
+      bodyJson: { seq: 100 },
+    });
+
+    // Assert that at least one dispatched event was 'offline-queue-eviction'.
+    const evictionEvents = dispatchSpy.mock.calls
+      .map(([event]) => event)
+      .filter(
+        (event): event is CustomEvent =>
+          event instanceof CustomEvent && event.type === "offline-queue-eviction",
+      );
+    expect(evictionEvents).toHaveLength(1);
+
+    dispatchSpy.mockRestore();
+  });
+
+  it("does NOT dispatch 'offline-queue-eviction' when queue is not yet full", async () => {
+    // Add 50 items — well below the 100 cap.
+    for (let i = 0; i < 50; i++) {
+      await OfflineQueueManager.enqueue({
+        endpoint: "/api/intake/note",
+        method: "POST",
+        bodyJson: { seq: i },
+      });
+    }
+
+    const dispatchSpy = jest.spyOn(window, "dispatchEvent");
+    dispatchSpy.mockClear();
+
+    // Enqueue one more — should NOT trigger eviction.
+    await OfflineQueueManager.enqueue({
+      endpoint: "/api/intake/note",
+      method: "POST",
+      bodyJson: { seq: 50 },
+    });
+
+    const evictionEvents = dispatchSpy.mock.calls
+      .map(([event]) => event)
+      .filter(
+        (event): event is CustomEvent =>
+          event instanceof CustomEvent && event.type === "offline-queue-eviction",
+      );
+    expect(evictionEvents).toHaveLength(0);
+
+    dispatchSpy.mockRestore();
+  });
 });

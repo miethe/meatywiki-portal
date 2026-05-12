@@ -18,12 +18,15 @@
  * After 3 failures the record moves to failed_queue.
  *
  * Queue bound: offline_queue is capped at MAX_QUEUE_SIZE (100) items.
- * When the bound is exceeded on enqueue, the oldest item is silently
- * discarded (FIFO eviction) and a console.warn is emitted.
+ * When the bound is exceeded on enqueue, the oldest item is discarded (FIFO
+ * eviction). A console.warn is emitted and an 'offline-queue-eviction' custom
+ * event is dispatched on window so React providers can surface a toast.
  *
- * Custom event dispatched on queue mutations:
+ * Custom events dispatched on queue mutations:
  *   window.dispatchEvent(new CustomEvent('offline-queue-change'))
- * This lets useOfflineQueue hook react without polling.
+ *   window.dispatchEvent(new CustomEvent('offline-queue-eviction'))
+ * 'offline-queue-change' lets useOfflineQueue hook react without polling.
+ * 'offline-queue-eviction' signals that data was lost so a toast can appear.
  *
  * Traces FR-1.5-17, FR-1.5-18.
  */
@@ -152,6 +155,18 @@ function notifyChange(): void {
   }
 }
 
+/**
+ * Dispatch the eviction notification event (no-op in non-browser envs).
+ * Fired when the queue is full and the oldest item is discarded.
+ * React providers subscribe via window.addEventListener('offline-queue-eviction')
+ * and surface a warning toast to the user.
+ */
+function notifyEviction(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("offline-queue-eviction"));
+  }
+}
+
 /** Sleep for `ms` milliseconds. */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -180,8 +195,8 @@ export class OfflineQueueManager {
    *
    * Queue bound: if offline_queue is at MAX_QUEUE_SIZE (100) when this is
    * called, the oldest item is discarded (FIFO eviction) before the new
-   * record is added. A console.warn is emitted on eviction; no UI toast is
-   * raised (silent discard by design).
+   * record is added. A console.warn is emitted and an 'offline-queue-eviction'
+   * CustomEvent is dispatched on window so React providers can surface a toast.
    */
   static async enqueue(params: EnqueueParams): Promise<number> {
     // --- Queue-bound check (FIFO eviction when at capacity) -----------------
@@ -191,6 +206,7 @@ export class OfflineQueueManager {
         `[OfflineQueue] Offline queue full (${MAX_QUEUE_SIZE} items), discarding oldest entry`,
       );
       await OfflineQueueManager.dequeueNext();
+      notifyEviction();
     }
     // ------------------------------------------------------------------------
 
