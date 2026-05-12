@@ -149,10 +149,13 @@ describe("Inbox Screen — WCAG 2.1 AA Accessibility (P3-09)", () => {
       });
     });
 
-    it("card links are in Tab order", () => {
+    it("card links have tabIndex=-1 (keyboard nav delegated to onCardClick handler)", () => {
       renderInbox();
       const cardLink = screen.getByRole("link", { name: /view test artifact/i });
-      expect(cardLink).toHaveAttribute("tabIndex", "0");
+      // The inbox stretch link is intentionally removed from the tab order (tabIndex=-1).
+      // Selection is driven by onCardClick on the link; modifier-clicks still navigate.
+      // The wrapper <div> provides the selection ring; the article is the focusable unit.
+      expect(cardLink).toHaveAttribute("tabIndex", "-1");
     });
   });
 

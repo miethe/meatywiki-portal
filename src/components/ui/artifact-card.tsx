@@ -297,7 +297,8 @@ export function ArtifactCard({
           href={`/artifact/${id}`}
           aria-label={`View ${title}`}
           className="absolute inset-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-          tabIndex={0}
+          tabIndex={-1}
+          onClick={(event) => onCardClick?.(event, artifact)}
         />
 
         {/* Type chip — left anchor */}
@@ -317,8 +318,8 @@ export function ArtifactCard({
           )}
         </div>
 
-        {/* Right cluster: urgency badge + CTA */}
-        <div className="pointer-events-none flex shrink-0 items-center gap-2">
+        {/* Right cluster: urgency badge + CTA — relative so buttons stack above the stretch link */}
+        <div className="pointer-events-none relative flex shrink-0 items-center gap-2">
           {urgencyLevel && (
             <UrgencyBadge
               level={urgencyLevel}

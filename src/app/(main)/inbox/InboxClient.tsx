@@ -420,16 +420,9 @@ function CompileButton({
 // ---------------------------------------------------------------------------
 
 /**
- * Wraps an ArtifactCard in a <button> so it is click + keyboard selectable.
- * We prefer a real <button> for native keyboard semantics (Enter/Space fires
- * onClick automatically) without manual onKeyDown handlers.
- *
- * Selected state adds a primary ring so the selected item is unmistakable
- * without relying on colour alone (WCAG 1.4.1).
- *
- * FE-04: compileButton is rendered as a sibling below the card (not inside
- * the button) to keep the DOM valid (no interactive content inside <button>).
- * The error message is also rendered as a sibling below the card row.
+ * Wraps ArtifactCard with selection ring and onCardClick handler.
+ * Follows the Library pattern: plain click selects (updates sidebar),
+ * modifier-click (Cmd/Ctrl/Shift/Alt) navigates to the detail page.
  */
 interface SelectableCardWrapperProps {
   artifact: ArtifactCardType;
@@ -454,29 +447,35 @@ function SelectableCardWrapper({
   compileSlot,
   compileError,
 }: SelectableCardWrapperProps) {
+  const handleCardClick = useCallback(
+    (event: React.MouseEvent<HTMLAnchorElement>) => {
+      // Allow modifier-click to navigate to the detail page (same as Library)
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+        return;
+      }
+      event.preventDefault();
+      onSelect(artifact);
+    },
+    [artifact, onSelect],
+  );
+
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="relative">
-        <button
-          type="button"
-          aria-pressed={isSelected}
-          aria-label={`Select inbox item: ${artifact.title}`}
-          onClick={() => onSelect(artifact)}
-          className={cn(
-            "w-full text-left rounded-md transition-all",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            isSelected ? "ring-2 ring-primary ring-offset-1" : "ring-0",
-          )}
-        >
-          <ArtifactCard
-            artifact={artifact}
-            variant="list"
-            inboxGroup={inboxGroup}
-            urgencyLevel={urgencyLevel}
-            urgencyMinutesAgo={urgencyMinutesAgo}
-            ctaSlot={compileSlot}
-          />
-        </button>
+      <div
+        className={cn(
+          "rounded-md transition-all",
+          isSelected ? "ring-2 ring-primary ring-offset-1" : "ring-0",
+        )}
+      >
+        <ArtifactCard
+          artifact={artifact}
+          variant="list"
+          inboxGroup={inboxGroup}
+          urgencyLevel={urgencyLevel}
+          urgencyMinutesAgo={urgencyMinutesAgo}
+          ctaSlot={compileSlot}
+          onCardClick={handleCardClick}
+        />
       </div>
 
       {/* FE-04: Inline compile error — shown below card row, auto-cleared by parent */}
