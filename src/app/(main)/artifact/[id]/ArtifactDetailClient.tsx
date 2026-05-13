@@ -112,7 +112,24 @@ import type { ArtifactDetail, ServiceModeEnvelope } from "@/types/artifact";
 import {
   useArchiveArtifact,
   useDeleteArtifact,
+  useLinkArtifact,
+  useRequestReview,
 } from "@/hooks/use-artifact-actions";
+import type { ArtifactEdgeType, ArtifactReviewType } from "@/lib/api/artifacts";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ApiError } from "@/lib/api/client";
 import {
   AlertDialog,
@@ -1545,6 +1562,63 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     });
   }, [artifact, deleteMutation, router]);
 
+  // ---- Link Related — audit-wave-2 P2-02/03 ----
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [linkTargetId, setLinkTargetId] = useState("");
+  const [linkEdgeType, setLinkEdgeType] = useState<ArtifactEdgeType>("relates_to");
+  const linkMutation = useLinkArtifact(id);
+
+  const handleLink = useCallback(() => {
+    setLinkTargetId("");
+    setLinkEdgeType("relates_to");
+    setShowLinkDialog(true);
+  }, []);
+
+  const handleLinkSubmit = useCallback(() => {
+    if (!linkTargetId.trim()) return;
+    linkMutation.mutate(
+      { target_id: linkTargetId.trim(), edge_type: linkEdgeType },
+      {
+        onSuccess: () => {
+          setShowLinkDialog(false);
+          setLinkTargetId("");
+          showToast("success", "Artifact linked successfully");
+        },
+        onError: (err) => {
+          showToast("error", err instanceof Error ? err.message : "Link failed");
+        },
+      },
+    );
+  }, [linkTargetId, linkEdgeType, linkMutation, showToast]);
+
+  // ---- Request Review — audit-wave-2 P2-04 ----
+  const [showReviewDialog, setShowReviewDialog] = useState(false);
+  const [reviewType, setReviewType] = useState<ArtifactReviewType>("verification");
+  const [reviewNotes, setReviewNotes] = useState("");
+  const reviewMutation = useRequestReview(id);
+
+  const handleReview = useCallback(() => {
+    setReviewType("verification");
+    setReviewNotes("");
+    setShowReviewDialog(true);
+  }, []);
+
+  const handleReviewSubmit = useCallback(() => {
+    reviewMutation.mutate(
+      { review_type: reviewType, notes: reviewNotes.trim() || null },
+      {
+        onSuccess: () => {
+          setShowReviewDialog(false);
+          setReviewNotes("");
+          showToast("success", "Added to review queue");
+        },
+        onError: (err) => {
+          showToast("error", err instanceof Error ? err.message : "Review request failed");
+        },
+      },
+    );
+  }, [reviewType, reviewNotes, reviewMutation, showToast]);
+
   // Deep-link: if ?tab=derivatives is present AND the artifact is a source type,
   // activate the Derivatives tab on mount / when the artifact loads.
   // useEffect is placed before early returns to satisfy the Rules of Hooks.
@@ -1663,18 +1737,20 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       icon: archiveMutation.isPending ? Loader2 : Archive,
     },
     {
-      label: "Link Related",
+      label: linkMutation.isPending ? "Linking…" : "Link Related",
       ariaLabel: "Link this artifact to a related artifact",
       hasEndpoint: true,
-      description: "POST /api/artifacts/:id/link — wired in a future P3 task",
-      icon: Link2,
+      description: "POST /api/artifacts/:id/link",
+      onClick: linkMutation.isPending ? undefined : handleLink,
+      icon: linkMutation.isPending ? Loader2 : Link2,
     },
     {
-      label: "Request Review",
+      label: reviewMutation.isPending ? "Requesting…" : "Request Review",
       ariaLabel: "Add this artifact to the review queue",
       hasEndpoint: true,
-      description: "POST /api/artifacts/:id/review — wired in a future P3 task",
-      icon: CheckSquare,
+      description: "POST /api/artifacts/:id/review",
+      onClick: reviewMutation.isPending ? undefined : handleReview,
+      icon: reviewMutation.isPending ? Loader2 : CheckSquare,
     },
     {
       label: "Delete",
@@ -1968,6 +2044,150 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {activeToast && (
         <ToastBanner toast={activeToast} onDismiss={dismissToast} />
       )}
+
+      {/* Link Related dialog — audit-wave-2 P2-02/03 */}
+      <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Link Related Artifact</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-2">
+            Enter the ID or slug of the artifact to link, and choose the
+            relationship type.
+          </p>
+          <div className="flex flex-col gap-3 py-2">
+            <div className="flex flex-col gap-1">
+              <label
+                htmlFor="link-target-id"
+                className="text-sm font-medium"
+              >
+                Target artifact ID
+              </label>
+              <Input
+                id="link-target-id"
+                placeholder="01HXYZ… or artifact slug"
+                value={linkTargetId}
+                onChange={(e) => setLinkTargetId(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && linkTargetId.trim()) handleLinkSubmit();
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="link-edge-type" className="text-sm font-medium">
+                Relationship type
+              </label>
+              <Select
+                value={linkEdgeType}
+                onValueChange={(v) => setLinkEdgeType(v as ArtifactEdgeType)}
+              >
+                <SelectTrigger id="link-edge-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="relates_to">Relates to</SelectItem>
+                  <SelectItem value="derived_from">Derived from</SelectItem>
+                  <SelectItem value="supports">Supports</SelectItem>
+                  <SelectItem value="references">References</SelectItem>
+                  <SelectItem value="supersedes">Supersedes</SelectItem>
+                  <SelectItem value="contradicts">Contradicts</SelectItem>
+                  <SelectItem value="contains">Contains</SelectItem>
+                  <SelectItem value="generated_by">Generated by</SelectItem>
+                  <SelectItem value="possible_duplicate_of">
+                    Possible duplicate of
+                  </SelectItem>
+                  <SelectItem value="redirects_to">Redirects to</SelectItem>
+                  <SelectItem value="merged_into">Merged into</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowLinkDialog(false)}
+              className="inline-flex h-9 items-center rounded-md border px-3 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleLinkSubmit}
+              disabled={!linkTargetId.trim() || linkMutation.isPending}
+              className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              {linkMutation.isPending ? "Linking…" : "Link"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Request Review dialog — audit-wave-2 P2-04 */}
+      <Dialog open={showReviewDialog} onOpenChange={setShowReviewDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request Review</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground -mt-2">
+            Add this artifact to the review queue. Choose a review type and
+            optionally add notes.
+          </p>
+          <div className="flex flex-col gap-3 py-2">
+            <div className="flex flex-col gap-1">
+              <label htmlFor="review-type" className="text-sm font-medium">
+                Review type
+              </label>
+              <Select
+                value={reviewType}
+                onValueChange={(v) => setReviewType(v as ArtifactReviewType)}
+              >
+                <SelectTrigger id="review-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="verification">Verification</SelectItem>
+                  <SelectItem value="lint">Lint</SelectItem>
+                  <SelectItem value="promotion">Promotion</SelectItem>
+                  <SelectItem value="freshness">Freshness</SelectItem>
+                  <SelectItem value="contradiction">Contradiction</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label htmlFor="review-notes" className="text-sm font-medium">
+                Notes{" "}
+                <span className="font-normal text-muted-foreground">
+                  (optional)
+                </span>
+              </label>
+              <Input
+                id="review-notes"
+                placeholder="Optional context for the reviewer"
+                value={reviewNotes}
+                onChange={(e) => setReviewNotes(e.target.value)}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowReviewDialog(false)}
+              className="inline-flex h-9 items-center rounded-md border px-3 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleReviewSubmit}
+              disabled={reviewMutation.isPending}
+              className="inline-flex h-9 items-center rounded-md bg-primary px-3 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              {reviewMutation.isPending ? "Submitting…" : "Submit"}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Delete confirmation dialog */}
       <AlertDialog

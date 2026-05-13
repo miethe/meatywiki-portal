@@ -659,6 +659,116 @@ export async function fetchArtifactEtag(id: string): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
+// Link artifact (rail action — audit-wave-2 P2-02/03)
+// ---------------------------------------------------------------------------
+
+/**
+ * Valid edge types for POST /api/artifacts/{id}/link.
+ *
+ * Mirrors EdgeType StrEnum in src/meatywiki/schema/edges.py.
+ */
+export type ArtifactEdgeType =
+  | "derived_from"
+  | "supports"
+  | "relates_to"
+  | "references"
+  | "supersedes"
+  | "contradicts"
+  | "contains"
+  | "generated_by"
+  | "possible_duplicate_of"
+  | "redirects_to"
+  | "merged_into";
+
+export interface LinkArtifactRequest {
+  target_id: string;
+  edge_type?: ArtifactEdgeType;
+}
+
+export interface LinkArtifactResponse {
+  status: string;
+}
+
+/**
+ * Create a directed edge between this artifact and a target artifact.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/link
+ * Returns { status: "linked" } on success.
+ * Throws Error with the server detail message on 400/5xx.
+ */
+export async function linkArtifact(
+  id: string,
+  body: LinkArtifactRequest,
+): Promise<LinkArtifactResponse> {
+  const res = await fetch(`/api/artifacts/${encodeURIComponent(id)}/link`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ edge_type: "relates_to", ...body }),
+  });
+  if (!res.ok) {
+    let detail = `Link failed: ${res.status}`;
+    try {
+      const body = await res.json() as { detail?: { error?: { message?: string } } };
+      if (body?.detail?.error?.message) detail = body.detail.error.message;
+    } catch { /* keep default */ }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<LinkArtifactResponse>;
+}
+
+// ---------------------------------------------------------------------------
+// Request review (rail action — audit-wave-2 P2-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Valid review types for POST /api/artifacts/{id}/review.
+ *
+ * Mirrors ReviewType StrEnum in src/meatywiki/portal/db/models.py.
+ */
+export type ArtifactReviewType =
+  | "lint"
+  | "verification"
+  | "promotion"
+  | "freshness"
+  | "contradiction";
+
+export interface RequestReviewRequest {
+  review_type: ArtifactReviewType;
+  notes?: string | null;
+}
+
+export interface RequestReviewResponse {
+  id: number;
+}
+
+/**
+ * Add the artifact to the portal review queue.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/review
+ * Returns { id: <review_item_id> } on success.
+ * Throws Error with the server detail message on 422/5xx.
+ */
+export async function requestReview(
+  id: string,
+  body: RequestReviewRequest,
+): Promise<RequestReviewResponse> {
+  const res = await fetch(`/api/artifacts/${encodeURIComponent(id)}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    let detail = `Review request failed: ${res.status}`;
+    try {
+      const body = await res.json() as { detail?: { error?: { message?: string } } };
+      if (body?.detail?.error?.message) detail = body.detail.error.message;
+    } catch { /* keep default */ }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<RequestReviewResponse>;
+}
+
+// ---------------------------------------------------------------------------
 // Archive artifact (meatballs menu)
 // ---------------------------------------------------------------------------
 
