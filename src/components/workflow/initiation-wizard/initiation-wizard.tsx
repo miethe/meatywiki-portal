@@ -22,7 +22,12 @@
  *   - All inputs have explicit labels
  *   - Step change announced via aria-live="polite"
  *
- * State management: local useReducer — no global state needed.
+ * State management:
+ *   - Generic wizard: local useReducer (no global state needed).
+ *   - Research wizard (template_id === "external_research_v1"):
+ *     WorkflowWizardProvider + useWizardStateContext from useWorkflowWizardState.
+ *
+ * P4-06: conditional rendering — research branch vs generic branch.
  */
 
 import { useCallback, useReducer, useId } from "react";
@@ -30,11 +35,172 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useWorkflowTemplates } from "@/hooks/useWorkflowTemplates";
 import { useCreateWorkflow } from "@/hooks/useCreateWorkflow";
+import {
+  WorkflowWizardProvider,
+  useWizardStateContext,
+} from "@/hooks/useWorkflowWizardState";
+import { ResearchPackageBuilder } from "@/components/workflow/research/ResearchPackageBuilder";
+import { ResearchRouteSelection } from "@/components/workflow/research/ResearchRouteSelection";
+import { PromptPackagePreview } from "@/components/workflow/research/PromptPackagePreview";
 import { WizardStepper, type WizardStep } from "./wizard-stepper";
 import { Step1Source } from "./step-1-source";
 import { Step2Routing } from "./step-2-routing";
 import { Step3Configure } from "./step-3-configure";
 import type { SourceSelection } from "@/lib/api/workflow-templates";
+
+// ---------------------------------------------------------------------------
+// Research wizard — internal implementation
+// ---------------------------------------------------------------------------
+
+/**
+ * Switches between the 3 research-flavoured step panels based on
+ * state.current_step from useWizardStateContext().
+ *
+ * Must be rendered inside <WorkflowWizardProvider>.
+ */
+function ResearchWizardSwitcher(): React.JSX.Element | null {
+  const { state } = useWizardStateContext();
+  switch (state.current_step) {
+    case 1:
+      return <ResearchPackageBuilder />;
+    case 2:
+      return <ResearchRouteSelection />;
+    case 3:
+      return <PromptPackagePreview />;
+    default:
+      return null;
+  }
+}
+
+/**
+ * ResearchInitiationWizard — wizard shell for template_id === "external_research_v1".
+ *
+ * Owns the WorkflowWizardProvider so that all research step components can
+ * read from useWizardStateContext(). Navigation (Back / Next) is driven by
+ * state.current_step and the actions from the context hook — the generic
+ * wizard's useReducer is NOT used here.
+ */
+function ResearchInitiationWizard({
+  onClose,
+  className,
+}: {
+  onClose: () => void;
+  className?: string;
+}): React.JSX.Element {
+  return (
+    <WorkflowWizardProvider template_id="external_research_v1">
+      <ResearchInitiationWizardInner onClose={onClose} className={className} />
+    </WorkflowWizardProvider>
+  );
+}
+
+function ResearchInitiationWizardInner({
+  onClose,
+  className,
+}: {
+  onClose: () => void;
+  className?: string;
+}): React.JSX.Element {
+  const liveId = useId();
+  const router = useRouter();
+  const { state, dispatch, actions } = useWizardStateContext();
+
+  const handleBack = useCallback(() => {
+    dispatch({ type: "GO_BACK" });
+  }, [dispatch]);
+
+  const handleNext = useCallback(async () => {
+    if (state.current_step === 1) {
+      await actions.submitPackage();
+    } else if (state.current_step === 2) {
+      dispatch({ type: "ADVANCE_TO_CONFIRM" });
+    }
+  }, [state.current_step, actions, dispatch]);
+
+  const handleLaunch = useCallback(async () => {
+    await actions.handoff();
+    if (state.run_response?.run_id) {
+      router.push(`/workflows/${state.run_response.run_id}`);
+      onClose();
+    }
+  }, [actions, state.run_response, router, onClose]);
+
+  const isLoading = state.is_fetching_routes || state.is_submitting;
+
+  return (
+    <div
+      className={cn("flex flex-col", className)}
+      data-testid="initiation-wizard"
+      data-template="external_research_v1"
+    >
+      {/* Live region for step announcements */}
+      <div id={liveId} aria-live="polite" aria-atomic="true" className="sr-only">
+        {`Step ${state.current_step} of 3`}
+      </div>
+
+      {/* Stepper */}
+      <div className="px-6 pt-6 pb-4 border-b border-border">
+        <WizardStepper currentStep={state.current_step as WizardStep} />
+      </div>
+
+      {/* Step content */}
+      <div className="flex-1 overflow-y-auto px-6 py-6 min-h-0">
+        <ResearchWizardSwitcher />
+
+        {state.error && (
+          <div
+            role="alert"
+            className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive"
+          >
+            {state.error}
+          </div>
+        )}
+      </div>
+
+      {/* Footer navigation */}
+      <div className="flex items-center justify-between border-t border-border px-6 py-4">
+        <div className="flex items-center gap-2">
+          {state.current_step === 1 ? (
+            <WizardButton variant="secondary" onClick={onClose} aria-label="Cancel wizard">
+              Cancel
+            </WizardButton>
+          ) : (
+            <WizardButton
+              variant="secondary"
+              onClick={handleBack}
+              disabled={isLoading}
+              aria-label="Go to previous step"
+            >
+              ← Back
+            </WizardButton>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {state.current_step < 3 ? (
+            <WizardButton
+              variant="primary"
+              onClick={() => void handleNext()}
+              disabled={isLoading}
+              aria-label="Advance to next step"
+            >
+              {state.is_fetching_routes ? "Analysing…" : "Next →"}
+            </WizardButton>
+          ) : (
+            <WizardButton
+              variant="primary"
+              onClick={() => void handleLaunch()}
+              disabled={state.is_submitting}
+              aria-label="Launch research workflow run"
+            >
+              {state.is_submitting ? "Launching…" : "Launch Research"}
+            </WizardButton>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // State + reducer
@@ -157,13 +323,50 @@ export interface InitiationWizardProps {
   /** Called when the wizard should close (no submission). */
   onClose: () => void;
   className?: string;
+  /**
+   * Workflow template ID. When set to "external_research_v1" the research-
+   * flavoured 3-step wizard is rendered; all other values (or undefined) fall
+   * through to the generic wizard.
+   *
+   * P4-06: conditional rendering branch.
+   */
+  template_id?: string;
 }
 
 export function InitiationWizard({
   artifactId,
   onClose,
   className,
+  template_id,
 }: InitiationWizardProps) {
+  // Research branch — completely separate state machine and step panels.
+  if (template_id === "external_research_v1") {
+    return <ResearchInitiationWizard onClose={onClose} className={className} />;
+  }
+
+  // Generic branch — continues below unchanged.
+  return (
+    <GenericInitiationWizard
+      artifactId={artifactId}
+      onClose={onClose}
+      className={className}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Generic wizard — original implementation, extracted to keep it unmodified
+// ---------------------------------------------------------------------------
+
+function GenericInitiationWizard({
+  artifactId,
+  onClose,
+  className,
+}: {
+  artifactId?: string;
+  onClose: () => void;
+  className?: string;
+}) {
   const router = useRouter();
   const liveId = useId();
 
