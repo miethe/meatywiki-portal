@@ -212,7 +212,8 @@ export function ActiveResearchRuns() {
     } finally {
       if (mountedRef.current) {
         inFlightRef.current = false;
-        if (isManual) setLoading(false);
+        // Always clear the loading spinner after the first fetch (initial or manual).
+        setLoading(false);
       }
     }
   }, [showToast]);
