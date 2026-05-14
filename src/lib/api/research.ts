@@ -194,3 +194,97 @@ export async function listActiveResearchRuns(
     { method: "GET" },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Run detail (P5-03)
+// ---------------------------------------------------------------------------
+
+import type {
+  WorkflowRunDetail,
+  SingleEnvelope,
+  ExternalResearchTaskRow,
+  PatchTaskStatusBody,
+  UploadResultJsonBody,
+  UploadResultResponse,
+} from "@/types/workflows/research";
+
+/**
+ * Fetch full workflow run detail (includes events, stage_durations).
+ *
+ * Backend: GET /api/workflows/{run_id}
+ * Returns SingleEnvelope<WorkflowRunDetail>.
+ */
+export async function getWorkflowRunDetail(
+  runId: string,
+): Promise<SingleEnvelope<WorkflowRunDetail>> {
+  return apiFetch<SingleEnvelope<WorkflowRunDetail>>(
+    `/workflows/${encodeURIComponent(runId)}`,
+    { method: "GET" },
+  );
+}
+
+/**
+ * Transition the external research task status.
+ *
+ * Backend: PATCH /api/workflows/{run_id}/external-research/task
+ * Body: PatchTaskStatusBody
+ * Returns the updated ExternalResearchTaskRow.
+ */
+export async function patchResearchTaskStatus(
+  runId: string,
+  body: PatchTaskStatusBody,
+): Promise<ExternalResearchTaskRow> {
+  return apiFetch<ExternalResearchTaskRow>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/task`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Upload an external research result as JSON.
+ *
+ * Backend: POST /api/workflows/{run_id}/external-research/result
+ * Accepts application/json body: { content, content_type?, filename? }
+ * Returns UploadResultResponse.
+ */
+export async function uploadResearchResultJson(
+  runId: string,
+  body: UploadResultJsonBody,
+): Promise<UploadResultResponse> {
+  return apiFetch<UploadResultResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/result`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Upload an external research result as a multipart file.
+ *
+ * Backend: POST /api/workflows/{run_id}/external-research/result
+ * Accepts multipart/form-data with file= field.
+ * Returns UploadResultResponse.
+ *
+ * NOTE: Do NOT set Content-Type header manually; fetch sets it with boundary.
+ */
+export async function uploadResearchResultFile(
+  runId: string,
+  file: File,
+): Promise<UploadResultResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiFetch<UploadResultResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/result`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
+}

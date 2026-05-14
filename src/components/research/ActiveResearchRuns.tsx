@@ -50,10 +50,7 @@ import {
   type PollingStatus,
 } from "@/types/research-runs";
 
-// ---------------------------------------------------------------------------
-// TODO(P5-03): import ResearchRunCard
-// import { ResearchRunCard } from "@/components/research/ResearchRunCard";
-// ---------------------------------------------------------------------------
+import { ResearchRunCard } from "@/components/research/ResearchRunCard";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -118,137 +115,8 @@ function ToastBanner({ toast }: { toast: ToastMessage }) {
 }
 
 // ---------------------------------------------------------------------------
-// ResearchRunCard placeholder (P5-03)
-// ---------------------------------------------------------------------------
-
-/**
- * Skeleton card shown until ResearchRunCard (P5-03) ships.
- * Each card occupies the same grid cell that ResearchRunCard will use.
- */
-function ResearchRunCardSkeleton({ run }: { run: ResearchRun }) {
-  return (
-    <div
-      className={cn(
-        "flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm",
-        "transition-colors",
-      )}
-      aria-label={`Research run ${run.topic ?? run.run_id}`}
-    >
-      {/* Header row */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <p className="truncate text-sm font-medium text-foreground">
-            {run.topic ?? "Untitled research run"}
-          </p>
-          {run.research_question && (
-            <p className="line-clamp-2 text-xs text-muted-foreground">
-              {run.research_question}
-            </p>
-          )}
-        </div>
-        <StatusPill status={run.status} />
-      </div>
-
-      {/* Run ID + timestamp */}
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <span className="font-mono">{run.run_id.slice(-8)}</span>
-        <span aria-hidden="true">·</span>
-        <span>{formatRelativeTime(run.created_at)}</span>
-      </div>
-
-      {/* Task status row (from enriched task, if available) */}
-      {run.task && (
-        <div className="flex items-center gap-1.5 text-xs">
-          <span className="text-muted-foreground">Task:</span>
-          <span className="font-medium capitalize">
-            {run.task.status.replace(/_/g, " ")}
-          </span>
-        </div>
-      )}
-
-      {/*
-       * TODO(P5-03): Replace this placeholder with <ResearchRunCard run={run} />
-       * ResearchRunCard will render:
-       *   - Scrollable task-step list with status icons (queued/running/completed/failed)
-       *   - Action buttons: Pause, Resume, View Details, Upload Result
-       *   - Task hover/expand behaviour
-       *   - // TODO: migrate to SSE comment (OQ-5)
-       */}
-      <p className="text-xs italic text-muted-foreground">
-        Full controls available after P5-03 (ResearchRunCard).
-      </p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// StatusPill
-// ---------------------------------------------------------------------------
-
-function StatusPill({ status }: { status: ResearchRun["status"] }) {
-  const cfg: Record<string, { label: string; className: string }> = {
-    pending: {
-      label: "Pending",
-      className:
-        "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300",
-    },
-    running: {
-      label: "Running",
-      className:
-        "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
-    },
-    paused: {
-      label: "Paused",
-      className:
-        "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-400",
-    },
-    complete: {
-      label: "Complete",
-      className:
-        "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
-    },
-    failed: {
-      label: "Failed",
-      className:
-        "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300",
-    },
-    abandoned: {
-      label: "Abandoned",
-      className:
-        "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500",
-    },
-  };
-
-  const { label, className } = cfg[status] ?? {
-    label: status,
-    className: "bg-muted text-muted-foreground",
-  };
-
-  return (
-    <span
-      className={cn(
-        "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-        className,
-      )}
-    >
-      {label}
-    </span>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function formatRelativeTime(isoDate: string): string {
-  const diffMs = Date.now() - new Date(isoDate).getTime();
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return "Just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH}h ago`;
-  return `${Math.floor(diffH / 24)}d ago`;
-}
 
 function formatTimestamp(isoDate: string): string {
   return new Date(isoDate).toLocaleTimeString([], {
@@ -512,11 +380,11 @@ export function ActiveResearchRuns() {
           className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
         >
           {runs.map((run) => (
-            /*
-             * TODO(P5-03): Replace ResearchRunCardSkeleton with:
-             *   <ResearchRunCard key={run.run_id} run={run} />
-             */
-            <ResearchRunCardSkeleton key={run.run_id} run={run} />
+            <ResearchRunCard
+              key={run.run_id}
+              run={run}
+              onResultUploaded={handleManualRefresh}
+            />
           ))}
         </div>
       )}
