@@ -9,11 +9,16 @@
  *   GET /api/artifacts/research/contradictions
  *   Returns cursor-paginated list of contradiction pairs.
  *
+ * P5-01: Active research runs endpoint wiring.
+ *   GET /api/workflows/runs?template_id=external_research_v1
+ *   Returns cursor-paginated WorkflowRun list for the ActiveResearchRuns widget.
+ *
  * Envelope shape: { data: T[], cursor: string | null, etag: string | null }
  * Compatible with ServiceModeEnvelope<T>.
  */
 
 import { apiFetch } from "./client";
+import type { WorkflowRun, ServiceModeEnvelope } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
 // Freshness status types
@@ -159,4 +164,33 @@ export async function getContradictions(
   const path = `/artifacts/research/contradictions${qs ? `?${qs}` : ""}`;
 
   return apiFetch<ContradictionsEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Active Research Runs (P5-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch cursor-paginated list of external_research_v1 workflow runs.
+ *
+ * Backend: GET /api/workflows/runs?template_id=external_research_v1
+ *
+ * CONTRACT NOTE: The endpoint is /api/workflows/runs (not /api/workflows).
+ * Filters by template_id to return only external research runs.
+ * Runs in all statuses are included; the widget filters client-side for active.
+ */
+export async function listActiveResearchRuns(
+  cursor?: string | null,
+  limit = 50,
+): Promise<ServiceModeEnvelope<WorkflowRun>> {
+  const query = new URLSearchParams();
+  query.set("template_id", "external_research_v1");
+  query.set("limit", String(limit));
+  if (cursor) query.set("cursor", cursor);
+
+  const qs = query.toString();
+  return apiFetch<ServiceModeEnvelope<WorkflowRun>>(
+    `/workflows/runs?${qs}`,
+    { method: "GET" },
+  );
 }
