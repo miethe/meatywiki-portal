@@ -9,11 +9,16 @@
  *   GET /api/artifacts/research/contradictions
  *   Returns cursor-paginated list of contradiction pairs.
  *
+ * P5-01: Active research runs endpoint wiring.
+ *   GET /api/workflows/runs?template_id=external_research_v1
+ *   Returns cursor-paginated WorkflowRun list for the ActiveResearchRuns widget.
+ *
  * Envelope shape: { data: T[], cursor: string | null, etag: string | null }
  * Compatible with ServiceModeEnvelope<T>.
  */
 
 import { apiFetch } from "./client";
+import type { WorkflowRun, ServiceModeEnvelope } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
 // Freshness status types
@@ -159,4 +164,127 @@ export async function getContradictions(
   const path = `/artifacts/research/contradictions${qs ? `?${qs}` : ""}`;
 
   return apiFetch<ContradictionsEnvelope>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// Active Research Runs (P5-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch cursor-paginated list of external_research_v1 workflow runs.
+ *
+ * Backend: GET /api/workflows/runs?template_id=external_research_v1
+ *
+ * CONTRACT NOTE: The endpoint is /api/workflows/runs (not /api/workflows).
+ * Filters by template_id to return only external research runs.
+ * Runs in all statuses are included; the widget filters client-side for active.
+ */
+export async function listActiveResearchRuns(
+  cursor?: string | null,
+  limit = 50,
+): Promise<ServiceModeEnvelope<WorkflowRun>> {
+  const query = new URLSearchParams();
+  query.set("template_id", "external_research_v1");
+  query.set("limit", String(limit));
+  if (cursor) query.set("cursor", cursor);
+
+  const qs = query.toString();
+  return apiFetch<ServiceModeEnvelope<WorkflowRun>>(
+    `/workflows/runs?${qs}`,
+    { method: "GET" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Run detail (P5-03)
+// ---------------------------------------------------------------------------
+
+import type {
+  WorkflowRunDetail,
+  SingleEnvelope,
+  ExternalResearchTaskRow,
+  PatchTaskStatusBody,
+  UploadResultJsonBody,
+  UploadResultResponse,
+} from "@/types/workflows/research";
+
+/**
+ * Fetch full workflow run detail (includes events, stage_durations).
+ *
+ * Backend: GET /api/workflows/{run_id}
+ * Returns SingleEnvelope<WorkflowRunDetail>.
+ */
+export async function getWorkflowRunDetail(
+  runId: string,
+): Promise<SingleEnvelope<WorkflowRunDetail>> {
+  return apiFetch<SingleEnvelope<WorkflowRunDetail>>(
+    `/workflows/${encodeURIComponent(runId)}`,
+    { method: "GET" },
+  );
+}
+
+/**
+ * Transition the external research task status.
+ *
+ * Backend: PATCH /api/workflows/{run_id}/external-research/task
+ * Body: PatchTaskStatusBody
+ * Returns the updated ExternalResearchTaskRow.
+ */
+export async function patchResearchTaskStatus(
+  runId: string,
+  body: PatchTaskStatusBody,
+): Promise<ExternalResearchTaskRow> {
+  return apiFetch<ExternalResearchTaskRow>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/task`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Upload an external research result as JSON.
+ *
+ * Backend: POST /api/workflows/{run_id}/external-research/result
+ * Accepts application/json body: { content, content_type?, filename? }
+ * Returns UploadResultResponse.
+ */
+export async function uploadResearchResultJson(
+  runId: string,
+  body: UploadResultJsonBody,
+): Promise<UploadResultResponse> {
+  return apiFetch<UploadResultResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/result`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Upload an external research result as a multipart file.
+ *
+ * Backend: POST /api/workflows/{run_id}/external-research/result
+ * Accepts multipart/form-data with file= field.
+ * Returns UploadResultResponse.
+ *
+ * NOTE: Do NOT set Content-Type header manually; fetch sets it with boundary.
+ */
+export async function uploadResearchResultFile(
+  runId: string,
+  file: File,
+): Promise<UploadResultResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiFetch<UploadResultResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/result`,
+    {
+      method: "POST",
+      body: form,
+    },
+  );
 }

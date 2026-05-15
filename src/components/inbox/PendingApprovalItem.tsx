@@ -13,10 +13,17 @@
  * cache is restored via onActionComplete() → refetch. (P3-03)
  *
  * P2-01 (inbox approval UI).
+ * P3-01 (Audit Wave 2): ArticleViewer integration for inline body preview.
+ *   - Renders payload body content via ArticleViewer (variant="compact") in a
+ *     collapsible section below the metadata row.
+ *   - Supported content sources: payload.text (notes), payload.url (URL intake),
+ *     payload.content (generic). Falls back to null (no body section rendered).
+ *   - No edit controls are present; ArticleViewer is purely read-only.
  */
 
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { ArticleViewer } from "@miethe/ui";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,6 +104,33 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1_048_576) return `${(bytes / 1_024).toFixed(1)} KB`;
   if (bytes < 1_073_741_824) return `${(bytes / 1_048_576).toFixed(1)} MB`;
   return `${(bytes / 1_073_741_824).toFixed(1)} GB`;
+}
+
+// ---------------------------------------------------------------------------
+// Payload body extractor
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract a renderable body string from a pending intake item's payload.
+ *
+ * Priority:
+ *   1. payload.text  — note and transcript intake
+ *   2. payload.content — generic content field
+ *   3. null — no renderable body (file-only or URL-only items)
+ *
+ * URL intake items intentionally return null here; the display name row
+ * already surfaces the URL. We do not attempt to render the raw URL as
+ * markdown body to avoid a visually redundant second URL line.
+ */
+function extractBodyContent(item: IntakePendingItem): string | null {
+  const { payload } = item;
+  if (typeof payload.text === "string" && payload.text.trim()) {
+    return payload.text.trim();
+  }
+  if (typeof payload.content === "string" && payload.content.trim()) {
+    return payload.content.trim();
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,6 +316,7 @@ export function PendingApprovalItem({
 
   const displayName = extractDisplayName(item);
   const relativeTime = formatRelativeTime(item.created_at);
+  const bodyContent = extractBodyContent(item);
 
   const fileSizeBytes =
     typeof item.payload.file_size_bytes === "number"
@@ -363,140 +398,165 @@ export function PendingApprovalItem({
     <>
       <div
         className={cn(
-          "flex items-start gap-3 rounded-md border bg-card p-3",
+          "flex flex-col gap-2 rounded-md border bg-card p-3",
           "transition-colors hover:bg-accent/30",
           selected && "border-primary/40 bg-primary/5",
         )}
       >
         {/* ---------------------------------------------------------------- */}
-        {/* Checkbox (when bulk-select is active)                             */}
+        {/* Top row: checkbox + metadata + action buttons                     */}
         {/* ---------------------------------------------------------------- */}
-        {onSelectionChange && (
-          <div className="flex shrink-0 items-center pt-0.5">
-            <Checkbox
-              checked={selected}
+        <div className="flex items-start gap-3">
+          {/* Checkbox (when bulk-select is active) */}
+          {onSelectionChange && (
+            <div className="flex shrink-0 items-center pt-0.5">
+              <Checkbox
+                checked={selected}
+                disabled={isDisabled}
+                onCheckedChange={(checked) =>
+                  onSelectionChange(item.run_id, checked === true)
+                }
+                aria-label={`Select ${extractDisplayName(item)}`}
+              />
+            </div>
+          )}
+
+          {/* Left: metadata column */}
+          <div className="min-w-0 flex-1">
+            {/* Badge row: artifact type + optional file size */}
+            <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
+              <Badge
+                variant="outline"
+                className="font-mono text-[10px] uppercase tracking-wide"
+              >
+                {item.artifact_type}
+              </Badge>
+              {fileSizeBytes !== null && (
+                <span className="text-[10px] text-muted-foreground">
+                  {formatFileSize(fileSizeBytes)}
+                </span>
+              )}
+            </div>
+
+            {/* Display name */}
+            <p
+              className="truncate text-sm font-medium leading-snug text-foreground"
+              title={displayName}
+            >
+              {displayName}
+            </p>
+
+            {/* Relative timestamp */}
+            {relativeTime && (
+              <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                {relativeTime}
+              </p>
+            )}
+          </div>
+
+          {/* Right: action buttons */}
+          <div className="flex shrink-0 items-center gap-2">
+            {/* Approve */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Approve ${displayName}`}
+              aria-busy={approvingState === "loading"}
               disabled={isDisabled}
-              onCheckedChange={(checked) =>
-                onSelectionChange(item.run_id, checked === true)
-              }
-              aria-label={`Select ${extractDisplayName(item)}`}
+              onClick={handleApprove}
+              className={cn(
+                "h-7 gap-1.5 px-2.5 text-xs",
+                approvingState === "loading"
+                  ? "cursor-not-allowed"
+                  : "hover:border-emerald-500/60 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400",
+              )}
+            >
+              {approvingState === "loading" ? (
+                <Spinner />
+              ) : (
+                <svg
+                  aria-hidden="true"
+                  className="size-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="m5 13 4 4L19 7"
+                  />
+                </svg>
+              )}
+              Approve
+            </Button>
+
+            {/* Reject */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label={`Reject ${displayName}`}
+              aria-busy={rejectingState === "loading"}
+              disabled={isDisabled}
+              onClick={handleReject}
+              className={cn(
+                "h-7 gap-1.5 px-2.5 text-xs",
+                rejectingState === "loading"
+                  ? "cursor-not-allowed"
+                  : "hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive",
+              )}
+            >
+              {rejectingState === "loading" ? (
+                <Spinner />
+              ) : (
+                <svg
+                  aria-hidden="true"
+                  className="size-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18 18 6M6 6l12 12"
+                  />
+                </svg>
+              )}
+              Reject
+            </Button>
+          </div>
+        </div>
+
+        {/* ---------------------------------------------------------------- */}
+        {/* Body section: ArticleViewer (read-only, compact variant)          */}
+        {/*                                                                   */}
+        {/* Renders payload body inline so the reviewer can read content      */}
+        {/* before approving without navigating to a separate artifact page.  */}
+        {/* Only shown when the intake item carries renderable body text      */}
+        {/* (e.g. note text, generic content). File-only and URL-only items   */}
+        {/* skip this section entirely.                                       */}
+        {/* ---------------------------------------------------------------- */}
+        {bodyContent !== null && (
+          <div
+            className="mt-1 border-t pt-2"
+            aria-label="Artifact body preview"
+          >
+            <ArticleViewer
+              content={bodyContent}
+              format="auto"
+              variant="compact"
+              frontmatter="hide"
+              sanitize={true}
+              generateHeadingIds={false}
+              className="max-h-48 overflow-y-auto rounded-sm bg-muted/30 px-3 py-2 text-sm"
             />
           </div>
         )}
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Left: metadata column                                             */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="min-w-0 flex-1">
-          {/* Badge row: artifact type + optional file size */}
-          <div className="mb-1.5 flex flex-wrap items-center gap-1.5">
-            <Badge
-              variant="outline"
-              className="font-mono text-[10px] uppercase tracking-wide"
-            >
-              {item.artifact_type}
-            </Badge>
-            {fileSizeBytes !== null && (
-              <span className="text-[10px] text-muted-foreground">
-                {formatFileSize(fileSizeBytes)}
-              </span>
-            )}
-          </div>
-
-          {/* Display name */}
-          <p
-            className="truncate text-sm font-medium leading-snug text-foreground"
-            title={displayName}
-          >
-            {displayName}
-          </p>
-
-          {/* Relative timestamp */}
-          {relativeTime && (
-            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-              {relativeTime}
-            </p>
-          )}
-        </div>
-
-        {/* ---------------------------------------------------------------- */}
-        {/* Right: action buttons                                             */}
-        {/* ---------------------------------------------------------------- */}
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Approve */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label={`Approve ${displayName}`}
-            aria-busy={approvingState === "loading"}
-            disabled={isDisabled}
-            onClick={handleApprove}
-            className={cn(
-              "h-7 gap-1.5 px-2.5 text-xs",
-              approvingState === "loading"
-                ? "cursor-not-allowed"
-                : "hover:border-emerald-500/60 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400",
-            )}
-          >
-            {approvingState === "loading" ? (
-              <Spinner />
-            ) : (
-              <svg
-                aria-hidden="true"
-                className="size-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="m5 13 4 4L19 7"
-                />
-              </svg>
-            )}
-            Approve
-          </Button>
-
-          {/* Reject */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-label={`Reject ${displayName}`}
-            aria-busy={rejectingState === "loading"}
-            disabled={isDisabled}
-            onClick={handleReject}
-            className={cn(
-              "h-7 gap-1.5 px-2.5 text-xs",
-              rejectingState === "loading"
-                ? "cursor-not-allowed"
-                : "hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive",
-            )}
-          >
-            {rejectingState === "loading" ? (
-              <Spinner />
-            ) : (
-              <svg
-                aria-hidden="true"
-                className="size-3.5"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18 18 6M6 6l12 12"
-                />
-              </svg>
-            )}
-            Reject
-          </Button>
-        </div>
       </div>
 
       {/* Toast banner — fixed-position, auto-dismisses after 3 s */}

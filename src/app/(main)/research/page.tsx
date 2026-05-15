@@ -41,6 +41,7 @@ import { ContradictionsPanel } from "@/components/research/ContradictionsPanel";
 import { SynthesisNarrative } from "@/components/research/SynthesisNarrative";
 import { WorkspaceHealthGauge } from "@/components/research/WorkspaceHealthGauge";
 import { StaleArtifactsPanel } from "@/components/research/StaleArtifactsPanel";
+import { ActiveResearchRuns } from "@/components/research/ActiveResearchRuns";
 
 // ---------------------------------------------------------------------------
 // Shimmer primitive (inlined for ContextRail skeleton sections)
@@ -250,6 +251,14 @@ export default function ResearchHomePage() {
           {/* artifact count, configurable threshold, cursor pagination.    */}
           {/* ------------------------------------------------------------ */}
           <StaleArtifactsPanel />
+
+          {/* ------------------------------------------------------------ */}
+          {/* Active Research Runs widget — P5-01/P5-02/P5-04              */}
+          {/* Polls GET /api/workflows/runs?template_id=external_research_v1 */}
+          {/* every 5 s with exponential backoff on error (cap 30 s).      */}
+          {/* SSE migration deferred (OQ-5).                               */}
+          {/* ------------------------------------------------------------ */}
+          <ActiveResearchRuns />
         </div>
 
         {/* ---------------------------------------------------------------- */}
