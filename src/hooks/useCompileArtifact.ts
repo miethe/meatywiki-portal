@@ -83,7 +83,7 @@ export function useCompileArtifact({
     setError(null);
 
     try {
-      await api.post(`/api/artifacts/${artifactId}/compile`, {});
+      await api.post(`/artifacts/${artifactId}/compile`, {});
       setIsCompiling(false);
       onSuccess?.();
     } catch (err) {
