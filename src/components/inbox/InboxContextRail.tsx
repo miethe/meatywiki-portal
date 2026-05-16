@@ -223,6 +223,29 @@ function buildCustomTabs(item: ArtifactCard): ContextRailTab[] {
 }
 
 // ---------------------------------------------------------------------------
+// Loading skeleton (item selected but fields still populating)
+// P3-04 / F-21
+// ---------------------------------------------------------------------------
+
+function RailLoadingSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading item details"
+      className="flex flex-col gap-2.5 animate-pulse"
+    >
+      {/* Mimics the InboxPropertiesPanel label+value rows */}
+      <div className="h-2.5 w-16 rounded bg-muted" />
+      <div className="h-3 w-24 rounded bg-muted/70" />
+      <div className="mt-1 h-2.5 w-14 rounded bg-muted" />
+      <div className="h-3 w-32 rounded bg-muted/70" />
+      <div className="mt-1 h-2.5 w-20 rounded bg-muted" />
+      <div className="h-3 w-28 rounded bg-muted/70" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Empty state (no item selected)
 // ---------------------------------------------------------------------------
 
@@ -261,6 +284,13 @@ function RailEmptyState() {
 export interface InboxContextRailProps {
   /** The currently-selected inbox item, or null when nothing is selected. */
   selectedItem: ArtifactCard | null;
+  /**
+   * P3-04 / F-21: When true, renders a skeleton placeholder in the Properties
+   * panel instead of the real field values. Use when `selectedItem` is set but
+   * the enriched detail fields are still in-flight (e.g. after a quick tap that
+   * selects an item before a detail fetch resolves).
+   */
+  isLoadingDetails?: boolean;
   className?: string;
 }
 
@@ -279,12 +309,24 @@ export interface InboxContextRailProps {
  */
 export function InboxContextRail({
   selectedItem,
+  isLoadingDetails = false,
   className,
 }: InboxContextRailProps) {
   if (!selectedItem) {
     return (
       <div className={cn("flex flex-col gap-3", className)}>
         <RailEmptyState />
+      </div>
+    );
+  }
+
+  // P3-04 / F-21: item is selected but fields are still loading — show skeleton
+  if (isLoadingDetails) {
+    return (
+      <div className={cn("flex flex-col gap-3", className)}>
+        <div className="rounded-md border p-4">
+          <RailLoadingSkeleton />
+        </div>
       </div>
     );
   }

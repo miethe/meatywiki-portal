@@ -87,11 +87,13 @@ function SmartTriageModal({
             View roadmap
           </button>
 
-          {/* Primary: dismiss */}
+          {/* Primary: dismiss.
+              P3-06 / F-23: autoFocus removed — the Dialog primitive manages
+              initial focus (typically moves to the first focusable element or
+              the dialog container itself), which is the correct ARIA pattern. */}
           <button
             type="button"
             onClick={onClose}
-            autoFocus
             className={cn(
               "inline-flex items-center justify-center rounded-md",
               "bg-primary px-4 py-2 text-sm font-medium text-primary-foreground",

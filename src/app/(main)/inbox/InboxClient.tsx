@@ -856,7 +856,9 @@ export function InboxClient({ initialData }: InboxClientProps) {
                 onClick={loadMore}
                 aria-label="Load more artifacts"
                 className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-md border px-4",
+                  // P3-07 / F-24: h-11 (44px) meets WCAG touch-target parity
+                  // with the page header controls.
+                  "inline-flex h-11 items-center gap-1.5 rounded-md border px-4",
                   "text-sm text-muted-foreground",
                   "transition-colors hover:bg-accent hover:text-accent-foreground",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",

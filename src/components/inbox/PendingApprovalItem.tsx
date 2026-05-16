@@ -505,6 +505,9 @@ export function PendingApprovalItem({
           {/* Right: action buttons */}
           <div className="flex shrink-0 items-center gap-2">
             {/* Approve */}
+            {/* P3-08 / F-25: Approve — permanently tinted green so approve and
+                reject carry equal semantic weight at rest. Neither button is
+                the "default" neutral action; both carry clear intent. */}
             <Button
               type="button"
               variant="outline"
@@ -515,9 +518,11 @@ export function PendingApprovalItem({
               onClick={handleApprove}
               className={cn(
                 "h-7 gap-1.5 px-2.5 text-xs",
+                "border-emerald-500/40 bg-emerald-50 text-emerald-700",
+                "dark:bg-emerald-950/20 dark:text-emerald-400 dark:border-emerald-500/30",
                 approvingState === "loading"
                   ? "cursor-not-allowed"
-                  : "hover:border-emerald-500/60 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/30 dark:hover:text-emerald-400",
+                  : "hover:border-emerald-500/70 hover:bg-emerald-100 hover:text-emerald-800 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300",
               )}
             >
               {approvingState === "loading" ? (
@@ -541,7 +546,8 @@ export function PendingApprovalItem({
               Approve
             </Button>
 
-            {/* Reject */}
+            {/* Reject — P3-08 / F-25: permanently tinted red, matching the
+                symmetric semantic treatment applied to Approve above. */}
             <Button
               type="button"
               variant="outline"
@@ -552,9 +558,11 @@ export function PendingApprovalItem({
               onClick={handleReject}
               className={cn(
                 "h-7 gap-1.5 px-2.5 text-xs",
+                "border-destructive/30 bg-destructive/5 text-destructive",
+                "dark:bg-destructive/10 dark:border-destructive/25",
                 rejectingState === "loading"
                   ? "cursor-not-allowed"
-                  : "hover:border-destructive/40 hover:bg-destructive/5 hover:text-destructive",
+                  : "hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive dark:hover:bg-destructive/20",
               )}
             >
               {rejectingState === "loading" ? (

@@ -357,17 +357,16 @@ export function ArtifactCard({
           // the row clearly clickable even before the user hovers. The "→" hint
           // in the right cluster is always-visible at reduced opacity and brightens
           // on hover to signal the row → rail relationship.
-          "group flex cursor-pointer items-center gap-3 rounded-md border bg-card p-3",
+          // P3-01 / F-18: type-accent stripe moved inside the bordered region via
+          // an inner div (see below), so the selection ring wraps the full card
+          // border without the stripe sitting outside it.
+          // P3-02 / F-19: research-origin ring removed — replaced by a badge in
+          // the meta row so the selection ring is unambiguous.
+          "group relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-md border bg-card py-3 pr-3 pl-5",
           "transition-colors hover:bg-muted/40 hover:shadow-sm",
           "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-          isResearchOrigin && "ring-1 ring-teal-400/50",
           className,
         )}
-        style={{
-          borderLeftWidth: "3px",
-          borderLeftStyle: "solid",
-          borderLeftColor: accentColorInbox,
-        }}
         aria-label={isResearchOrigin ? `${title} (research origin)` : title}
         data-research-origin={isResearchOrigin ? "true" : undefined}
         data-inbox-group={inboxGroup}
@@ -385,12 +384,21 @@ export function ArtifactCard({
         }}
         onKeyDown={handleKeyDown}
       >
+        {/* P3-01 / F-18: type-accent stripe rendered as an absolute inner bar
+            so it sits *inside* the card border, keeping the selection ring
+            unobstructed. Uses inline style only for the dynamic color value. */}
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 w-[3px]"
+          style={{ backgroundColor: accentColorInbox }}
+        />
+
         {/* Type chip — left anchor */}
         <div className="shrink-0">
           <TypeBadge type={type} />
         </div>
 
-        {/* Main content: title + 1-line preview */}
+        {/* Main content: title + 1-line preview + optional Research badge */}
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold leading-snug text-foreground">
             {title}
@@ -400,16 +408,26 @@ export function ArtifactCard({
               {preview}
             </p>
           )}
+          {/* P3-02 / F-19: Research origin surfaced as an inline badge in the
+              meta row rather than an outer teal ring, so the selection ring
+              is unambiguous. */}
+          {isResearchOrigin && (
+            <span className="mt-1 inline-flex items-center rounded-sm border border-teal-500/30 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 dark:bg-teal-950/30 dark:text-teal-400">
+              Research
+            </span>
+          )}
         </div>
 
         {/* Right cluster: urgency badge + CTA + "Open" navigation link.
             All children are interactive — no pointer-events-none wrapper. */}
         <div className="flex shrink-0 items-center gap-2">
+          {/* P3-03 / F-20: UrgencyBadge is always visible (removed
+              `hidden sm:inline-flex`). The "Open" link is the less-critical
+              affordance on small screens since the whole row is selectable. */}
           {urgencyLevel && (
             <UrgencyBadge
               level={urgencyLevel}
               minutesAgo={urgencyMinutesAgo}
-              className="hidden sm:inline-flex"
             />
           )}
           {ctaSlot ?? (
@@ -436,12 +454,15 @@ export function ArtifactCard({
               opaque on row group-hover and on its own focus state.
               P2-02 / F-06: keyboard accessible — tabIndex={0} + has its own
               focus ring so Tab can land here and Enter/click navigates. */}
+          {/* P3-03 / F-20: Open link hidden on small screens (it is the least
+              critical affordance — the row itself handles selection, and Tab
+              focus still reveals this link for keyboard users). */}
           <Link
             href={`/artifact/${id}`}
             aria-label={`Open ${title}`}
             onClick={(e) => e.stopPropagation()}
             className={cn(
-              "inline-flex h-7 w-7 items-center justify-center rounded-md border",
+              "hidden sm:inline-flex h-7 w-7 items-center justify-center rounded-md border",
               "text-muted-foreground/50 transition-all",
               "group-hover:text-muted-foreground group-hover:border-border",
               "hover:bg-accent hover:text-accent-foreground hover:!opacity-100",

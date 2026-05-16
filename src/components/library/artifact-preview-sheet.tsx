@@ -376,7 +376,13 @@ export function ArtifactPreviewSheet({
         </div>
 
         <footer className="flex shrink-0 items-center justify-between gap-3 border-t px-5 py-4">
-          <p className="truncate text-xs text-muted-foreground">{artifact.file_path}</p>
+          {/* P3-05 / F-22: title exposes the full path on hover for truncated values. */}
+          <p
+            className="truncate text-xs text-muted-foreground"
+            title={artifact.file_path ?? undefined}
+          >
+            {artifact.file_path}
+          </p>
           <Link
             href={`/artifact/${artifact.id}`}
             className={cn(
