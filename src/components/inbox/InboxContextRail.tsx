@@ -292,10 +292,6 @@ export function InboxContextRail({
   const customTabs = buildCustomTabs(selectedItem);
   const actions = buildActions(selectedItem);
 
-  const handleFinalize = () => {
-    console.debug("[inbox-rail] action: Finalize Entry", selectedItem.id);
-  };
-
   return (
     <div className={cn("flex flex-col gap-3", className)}>
       {/* Rail: actions + Properties tab */}
@@ -305,20 +301,34 @@ export function InboxContextRail({
         ariaLabel="Inbox item context"
       />
 
-      {/* Footer CTA — "Finalize Entry" */}
+      {/* Footer CTA — "Finalize Entry" (P2-06 / F-11: stub with visible disabled
+          state until the backend routing endpoint is wired).
+          aria-disabled keeps the button focusable so keyboard users can Tab
+          past it and the tooltip/title conveys the reason it's unavailable. */}
       <div className="border-t pt-3">
         <button
           type="button"
-          aria-label={`Finalize entry: ${selectedItem.title}`}
-          onClick={handleFinalize}
+          aria-label={`Finalize entry: ${selectedItem.title} (not yet available)`}
+          aria-disabled="true"
+          title="Finalize Entry — coming soon"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           className={cn(
-            "inline-flex h-9 w-full items-center justify-center rounded-md",
-            "bg-primary px-4 text-sm font-medium text-primary-foreground",
-            "transition-colors hover:bg-primary/90",
+            "inline-flex h-9 w-full items-center justify-center gap-2 rounded-md",
+            "bg-primary/40 px-4 text-sm font-medium text-primary-foreground/60",
+            "cursor-not-allowed select-none",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           )}
         >
           Finalize Entry
+          <span
+            aria-hidden="true"
+            className="rounded-sm border border-primary-foreground/20 bg-primary-foreground/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary-foreground/50"
+          >
+            Soon
+          </span>
         </button>
       </div>
     </div>

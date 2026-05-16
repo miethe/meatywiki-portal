@@ -14,7 +14,7 @@
  * to DialogTitle.
  */
 
-import {
+import React, {
   useEffect,
   useRef,
   useCallback,
@@ -31,6 +31,8 @@ import { cn } from "@/lib/utils";
 
 interface DialogContextValue {
   titleId: string;
+  /** P2-10 / F-15: when true, backdrop click does not close the dialog. */
+  disableBackdropClose: boolean;
 }
 
 const DialogContext = createContext<DialogContextValue | null>(null);
@@ -68,15 +70,25 @@ export interface DialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: ReactNode;
+  /**
+   * P2-10 / F-15: when true, clicking the backdrop overlay does not close
+   * the dialog. Escape still closes it. Use for slide-over panels where
+   * accidental backdrop click should not dismiss the panel.
+   */
+  disableBackdropClose?: boolean;
 }
 
-export function Dialog({ open, onOpenChange, children }: DialogProps) {
+export function Dialog({ open, onOpenChange, children, disableBackdropClose = false }: DialogProps) {
   const titleId = useId();
 
   return (
-    <DialogContext.Provider value={{ titleId }}>
+    <DialogContext.Provider value={{ titleId, disableBackdropClose }}>
       {open && (
-        <DialogPortal onClose={() => onOpenChange(false)} titleId={titleId}>
+        <DialogPortal
+          onClose={() => onOpenChange(false)}
+          titleId={titleId}
+          disableBackdropClose={disableBackdropClose}
+        >
           {children}
         </DialogPortal>
       )}
@@ -92,9 +104,10 @@ interface DialogPortalProps {
   onClose: () => void;
   titleId: string;
   children: ReactNode;
+  disableBackdropClose?: boolean;
 }
 
-function DialogPortal({ onClose, children }: DialogPortalProps) {
+function DialogPortal({ onClose, children, disableBackdropClose = false }: DialogPortalProps) {
   useEffect(() => {
     // Scroll lock
     const prev = document.body.style.overflow;
@@ -121,11 +134,11 @@ function DialogPortal({ onClose, children }: DialogPortalProps) {
       role="presentation"
       className="fixed inset-0 z-50 flex items-center justify-center"
     >
-      {/* Backdrop */}
+      {/* Backdrop — P2-10: click does not close when disableBackdropClose=true */}
       <div
         aria-hidden="true"
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
-        onClick={onClose}
+        onClick={disableBackdropClose ? undefined : onClose}
       />
       {/* Content layer */}
       {children}
@@ -142,12 +155,18 @@ export interface DialogContentProps {
   className?: string;
   /** Pass undefined to suppress aria-describedby (shadcn compat). */
   "aria-describedby"?: string | undefined;
+  /** Forward touch events to the content root for swipe-to-dismiss (P2-10 / F-15). */
+  onTouchStart?: (e: React.TouchEvent) => void;
+  /** Forward touch events to the content root for swipe-to-dismiss (P2-10 / F-15). */
+  onTouchEnd?: (e: React.TouchEvent) => void;
 }
 
 export function DialogContent({
   children,
   className,
   "aria-describedby": ariaDescribedBy,
+  onTouchStart,
+  onTouchEnd,
 }: DialogContentProps) {
   const { titleId } = useDialogContext();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -198,6 +217,8 @@ export function DialogContent({
       aria-describedby={ariaDescribedBy}
       tabIndex={-1}
       onKeyDown={handleKeyDown}
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
       className={cn(
         "relative z-50 max-h-[90vh] w-full overflow-hidden rounded-xl bg-background shadow-2xl ring-1 ring-border",
         "animate-in fade-in-0 zoom-in-95 duration-200",

@@ -973,33 +973,48 @@ export function ContextRail({
           aria-label="Artifact actions"
           className="flex flex-col gap-1.5"
         >
-          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick, icon: Icon }) => (
-            <button
-              key={label}
-              type="button"
-              aria-label={btnAriaLabel}
-              aria-disabled={!onClick ? "true" : undefined}
-              title={description}
-              onClick={
-                onClick
-                  ? onClick
-                  : () => {
-                      console.debug(`[ContextRail] Action stub: "${label}" — ${description}`);
-                    }
-              }
-              className={cn(
-                // shadcn Button variant="outline" pattern
-                "inline-flex h-8 w-full items-center justify-start gap-2 rounded-md border bg-background px-3 text-xs font-medium",
-                "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                onClick
-                  ? "hover:bg-accent hover:text-accent-foreground"
-                  : "cursor-default text-muted-foreground hover:bg-muted/50",
-              )}
-            >
-              {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
-              <span className="truncate">{label}</span>
-            </button>
-          ))}
+          {actions.map(({ label, ariaLabel: btnAriaLabel, description, onClick, icon: Icon }) => {
+            const isStub = !onClick;
+            return (
+              <button
+                key={label}
+                type="button"
+                aria-label={isStub ? `${btnAriaLabel} (not yet available)` : btnAriaLabel}
+                aria-disabled={isStub ? "true" : undefined}
+                title={isStub ? `${description} — coming soon` : description}
+                onClick={
+                  onClick
+                    ? onClick
+                    : (e) => {
+                        // P2-06 / F-11: do not silently swallow stub clicks.
+                        // Prevent any parent handler from misinterpreting this click.
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }
+                }
+                className={cn(
+                  // shadcn Button variant="outline" pattern
+                  "inline-flex h-8 w-full items-center justify-start gap-2 rounded-md border bg-background px-3 text-xs font-medium",
+                  "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  isStub
+                    ? "cursor-not-allowed select-none opacity-60 hover:bg-transparent"
+                    : "hover:bg-accent hover:text-accent-foreground",
+                )}
+              >
+                {Icon && <Icon className="size-3.5 shrink-0" aria-hidden="true" />}
+                <span className="min-w-0 flex-1 truncate">{label}</span>
+                {/* P2-06 / F-11: visible "Coming soon" tag on all stub actions */}
+                {isStub && (
+                  <span
+                    aria-hidden="true"
+                    className="ml-auto shrink-0 rounded-sm border border-border/60 bg-muted px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/70"
+                  >
+                    Soon
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 

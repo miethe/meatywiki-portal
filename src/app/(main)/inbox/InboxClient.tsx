@@ -761,8 +761,11 @@ export function InboxClient({ initialData }: InboxClientProps) {
             <div className="flex flex-col gap-6">
               {GROUP_ORDER.map((groupKey) => {
                 const items = groups[groupKey];
-                if (items.length === 0) return null;
-                const urgency = deriveGroupUrgency(items);
+                // P2-12 / F-17: keep group headers rendered even when empty.
+                // Return a header with count=0 and a muted "Nothing here" subline
+                // so the user can see all three groups at a glance and understand
+                // the triage structure even when a group is empty.
+                const urgency = items.length > 0 ? deriveGroupUrgency(items) : "normal";
                 return (
                   <StatusGroupSection
                     key={groupKey}
@@ -770,44 +773,52 @@ export function InboxClient({ initialData }: InboxClientProps) {
                     count={items.length}
                     urgency={urgency}
                   >
-                    <ul
-                      role="list"
-                      aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
-                      className="flex flex-col gap-2"
-                    >
-                      {items.map((artifact) => {
-                        const { level, minutesAgo } = deriveItemUrgency(artifact);
-                        return (
-                          <li key={artifact.id}>
-                            {/*
-                             * FE-04: needs_compile group gets InboxItemWithCompile
-                             * (includes compile button + per-item error state).
-                             * All other groups get the plain SelectableCardWrapper.
-                             */}
-                            {groupKey === "needs_compile" ? (
-                              <InboxItemWithCompile
-                                artifact={artifact}
-                                inboxGroup={groupKey}
-                                urgencyLevel={level}
-                                urgencyMinutesAgo={minutesAgo}
-                                isSelected={selectedItem?.id === artifact.id}
-                                onSelect={handleSelectItem}
-                                onCompileSuccess={handleCompileSuccess}
-                              />
-                            ) : (
-                              <SelectableCardWrapper
-                                artifact={artifact}
-                                inboxGroup={groupKey}
-                                urgencyLevel={level}
-                                urgencyMinutesAgo={minutesAgo}
-                                isSelected={selectedItem?.id === artifact.id}
-                                onSelect={handleSelectItem}
-                              />
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    {items.length === 0 ? (
+                      // P2-12 / F-17: muted empty-group placeholder so the
+                      // triage structure is always visible to the user.
+                      <p className="px-1 py-1.5 text-xs text-muted-foreground/60 italic">
+                        Nothing here
+                      </p>
+                    ) : (
+                      <ul
+                        role="list"
+                        aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
+                        className="flex flex-col gap-2"
+                      >
+                        {items.map((artifact) => {
+                          const { level, minutesAgo } = deriveItemUrgency(artifact);
+                          return (
+                            <li key={artifact.id}>
+                              {/*
+                               * FE-04: needs_compile group gets InboxItemWithCompile
+                               * (includes compile button + per-item error state).
+                               * All other groups get the plain SelectableCardWrapper.
+                               */}
+                              {groupKey === "needs_compile" ? (
+                                <InboxItemWithCompile
+                                  artifact={artifact}
+                                  inboxGroup={groupKey}
+                                  urgencyLevel={level}
+                                  urgencyMinutesAgo={minutesAgo}
+                                  isSelected={selectedItem?.id === artifact.id}
+                                  onSelect={handleSelectItem}
+                                  onCompileSuccess={handleCompileSuccess}
+                                />
+                              ) : (
+                                <SelectableCardWrapper
+                                  artifact={artifact}
+                                  inboxGroup={groupKey}
+                                  urgencyLevel={level}
+                                  urgencyMinutesAgo={minutesAgo}
+                                  isSelected={selectedItem?.id === artifact.id}
+                                  onSelect={handleSelectItem}
+                                />
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </StatusGroupSection>
                 );
               })}

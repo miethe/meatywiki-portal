@@ -21,7 +21,7 @@
  *   - No edit controls are present; ArticleViewer is purely read-only.
  */
 
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useId } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ArticleViewer } from "@miethe/ui";
 import { cn } from "@/lib/utils";
@@ -176,14 +176,25 @@ interface ToastMessage {
 
 let toastSeq = 0;
 
+// P2-08 / F-13: error toasts stay for 8s; success toasts dismiss at 3s.
+const TOAST_DISMISS_MS: Record<ToastKind, number> = {
+  success: 3_000,
+  error: 8_000,
+};
+
 function useItemToast() {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const dismiss = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setToast(null);
+  }, []);
+
   const show = useCallback((kind: ToastKind, text: string) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setToast({ id: ++toastSeq, kind, text });
-    timerRef.current = setTimeout(() => setToast(null), 3000);
+    timerRef.current = setTimeout(() => setToast(null), TOAST_DISMISS_MS[kind]);
   }, []);
 
   useEffect(() => {
@@ -192,19 +203,21 @@ function useItemToast() {
     };
   }, []);
 
-  return { toast, show };
+  return { toast, show, dismiss };
 }
 
 interface ToastBannerProps {
   toast: ToastMessage;
+  /** P2-08 / F-13: explicit dismiss callback — errors require a visible X button. */
+  onDismiss?: () => void;
 }
 
-function ToastBanner({ toast }: ToastBannerProps) {
+function ToastBanner({ toast, onDismiss }: ToastBannerProps) {
   const isSuccess = toast.kind === "success";
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={isSuccess ? "status" : "alert"}
+      aria-live={isSuccess ? "polite" : "assertive"}
       aria-label={toast.text}
       className={cn(
         "fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm font-medium shadow-lg",
@@ -248,6 +261,23 @@ function ToastBanner({ toast }: ToastBannerProps) {
         </svg>
       )}
       <span>{toast.text}</span>
+      {/* P2-08: explicit dismiss button — always shown for errors, optional for success */}
+      {(!isSuccess || onDismiss) && onDismiss && (
+        <button
+          type="button"
+          aria-label="Dismiss notification"
+          onClick={onDismiss}
+          className={cn(
+            "ml-1 shrink-0 rounded-sm p-0.5 opacity-70 transition-opacity hover:opacity-100",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            isSuccess ? "text-emerald-800 dark:text-emerald-300" : "text-destructive",
+          )}
+        >
+          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -296,6 +326,19 @@ export interface PendingApprovalItemProps {
  *      sync with server state.
  *   3. On error: show error toast, call onActionComplete() (refetch) to
  *      restore the item from server state.
+ *
+ * P2-08 / F-13 toast consolidation (time-boxed to 1 SP):
+ *   - Both PendingApprovalItem and PendingApprovalPanel maintain their own
+ *     `fixed bottom-4 right-4` toasts. Full consolidation into a global toast
+ *     provider is deferred (no global provider exists in @miethe/ui yet).
+ *   - Interim mitigations applied here:
+ *       • Error toasts: auto-dismiss bumped from 3s → 8s (errors need to be
+ *         seen and acted on; 3s is too short).
+ *       • Error toasts: explicit "Dismiss" button added so errors can be cleared
+ *         before the 8s timer fires.
+ *       • Success toasts: stay at 3s (acknowledged, not actionable).
+ *   - Full migration to a shared panel-scoped or global queue can land in
+ *     Phase 3 / Portal v2.2 once a global toast provider is available.
  */
 export function PendingApprovalItem({
   item,
@@ -306,13 +349,18 @@ export function PendingApprovalItem({
   focusTargetOnRemoveRef,
 }: PendingApprovalItemProps) {
   const queryClient = useQueryClient();
+  const bodyId = useId();
   const [approvingState, setApprovingState] = useState<"idle" | "loading">(
     "idle",
   );
   const [rejectingState, setRejectingState] = useState<"idle" | "loading">(
     "idle",
   );
-  const { toast, show: showToast } = useItemToast();
+  // P2-07 / F-12: body content expansion state.
+  // Starts collapsed (showing ~5 lines) with a fade gradient and "Show more"
+  // affordance. Expanding removes the height cap entirely.
+  const [bodyExpanded, setBodyExpanded] = useState(false);
+  const { toast, show: showToast, dismiss: dismissToast } = useItemToast();
 
   const displayName = extractDisplayName(item);
   const relativeTime = formatRelativeTime(item.created_at);
@@ -542,25 +590,63 @@ export function PendingApprovalItem({
         {/* skip this section entirely.                                       */}
         {/* ---------------------------------------------------------------- */}
         {bodyContent !== null && (
+          // P2-07 / F-12: collapsible body section.
+          // Collapsed state: height capped at ~120px (5 lines @ ~24px) with a
+          // bottom fade gradient hinting there is more content. Clicking "Show
+          // more" removes the cap and hides the gradient.
+          // max-h-48 (192px) was dropped — content now naturally sizes when expanded.
           <div
             className="mt-1 border-t pt-2"
             aria-label="Artifact body preview"
           >
-            <ArticleViewer
-              content={bodyContent}
-              format="auto"
-              variant="compact"
-              frontmatter="hide"
-              sanitize={true}
-              generateHeadingIds={false}
-              className="max-h-48 overflow-y-auto rounded-sm bg-muted/30 px-3 py-2 text-sm"
-            />
+            <div className="relative">
+              <div
+                id={bodyId}
+                className={cn(
+                  "rounded-sm bg-muted/30 px-3 py-2 text-sm overflow-hidden transition-all duration-200",
+                  bodyExpanded ? "max-h-none" : "max-h-28",
+                )}
+              >
+                <ArticleViewer
+                  content={bodyContent}
+                  format="auto"
+                  variant="compact"
+                  frontmatter="hide"
+                  sanitize={true}
+                  generateHeadingIds={false}
+                />
+              </div>
+
+              {/* Fade gradient — only shown when collapsed */}
+              {!bodyExpanded && (
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-8 rounded-b-sm bg-gradient-to-t from-muted/60 to-transparent"
+                />
+              )}
+            </div>
+
+            {/* Show more / Show less toggle */}
+            <button
+              type="button"
+              aria-expanded={bodyExpanded}
+              aria-controls={bodyId}
+              onClick={() => setBodyExpanded((prev) => !prev)}
+              className={cn(
+                "mt-1 text-xs font-medium text-muted-foreground underline-offset-2",
+                "hover:text-foreground hover:underline",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              {bodyExpanded ? "Show less" : "Show more"}
+            </button>
           </div>
         )}
       </div>
 
-      {/* Toast banner — fixed-position, auto-dismisses after 3 s */}
-      {toast && <ToastBanner key={toast.id} toast={toast} />}
+      {/* Toast banner — fixed-position.
+          P2-08 / F-13: success auto-dismisses at 3s; errors at 8s + explicit dismiss button. */}
+      {toast && <ToastBanner key={toast.id} toast={toast} onDismiss={dismissToast} />}
     </>
   );
 }
