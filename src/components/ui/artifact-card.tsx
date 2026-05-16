@@ -275,11 +275,41 @@ export function ArtifactCard({
     const ctaLabel = INBOX_CTA_LABELS[inboxGroup];
     const accentColorInbox = typeAccentColor(type);
 
+    /**
+     * P1-01 (F-01): Inbox card interactive structure.
+     *
+     * The card row is a selectable region (role="button") — clicking or pressing
+     * Space/Enter fires onCardClick which selects the item in the sidebar rail.
+     * Modifier-clicks (Cmd/Ctrl/Shift/Alt) are passed through to the dedicated
+     * "Open" Link affordance to navigate to the artifact detail page.
+     *
+     * The `absolute inset-0` overlay pattern is dropped:
+     *   - The card body handles selection via role="button" + keyboard handlers.
+     *   - A dedicated "Open" Link in the right cluster handles navigation.
+     *   - Badges and the CTA cluster are fully interactive (no pointer-events-none).
+     *
+     * Library callsites are unaffected: they do not pass `inboxGroup` so they
+     * take the standard render path below.
+     */
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        // Synthesise a mouse event for the onCardClick handler contract
+        onCardClick?.(
+          e as unknown as React.MouseEvent<HTMLAnchorElement>,
+          artifact,
+        );
+      }
+    };
+
     return (
       <article
+        role="button"
+        tabIndex={0}
         className={cn(
-          "group relative flex items-center gap-3 rounded-md border bg-card p-3",
-          "transition-shadow hover:shadow-sm",
+          "group flex cursor-pointer items-center gap-3 rounded-md border bg-card p-3",
+          "transition-shadow hover:bg-muted/40 hover:shadow-sm",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           isResearchOrigin && "ring-1 ring-teal-400/50",
           className,
         )}
@@ -291,23 +321,27 @@ export function ArtifactCard({
         aria-label={isResearchOrigin ? `${title} (research origin)` : title}
         data-research-origin={isResearchOrigin ? "true" : undefined}
         data-inbox-group={inboxGroup}
+        onClick={(event) => {
+          // Clicks that originate inside interactive children bubble up here;
+          // stop if the click started on a button/link (those handle their own action).
+          const target = event.target as HTMLElement;
+          if (target.closest("button, a, [role='button']") && target !== event.currentTarget) {
+            return;
+          }
+          onCardClick?.(
+            event as unknown as React.MouseEvent<HTMLAnchorElement>,
+            artifact,
+          );
+        }}
+        onKeyDown={handleKeyDown}
       >
-        {/* Stretch link covers the card for navigation */}
-        <Link
-          href={`/artifact/${id}`}
-          aria-label={`View ${title}`}
-          className="absolute inset-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-          tabIndex={-1}
-          onClick={(event) => onCardClick?.(event, artifact)}
-        />
-
         {/* Type chip — left anchor */}
-        <div className="pointer-events-none shrink-0">
+        <div className="shrink-0">
           <TypeBadge type={type} />
         </div>
 
         {/* Main content: title + 1-line preview */}
-        <div className="pointer-events-none min-w-0 flex-1">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold leading-snug text-foreground">
             {title}
           </p>
@@ -318,8 +352,9 @@ export function ArtifactCard({
           )}
         </div>
 
-        {/* Right cluster: urgency badge + CTA — relative so buttons stack above the stretch link */}
-        <div className="pointer-events-none relative flex shrink-0 items-center gap-2">
+        {/* Right cluster: urgency badge + CTA + "Open" navigation link.
+            All children are interactive — no pointer-events-none wrapper. */}
+        <div className="flex shrink-0 items-center gap-2">
           {urgencyLevel && (
             <UrgencyBadge
               level={urgencyLevel}
@@ -336,7 +371,7 @@ export function ArtifactCard({
                 e.stopPropagation();
               }}
               className={cn(
-                "pointer-events-auto inline-flex h-7 items-center rounded-md border px-2.5",
+                "inline-flex h-7 items-center rounded-md border px-2.5",
                 "text-xs font-medium text-foreground",
                 "transition-colors hover:bg-accent hover:text-accent-foreground",
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -345,6 +380,34 @@ export function ArtifactCard({
               {ctaLabel}
             </button>
           )}
+          {/* Dedicated navigation affordance — does not trigger selection */}
+          <Link
+            href={`/artifact/${id}`}
+            aria-label={`Open ${title}`}
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "inline-flex h-7 w-7 items-center justify-center rounded-md border",
+              "text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+            tabIndex={0}
+          >
+            {/* Arrow-right icon */}
+            <svg
+              aria-hidden="true"
+              className="size-3.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </Link>
         </div>
       </article>
     );
