@@ -1244,10 +1244,13 @@ function LibraryPageInner() {
         onFiltersChange={handleArchiveFilterChange}
       />
 
+      {/* P2-11 / F-16: pass artifactList + onNavigate for ←/→ keyboard navigation */}
       <ArtifactPreviewSheet
         artifact={selectedArtifact}
         open={selectedArtifact !== null}
         onClose={closePreviewSheet}
+        artifactList={artifacts}
+        onNavigate={setSelectedArtifact}
       />
 
       {/* Tablet ContextRail overlay — fixed right panel, md–xl only */}

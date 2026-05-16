@@ -223,6 +223,29 @@ function buildCustomTabs(item: ArtifactCard): ContextRailTab[] {
 }
 
 // ---------------------------------------------------------------------------
+// Loading skeleton (item selected but fields still populating)
+// P3-04 / F-21
+// ---------------------------------------------------------------------------
+
+function RailLoadingSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading item details"
+      className="flex flex-col gap-2.5 animate-pulse"
+    >
+      {/* Mimics the InboxPropertiesPanel label+value rows */}
+      <div className="h-2.5 w-16 rounded bg-muted" />
+      <div className="h-3 w-24 rounded bg-muted/70" />
+      <div className="mt-1 h-2.5 w-14 rounded bg-muted" />
+      <div className="h-3 w-32 rounded bg-muted/70" />
+      <div className="mt-1 h-2.5 w-20 rounded bg-muted" />
+      <div className="h-3 w-28 rounded bg-muted/70" />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Empty state (no item selected)
 // ---------------------------------------------------------------------------
 
@@ -261,6 +284,13 @@ function RailEmptyState() {
 export interface InboxContextRailProps {
   /** The currently-selected inbox item, or null when nothing is selected. */
   selectedItem: ArtifactCard | null;
+  /**
+   * P3-04 / F-21: When true, renders a skeleton placeholder in the Properties
+   * panel instead of the real field values. Use when `selectedItem` is set but
+   * the enriched detail fields are still in-flight (e.g. after a quick tap that
+   * selects an item before a detail fetch resolves).
+   */
+  isLoadingDetails?: boolean;
   className?: string;
 }
 
@@ -279,6 +309,7 @@ export interface InboxContextRailProps {
  */
 export function InboxContextRail({
   selectedItem,
+  isLoadingDetails = false,
   className,
 }: InboxContextRailProps) {
   if (!selectedItem) {
@@ -289,12 +320,19 @@ export function InboxContextRail({
     );
   }
 
+  // P3-04 / F-21: item is selected but fields are still loading — show skeleton
+  if (isLoadingDetails) {
+    return (
+      <div className={cn("flex flex-col gap-3", className)}>
+        <div className="rounded-md border p-4">
+          <RailLoadingSkeleton />
+        </div>
+      </div>
+    );
+  }
+
   const customTabs = buildCustomTabs(selectedItem);
   const actions = buildActions(selectedItem);
-
-  const handleFinalize = () => {
-    console.debug("[inbox-rail] action: Finalize Entry", selectedItem.id);
-  };
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
@@ -305,20 +343,34 @@ export function InboxContextRail({
         ariaLabel="Inbox item context"
       />
 
-      {/* Footer CTA — "Finalize Entry" */}
+      {/* Footer CTA — "Finalize Entry" (P2-06 / F-11: stub with visible disabled
+          state until the backend routing endpoint is wired).
+          aria-disabled keeps the button focusable so keyboard users can Tab
+          past it and the tooltip/title conveys the reason it's unavailable. */}
       <div className="border-t pt-3">
         <button
           type="button"
-          aria-label={`Finalize entry: ${selectedItem.title}`}
-          onClick={handleFinalize}
+          aria-label={`Finalize entry: ${selectedItem.title} (not yet available)`}
+          aria-disabled="true"
+          title="Finalize Entry — coming soon"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          }}
           className={cn(
-            "inline-flex h-9 w-full items-center justify-center rounded-md",
-            "bg-primary px-4 text-sm font-medium text-primary-foreground",
-            "transition-colors hover:bg-primary/90",
+            "inline-flex h-9 w-full items-center justify-center gap-2 rounded-md",
+            "bg-primary/40 px-4 text-sm font-medium text-primary-foreground/60",
+            "cursor-not-allowed select-none",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           )}
         >
           Finalize Entry
+          <span
+            aria-hidden="true"
+            className="rounded-sm border border-primary-foreground/20 bg-primary-foreground/10 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-primary-foreground/50"
+          >
+            Soon
+          </span>
         </button>
       </div>
     </div>

@@ -32,6 +32,26 @@
  *
  * Shared export: also re-exported from src/components/library/artifact-card.tsx
  * for P5-03/P5-04/P5-05 filtered-view screens.
+ *
+ * --- Row-click semantics divergence (P2-01 / F-05) ---
+ *
+ * The two surfaces that use ArtifactCard have intentionally different
+ * click semantics and this divergence is by design:
+ *
+ *  Inbox  (inboxGroup !== undefined):
+ *    Row click → SELECTS the item in the sidebar rail.
+ *    Dedicated "→" link in the right cluster → NAVIGATES to /artifact/:id.
+ *    Rationale: the inbox triage flow is centred on the rail; navigation is
+ *    a secondary action that should not interrupt the scanning rhythm.
+ *
+ *  Library (inboxGroup === undefined):
+ *    Row click (via `absolute inset-0` Link) → NAVIGATES / opens preview sheet.
+ *    onCardClick interception in LibraryPage → opens side-sheet on plain click,
+ *    navigates on modifier-click (Cmd/Ctrl/Shift/Alt).
+ *    Rationale: the Library is a browsing surface; the dominant action is
+ *    previewing and comparing artifacts, not selecting for further triage.
+ *
+ * Do not unify these into a single behaviour — they are correctly divergent.
  */
 
 import type React from "react";
@@ -103,11 +123,27 @@ function workspaceToFacet(workspace: string): ArtifactFacet | null {
  */
 export type InboxGroup = "new" | "needs_compile" | "needs_destination";
 
-/** CTA labels per inbox group (P5-02, phase-5-inbox-reskin.md §Task P5-02) */
+/**
+ * CTA labels per inbox group (P5-02 / P2-05 / F-10).
+ *
+ * P2-05 changes:
+ *   - needs_compile: "Start Compilation" → "Compile" (matches CompileButton label
+ *     in InboxClient.tsx and the general product verb used throughout the UI).
+ *   - needs_destination: "Review Needed" removed as a CTA label. This was a
+ *     status description masquerading as an action verb. The group header
+ *     ("NEEDS DESTINATION") already conveys the status; the CTA should be a
+ *     verb the user can act on. Changed to "Route" — a neutral destination-routing
+ *     verb that does not imply a specific action until routing UI is wired.
+ *   - new: "Draft" unchanged — reasonable placeholder until Draft-editing is wired.
+ *
+ * Note: when `ctaSlot` is provided the caller overrides this label entirely (e.g.
+ * InboxItemWithCompile passes a real <CompileButton>). These labels only drive the
+ * fallback stub button.
+ */
 const INBOX_CTA_LABELS: Record<InboxGroup, string> = {
   new: "Draft",
-  needs_compile: "Start Compilation",
-  needs_destination: "Review Needed",
+  needs_compile: "Compile",
+  needs_destination: "Route",
 };
 
 interface ArtifactCardProps {
@@ -275,39 +311,95 @@ export function ArtifactCard({
     const ctaLabel = INBOX_CTA_LABELS[inboxGroup];
     const accentColorInbox = typeAccentColor(type);
 
+    /**
+     * P1-01 (F-01) / P2-02 (F-06): Inbox card interactive structure.
+     *
+     * The card row is a selectable region (role="button") — clicking or pressing
+     * Space/Enter fires onCardClick which selects the item in the sidebar rail.
+     * Modifier-clicks (Cmd/Ctrl/Shift/Alt) are passed through to the dedicated
+     * "Open" Link affordance to navigate to the artifact detail page.
+     *
+     * P2-02 / F-06 keyboard selection checklist (verified):
+     *   ✓ role="button" — row is in the tab order and announced as a button.
+     *   ✓ tabIndex={0} — row receives Tab focus.
+     *   ✓ onKeyDown handles Space (preventDefault + select) and Enter (select).
+     *   ✓ focus-visible:ring-2 — selection focus ring matches the "Open" link ring.
+     *   ✓ Dedicated "Open" Link has its own tabIndex={0} + focus ring — Tab can
+     *       reach the navigation affordance independently of the row selection.
+     *   ✓ Interactive children (CTA slot, "Open" link) stop propagation so their
+     *       own keyboard/click handlers are not shadowed by the row handler.
+     *
+     * The `absolute inset-0` overlay pattern is dropped:
+     *   - The card body handles selection via role="button" + keyboard handlers.
+     *   - A dedicated "Open" Link in the right cluster handles navigation.
+     *   - Badges and the CTA cluster are fully interactive (no pointer-events-none).
+     *
+     * Library callsites are unaffected: they do not pass `inboxGroup` so they
+     * take the standard render path below.
+     */
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLElement>) => {
+      if (e.key === " " || e.key === "Enter") {
+        e.preventDefault();
+        // Synthesise a mouse event for the onCardClick handler contract
+        onCardClick?.(
+          e as unknown as React.MouseEvent<HTMLAnchorElement>,
+          artifact,
+        );
+      }
+    };
+
     return (
       <article
+        role="button"
+        tabIndex={0}
         className={cn(
-          "group relative flex items-center gap-3 rounded-md border bg-card p-3",
-          "transition-shadow hover:shadow-sm",
-          isResearchOrigin && "ring-1 ring-teal-400/50",
+          // P2-03 / F-07: pre-hover affordance — cursor-pointer and bg tint make
+          // the row clearly clickable even before the user hovers. The "→" hint
+          // in the right cluster is always-visible at reduced opacity and brightens
+          // on hover to signal the row → rail relationship.
+          // P3-01 / F-18: type-accent stripe moved inside the bordered region via
+          // an inner div (see below), so the selection ring wraps the full card
+          // border without the stripe sitting outside it.
+          // P3-02 / F-19: research-origin ring removed — replaced by a badge in
+          // the meta row so the selection ring is unambiguous.
+          "group relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-md border bg-card py-3 pr-3 pl-5",
+          "transition-colors hover:bg-muted/40 hover:shadow-sm",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
           className,
         )}
-        style={{
-          borderLeftWidth: "3px",
-          borderLeftStyle: "solid",
-          borderLeftColor: accentColorInbox,
-        }}
         aria-label={isResearchOrigin ? `${title} (research origin)` : title}
         data-research-origin={isResearchOrigin ? "true" : undefined}
         data-inbox-group={inboxGroup}
+        onClick={(event) => {
+          // Clicks that originate inside interactive children bubble up here;
+          // stop if the click started on a button/link (those handle their own action).
+          const target = event.target as HTMLElement;
+          if (target.closest("button, a, [role='button']") && target !== event.currentTarget) {
+            return;
+          }
+          onCardClick?.(
+            event as unknown as React.MouseEvent<HTMLAnchorElement>,
+            artifact,
+          );
+        }}
+        onKeyDown={handleKeyDown}
       >
-        {/* Stretch link covers the card for navigation */}
-        <Link
-          href={`/artifact/${id}`}
-          aria-label={`View ${title}`}
-          className="absolute inset-0 rounded-md focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-          tabIndex={-1}
-          onClick={(event) => onCardClick?.(event, artifact)}
+        {/* P3-01 / F-18: type-accent stripe rendered as an absolute inner bar
+            so it sits *inside* the card border, keeping the selection ring
+            unobstructed. Uses inline style only for the dynamic color value. */}
+        <span
+          aria-hidden="true"
+          className="absolute inset-y-0 left-0 w-[3px]"
+          style={{ backgroundColor: accentColorInbox }}
         />
 
         {/* Type chip — left anchor */}
-        <div className="pointer-events-none shrink-0">
+        <div className="shrink-0">
           <TypeBadge type={type} />
         </div>
 
-        {/* Main content: title + 1-line preview */}
-        <div className="pointer-events-none min-w-0 flex-1">
+        {/* Main content: title + 1-line preview + optional Research badge */}
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold leading-snug text-foreground">
             {title}
           </p>
@@ -316,15 +408,26 @@ export function ArtifactCard({
               {preview}
             </p>
           )}
+          {/* P3-02 / F-19: Research origin surfaced as an inline badge in the
+              meta row rather than an outer teal ring, so the selection ring
+              is unambiguous. */}
+          {isResearchOrigin && (
+            <span className="mt-1 inline-flex items-center rounded-sm border border-teal-500/30 bg-teal-50 px-1.5 py-0.5 text-[10px] font-medium text-teal-700 dark:bg-teal-950/30 dark:text-teal-400">
+              Research
+            </span>
+          )}
         </div>
 
-        {/* Right cluster: urgency badge + CTA — relative so buttons stack above the stretch link */}
-        <div className="pointer-events-none relative flex shrink-0 items-center gap-2">
+        {/* Right cluster: urgency badge + CTA + "Open" navigation link.
+            All children are interactive — no pointer-events-none wrapper. */}
+        <div className="flex shrink-0 items-center gap-2">
+          {/* P3-03 / F-20: UrgencyBadge is always visible (removed
+              `hidden sm:inline-flex`). The "Open" link is the less-critical
+              affordance on small screens since the whole row is selectable. */}
           {urgencyLevel && (
             <UrgencyBadge
               level={urgencyLevel}
               minutesAgo={urgencyMinutesAgo}
-              className="hidden sm:inline-flex"
             />
           )}
           {ctaSlot ?? (
@@ -336,7 +439,7 @@ export function ArtifactCard({
                 e.stopPropagation();
               }}
               className={cn(
-                "pointer-events-auto inline-flex h-7 items-center rounded-md border px-2.5",
+                "inline-flex h-7 items-center rounded-md border px-2.5",
                 "text-xs font-medium text-foreground",
                 "transition-colors hover:bg-accent hover:text-accent-foreground",
                 "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -345,6 +448,45 @@ export function ArtifactCard({
               {ctaLabel}
             </button>
           )}
+          {/* Dedicated navigation affordance — does not trigger selection.
+              P2-03 / F-07: always visible at reduced opacity so the user can
+              see "there is a nav action here" before hovering. Becomes fully
+              opaque on row group-hover and on its own focus state.
+              P2-02 / F-06: keyboard accessible — tabIndex={0} + has its own
+              focus ring so Tab can land here and Enter/click navigates. */}
+          {/* P3-03 / F-20: Open link hidden on small screens (it is the least
+              critical affordance — the row itself handles selection, and Tab
+              focus still reveals this link for keyboard users). */}
+          <Link
+            href={`/artifact/${id}`}
+            aria-label={`Open ${title}`}
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "hidden sm:inline-flex h-7 w-7 items-center justify-center rounded-md border",
+              "text-muted-foreground/50 transition-all",
+              "group-hover:text-muted-foreground group-hover:border-border",
+              "hover:bg-accent hover:text-accent-foreground hover:!opacity-100",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              "focus-visible:text-muted-foreground focus-visible:opacity-100",
+            )}
+            tabIndex={0}
+          >
+            {/* Arrow-right icon */}
+            <svg
+              aria-hidden="true"
+              className="size-3.5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5l7 7-7 7"
+              />
+            </svg>
+          </Link>
         </div>
       </article>
     );
@@ -695,7 +837,10 @@ export function ArtifactCard({
         )}
       </div>
 
-      {/* Meatballs menu — absolute top-right, visible on group hover only.
+      {/* Meatballs menu — absolute top-right.
+          P2-04 / F-09: visible on group-hover, on keyboard focus-within the
+          menu trigger, and always visible on touch devices
+          (@media (hover: none) — targets that lack a fine pointer, e.g. phones).
           pointer-events-auto re-enables clicks since the parent content div
           uses pointer-events-none. stopPropagation prevents card selection
           click from firing when the menu button or items are clicked. */}
@@ -703,7 +848,11 @@ export function ArtifactCard({
         <div
           className={cn(
             "pointer-events-auto absolute right-2 top-2",
-            "opacity-0 group-hover:opacity-100 transition-opacity",
+            // hover devices: hidden by default, reveal on row hover or menu focus
+            "opacity-0 transition-opacity",
+            "group-hover:opacity-100 focus-within:opacity-100",
+            // touch devices: always visible (no hover available)
+            "[@media(hover:none)]:opacity-100",
           )}
           // Prevent the card's <li onClick> selection handler from triggering
           onClick={(e) => e.stopPropagation()}

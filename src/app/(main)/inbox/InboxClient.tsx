@@ -59,6 +59,7 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { StatusGroupSection } from "@/components/ui/status-group-section";
@@ -433,8 +434,10 @@ interface SelectableCardWrapperProps {
   onSelect: (artifact: ArtifactCardType) => void;
   /** FE-04: when provided, rendered as an action overlay on the card row */
   compileSlot?: React.ReactNode;
-  /** FE-04: inline error text shown below the card row */
+  /** FE-04 / P1-04: inline error text shown below the card row */
   compileError?: string | null;
+  /** P1-04 / F-03: called when the user dismisses the inline compile error */
+  onDismissCompileError?: () => void;
 }
 
 function SelectableCardWrapper({
@@ -446,6 +449,7 @@ function SelectableCardWrapper({
   onSelect,
   compileSlot,
   compileError,
+  onDismissCompileError,
 }: SelectableCardWrapperProps) {
   const handleCardClick = useCallback(
     (event: React.MouseEvent<HTMLAnchorElement>) => {
@@ -478,15 +482,29 @@ function SelectableCardWrapper({
         />
       </div>
 
-      {/* FE-04: Inline compile error — shown below card row, auto-cleared by parent */}
+      {/* P1-04 / F-03: Inline compile error — persists until user dismisses it.
+          Dismiss button requires explicit user action (no auto-clear timer). */}
       {compileError && (
-        <p
+        <div
           role="alert"
           aria-live="assertive"
-          className="px-3 text-xs text-destructive"
+          className="flex items-center justify-between gap-2 px-3 py-1"
         >
-          {compileError}
-        </p>
+          <p className="text-xs text-destructive">{compileError}</p>
+          {onDismissCompileError && (
+            <button
+              type="button"
+              aria-label="Dismiss compile error"
+              onClick={onDismissCompileError}
+              className={cn(
+                "shrink-0 text-xs font-medium text-destructive underline-offset-2",
+                "hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              )}
+            >
+              Dismiss
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -498,8 +516,11 @@ function SelectableCardWrapper({
 
 /**
  * Thin wrapper that combines SelectableCardWrapper with CompileButton for
- * items in the needs_compile group. Owns the per-item compile error state
- * and the 5 s auto-clear timer for it.
+ * items in the needs_compile group. Owns the per-item compile error state.
+ *
+ * P1-04 / F-03: Error is NOT auto-cleared — it persists until the user
+ * explicitly dismisses it (dismiss button in compileError slot) or retries.
+ * This ensures compile failures are never silently swallowed.
  *
  * Separate component so the error state is isolated per item — one item's
  * error doesn't pollute others. The optimistic status update is bubbled up
@@ -525,19 +546,14 @@ function InboxItemWithCompile({
   onCompileSuccess,
 }: InboxItemWithCompileProps) {
   const [itemError, setItemError] = useState<string | null>(null);
-  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // P1-04 / F-03: No auto-clear timer — error persists until dismissed.
   const handleError = useCallback((msg: string) => {
     setItemError(msg);
-    // Auto-clear after 5 s
-    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-    errorTimerRef.current = setTimeout(() => setItemError(null), 5000);
   }, []);
 
-  useEffect(() => {
-    return () => {
-      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
-    };
+  const handleDismissError = useCallback(() => {
+    setItemError(null);
   }, []);
 
   const compileSlot = (
@@ -559,6 +575,7 @@ function InboxItemWithCompile({
       onSelect={onSelect}
       compileSlot={compileSlot}
       compileError={itemError}
+      onDismissCompileError={handleDismissError}
     />
   );
 }
@@ -577,11 +594,18 @@ interface InboxClientProps {
 
 export function InboxClient({ initialData }: InboxClientProps) {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const searchParams = useSearchParams();
 
   // P5-03: selected item state — null until data loads, then auto-selects first.
   const [selectedItem, setSelectedItem] = useState<ArtifactCardType | null>(null);
 
-  const { artifacts, hasMore, isLoading, error, loadMore, optimisticUpdateArtifact } =
+  // P1-04 / F-04: Track artifact IDs that have a compile job in flight (ref,
+  // not state — no re-render needed). We do NOT optimistically flip the row's
+  // group. The row stays in needs_compile with CompileButton's own isCompiling
+  // feedback until SSE/poll delivers a terminal event (future phase).
+  const compilingIdsRef = useRef<Set<string>>(new Set<string>());
+
+  const { artifacts, hasMore, isLoading, error, loadMore } =
     useInboxArtifacts({ initialData });
 
   const {
@@ -601,20 +625,52 @@ export function InboxClient({ initialData }: InboxClientProps) {
   }, []);
 
   /**
-   * FE-04: Optimistically move an artifact from needs_compile → needs_destination
-   * after a successful compile trigger. We use "stale" since that maps to
-   * needs_destination in STATUS_TO_GROUP (matches the compile→destination flow).
+   * P1-04 / F-04: Do NOT optimistically flip the row's group status on 202 ACK.
    *
-   * This gives instant visual feedback (item moves groups) without a network
-   * roundtrip. If the backend returns a different status on next page load that
-   * is fine — the data will reconcile on refresh.
+   * The old code called optimisticUpdateArtifact(id, { status: "stale" }) which
+   * immediately moved the row to NEEDS DESTINATION — a lie if the job later
+   * fails or the backend disagrees. Instead we mark the ID as "compiling" so
+   * future SSE/poll wiring (Portal v2.x) can use it, and let the row stay in
+   * its current group. The CompileButton's own isCompiling/showSuccess states
+   * already provide per-button feedback to the user.
    */
   const handleCompileSuccess = useCallback(
     (artifactId: string) => {
-      optimisticUpdateArtifact(artifactId, { status: "stale" });
+      compilingIdsRef.current.add(artifactId);
+      // No group flip — CompileButton's own isCompiling/showSuccess states
+      // give per-button feedback. SSE wiring can consume compilingIdsRef later.
     },
-    [optimisticUpdateArtifact],
+    [],
   );
+
+  // P1-02 / F-08: Auto-select first visible inbox item on mount when:
+  //   1. Data has loaded (artifacts array is non-empty)
+  //   2. No item is currently selected
+  //   3. No ?selected= URL param is present (user navigated in with a specific item)
+  const hasSelectedParam = Boolean(searchParams.get("selected"));
+  const autoSelectDone = useRef(false);
+
+  useEffect(() => {
+    if (autoSelectDone.current) return;
+    if (hasSelectedParam) {
+      autoSelectDone.current = true;
+      return;
+    }
+    if (selectedItem !== null) {
+      autoSelectDone.current = true;
+      return;
+    }
+    // Find the first artifact across groups in GROUP_ORDER order
+    const firstArtifact =
+      groups["new"][0] ??
+      groups["needs_compile"][0] ??
+      groups["needs_destination"][0] ??
+      null;
+    if (firstArtifact) {
+      setSelectedItem(firstArtifact);
+      autoSelectDone.current = true;
+    }
+  }, [groups, hasSelectedParam, selectedItem]);
 
   return (
     <>
@@ -705,8 +761,11 @@ export function InboxClient({ initialData }: InboxClientProps) {
             <div className="flex flex-col gap-6">
               {GROUP_ORDER.map((groupKey) => {
                 const items = groups[groupKey];
-                if (items.length === 0) return null;
-                const urgency = deriveGroupUrgency(items);
+                // P2-12 / F-17: keep group headers rendered even when empty.
+                // Return a header with count=0 and a muted "Nothing here" subline
+                // so the user can see all three groups at a glance and understand
+                // the triage structure even when a group is empty.
+                const urgency = items.length > 0 ? deriveGroupUrgency(items) : "normal";
                 return (
                   <StatusGroupSection
                     key={groupKey}
@@ -714,44 +773,52 @@ export function InboxClient({ initialData }: InboxClientProps) {
                     count={items.length}
                     urgency={urgency}
                   >
-                    <ul
-                      role="list"
-                      aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
-                      className="flex flex-col gap-2"
-                    >
-                      {items.map((artifact) => {
-                        const { level, minutesAgo } = deriveItemUrgency(artifact);
-                        return (
-                          <li key={artifact.id}>
-                            {/*
-                             * FE-04: needs_compile group gets InboxItemWithCompile
-                             * (includes compile button + per-item error state).
-                             * All other groups get the plain SelectableCardWrapper.
-                             */}
-                            {groupKey === "needs_compile" ? (
-                              <InboxItemWithCompile
-                                artifact={artifact}
-                                inboxGroup={groupKey}
-                                urgencyLevel={level}
-                                urgencyMinutesAgo={minutesAgo}
-                                isSelected={selectedItem?.id === artifact.id}
-                                onSelect={handleSelectItem}
-                                onCompileSuccess={handleCompileSuccess}
-                              />
-                            ) : (
-                              <SelectableCardWrapper
-                                artifact={artifact}
-                                inboxGroup={groupKey}
-                                urgencyLevel={level}
-                                urgencyMinutesAgo={minutesAgo}
-                                isSelected={selectedItem?.id === artifact.id}
-                                onSelect={handleSelectItem}
-                              />
-                            )}
-                          </li>
-                        );
-                      })}
-                    </ul>
+                    {items.length === 0 ? (
+                      // P2-12 / F-17: muted empty-group placeholder so the
+                      // triage structure is always visible to the user.
+                      <p className="px-1 py-1.5 text-xs text-muted-foreground/60 italic">
+                        Nothing here
+                      </p>
+                    ) : (
+                      <ul
+                        role="list"
+                        aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
+                        className="flex flex-col gap-2"
+                      >
+                        {items.map((artifact) => {
+                          const { level, minutesAgo } = deriveItemUrgency(artifact);
+                          return (
+                            <li key={artifact.id}>
+                              {/*
+                               * FE-04: needs_compile group gets InboxItemWithCompile
+                               * (includes compile button + per-item error state).
+                               * All other groups get the plain SelectableCardWrapper.
+                               */}
+                              {groupKey === "needs_compile" ? (
+                                <InboxItemWithCompile
+                                  artifact={artifact}
+                                  inboxGroup={groupKey}
+                                  urgencyLevel={level}
+                                  urgencyMinutesAgo={minutesAgo}
+                                  isSelected={selectedItem?.id === artifact.id}
+                                  onSelect={handleSelectItem}
+                                  onCompileSuccess={handleCompileSuccess}
+                                />
+                              ) : (
+                                <SelectableCardWrapper
+                                  artifact={artifact}
+                                  inboxGroup={groupKey}
+                                  urgencyLevel={level}
+                                  urgencyMinutesAgo={minutesAgo}
+                                  isSelected={selectedItem?.id === artifact.id}
+                                  onSelect={handleSelectItem}
+                                />
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </StatusGroupSection>
                 );
               })}
@@ -789,7 +856,9 @@ export function InboxClient({ initialData }: InboxClientProps) {
                 onClick={loadMore}
                 aria-label="Load more artifacts"
                 className={cn(
-                  "inline-flex h-8 items-center gap-1.5 rounded-md border px-4",
+                  // P3-07 / F-24: h-11 (44px) meets WCAG touch-target parity
+                  // with the page header controls.
+                  "inline-flex h-11 items-center gap-1.5 rounded-md border px-4",
                   "text-sm text-muted-foreground",
                   "transition-colors hover:bg-accent hover:text-accent-foreground",
                   "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",

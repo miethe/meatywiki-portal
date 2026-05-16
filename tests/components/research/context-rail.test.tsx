@@ -199,8 +199,10 @@ describe("ContextRail — action column", () => {
     renderWithProviders(<ContextRail variant="generic" actions={actions} />);
 
     const group = screen.getByRole("group", { name: "Artifact actions" });
-    expect(within(group).getByRole("button", { name: "Promote artifact" })).toBeInTheDocument();
-    expect(within(group).getByRole("button", { name: "Compile artifact" })).toBeInTheDocument();
+    // P2-06 / F-11: stub actions (no onClick) now get "(not yet available)" appended
+    // to their aria-label to communicate the disabled state to screen readers.
+    expect(within(group).getByRole("button", { name: /^Promote artifact/ })).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: /^Compile artifact/ })).toBeInTheDocument();
   });
 
   it("does not render action group when actions prop is absent", () => {
@@ -213,7 +215,8 @@ describe("ContextRail — action column", () => {
       { label: "Promote", ariaLabel: "Promote artifact", hasEndpoint: true, description: "Promote" },
     ];
     renderWithProviders(<ContextRail variant="generic" actions={actions} />);
-    const btn = screen.getByRole("button", { name: "Promote artifact" });
+    // P2-06 / F-11: stub aria-label includes "(not yet available)" suffix
+    const btn = screen.getByRole("button", { name: /^Promote artifact/ });
     expect(btn).toHaveAttribute("aria-disabled", "true");
   });
 

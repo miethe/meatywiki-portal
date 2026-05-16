@@ -17,7 +17,7 @@
  * P2-02 (inbox approval UI).
  */
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo, useId } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -68,14 +68,25 @@ interface ToastMessage {
 
 let panelToastSeq = 0;
 
+// P2-08 / F-13: error toasts stay for 8s; success toasts dismiss at 3s.
+const PANEL_TOAST_DISMISS_MS: Record<ToastKind, number> = {
+  success: 3_000,
+  error: 8_000,
+};
+
 function usePanelToast() {
   const [toast, setToast] = useState<ToastMessage | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const dismiss = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setToast(null);
+  }, []);
+
   const show = useCallback((kind: ToastKind, text: string) => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setToast({ id: ++panelToastSeq, kind, text });
-    timerRef.current = setTimeout(() => setToast(null), 3000);
+    timerRef.current = setTimeout(() => setToast(null), PANEL_TOAST_DISMISS_MS[kind]);
   }, []);
 
   useEffect(() => {
@@ -84,19 +95,21 @@ function usePanelToast() {
     };
   }, []);
 
-  return { toast, show };
+  return { toast, show, dismiss };
 }
 
 interface ToastBannerProps {
   toast: ToastMessage;
+  /** P2-08 / F-13: explicit dismiss callback — shown as X button on errors. */
+  onDismiss?: () => void;
 }
 
-function ToastBanner({ toast }: ToastBannerProps) {
+function ToastBanner({ toast, onDismiss }: ToastBannerProps) {
   const isSuccess = toast.kind === "success";
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={isSuccess ? "status" : "alert"}
+      aria-live={isSuccess ? "polite" : "assertive"}
       aria-label={toast.text}
       className={cn(
         "fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm font-medium shadow-lg",
@@ -138,6 +151,23 @@ function ToastBanner({ toast }: ToastBannerProps) {
         </svg>
       )}
       <span>{toast.text}</span>
+      {/* P2-08: explicit dismiss button for errors (and optionally success) */}
+      {onDismiss && (
+        <button
+          type="button"
+          aria-label="Dismiss notification"
+          onClick={onDismiss}
+          className={cn(
+            "ml-1 shrink-0 rounded-sm p-0.5 opacity-70 transition-opacity hover:opacity-100",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            isSuccess ? "text-emerald-800 dark:text-emerald-300" : "text-destructive",
+          )}
+        >
+          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18 18 6M6 6l12 12" />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
@@ -259,8 +289,15 @@ export function PendingApprovalPanel({
     current: number;
     total: number;
     action: "approve" | "reject";
+    cancelled: boolean;
   } | null>(null);
-  const { toast, show: showToast } = usePanelToast();
+  // P2-09 / F-14: per-item failure list surfaced in expandable section.
+  const [bulkFailures, setBulkFailures] = useState<{ id: string; label: string }[]>([]);
+  const [showFailures, setShowFailures] = useState(false);
+  const failuresId = useId();
+  // P2-09: cancellation signal ref — set to true when user hits "Cancel".
+  const cancelBulkRef = useRef(false);
+  const { toast, show: showToast, dismiss: dismissPanelToast } = usePanelToast();
 
   /**
    * Ref for the section header element — used as the focus fallback when the
@@ -333,67 +370,102 @@ export function PendingApprovalPanel({
     }
   }, [scanState, refetch, showToast]);
 
-  const handleBulkApprove = useCallback(async () => {
-    if (selectedIds.size === 0 || bulkProgress !== null) return;
-    const ids = Array.from(selectedIds);
-    const total = ids.length;
-    setBulkProgress({ current: 0, total, action: "approve" });
+  /**
+   * P2-09 / F-14: cancel bulk operation in progress.
+   * Sets the cancellation signal so the in-flight loop stops before the next
+   * item. Already-submitted requests are not aborted (network is in-flight);
+   * only items not yet started are skipped.
+   */
+  const handleCancelBulk = useCallback(() => {
+    cancelBulkRef.current = true;
+  }, []);
 
-    let successCount = 0;
-    let failCount = 0;
+  /**
+   * Runs a bulk action (approve or reject) over the selected items.
+   *
+   * P2-09 / F-14 improvements over the original sequential loop:
+   *   - Concurrency cap of 3 (BULK_CONCURRENCY): fan-out is bounded so we
+   *     don't slam the server with N simultaneous requests, but also don't
+   *     force fully sequential execution.
+   *   - Cancel button: cancelBulkRef.current is checked before each new
+   *     batch slot is filled. Already-started requests finish naturally.
+   *   - Promise.allSettled semantics per batch: every item in the current
+   *     concurrency window resolves before starting the next window.
+   *   - Per-item failure list: failures are collected with display name so
+   *     the user can see exactly which items failed.
+   */
+  const BULK_CONCURRENCY = 3;
 
-    for (let i = 0; i < ids.length; i++) {
-      setBulkProgress({ current: i + 1, total, action: "approve" });
-      try {
-        await approveIntake(ids[i]);
-        successCount++;
-      } catch {
-        failCount++;
+  const runBulkAction = useCallback(
+    async (action: "approve" | "reject") => {
+      if (selectedIds.size === 0 || bulkProgress !== null) return;
+      const ids = Array.from(selectedIds);
+      const total = ids.length;
+      cancelBulkRef.current = false;
+      setBulkProgress({ current: 0, total, action, cancelled: false });
+      setBulkFailures([]);
+      setShowFailures(false);
+
+      const fn = action === "approve" ? approveIntake : rejectIntake;
+      const failures: { id: string; label: string }[] = [];
+      let processed = 0;
+
+      // Process in windows of BULK_CONCURRENCY
+      for (let i = 0; i < ids.length; i += BULK_CONCURRENCY) {
+        if (cancelBulkRef.current) break;
+
+        const chunk = ids.slice(i, i + BULK_CONCURRENCY);
+        const results = await Promise.allSettled(chunk.map((id) => fn(id)));
+
+        for (let j = 0; j < chunk.length; j++) {
+          const result = results[j];
+          processed++;
+          if (result.status === "rejected") {
+            // Extract a readable label for the failure report.
+            // Mirrors PendingApprovalItem.extractDisplayName priority.
+            const matchItem = items.find((it) => it.run_id === chunk[j]);
+            const label = matchItem
+              ? (
+                  (typeof matchItem.payload.original_filename === "string" && matchItem.payload.original_filename.trim())
+                    ? matchItem.payload.original_filename.trim()
+                    : (typeof matchItem.payload.url === "string" && matchItem.payload.url.trim())
+                    ? matchItem.payload.url.trim()
+                    : chunk[j].slice(0, 12)
+                )
+              : chunk[j].slice(0, 12);
+            failures.push({ id: chunk[j], label });
+          }
+        }
+
+        setBulkProgress((prev) =>
+          prev ? { ...prev, current: processed, cancelled: cancelBulkRef.current } : null,
+        );
       }
-    }
 
-    setBulkProgress(null);
+      const successCount = processed - failures.length;
+      setBulkProgress(null);
 
-    if (failCount === 0) {
-      showToast("success", `Approved ${successCount} item${successCount !== 1 ? "s" : ""}`);
-    } else {
-      showToast("error", `Approved ${successCount}, failed ${failCount}`);
-    }
-
-    refetch();
-    setSelectedIds(new Set());
-  }, [selectedIds, bulkProgress, showToast, refetch]);
-
-  const handleBulkReject = useCallback(async () => {
-    if (selectedIds.size === 0 || bulkProgress !== null) return;
-    const ids = Array.from(selectedIds);
-    const total = ids.length;
-    setBulkProgress({ current: 0, total, action: "reject" });
-
-    let successCount = 0;
-    let failCount = 0;
-
-    for (let i = 0; i < ids.length; i++) {
-      setBulkProgress({ current: i + 1, total, action: "reject" });
-      try {
-        await rejectIntake(ids[i]);
-        successCount++;
-      } catch {
-        failCount++;
+      if (failures.length > 0) {
+        setBulkFailures(failures);
+        showToast(
+          "error",
+          `${action === "approve" ? "Approved" : "Rejected"} ${successCount}; ${failures.length} failed`,
+        );
+      } else {
+        showToast(
+          "success",
+          `${action === "approve" ? "Approved" : "Rejected"} ${successCount} item${successCount !== 1 ? "s" : ""}`,
+        );
       }
-    }
 
-    setBulkProgress(null);
+      refetch();
+      setSelectedIds(new Set());
+    },
+    [selectedIds, bulkProgress, showToast, refetch, items],
+  );
 
-    if (failCount === 0) {
-      showToast("success", `Rejected ${successCount} item${successCount !== 1 ? "s" : ""}`);
-    } else {
-      showToast("error", `Rejected ${successCount}, failed ${failCount}`);
-    }
-
-    refetch();
-    setSelectedIds(new Set());
-  }, [selectedIds, bulkProgress, showToast, refetch]);
+  const handleBulkApprove = useCallback(() => runBulkAction("approve"), [runBulkAction]);
+  const handleBulkReject = useCallback(() => runBulkAction("reject"), [runBulkAction]);
 
   const isScanning = scanState === "scanning";
   const showSkeleton = isLoading && items.length === 0;
@@ -513,12 +585,28 @@ export function PendingApprovalPanel({
               </>
             )}
 
-            {/* Inline bulk progress indicator */}
+            {/* P2-09 / F-14: bulk progress indicator + cancel button */}
             {bulkProgress && (
-              <span className="text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
-                {bulkProgress.action === "approve" ? "Approving" : "Rejecting"}{" "}
-                {bulkProgress.current} of {bulkProgress.total}…
-              </span>
+              <>
+                <span className="text-xs text-muted-foreground" aria-live="polite" aria-atomic="true">
+                  {bulkProgress.action === "approve" ? "Approving" : "Rejecting"}{" "}
+                  {bulkProgress.current} of {bulkProgress.total}
+                  {bulkProgress.cancelled ? " (cancelling…)" : "…"}
+                </span>
+                {/* Cancel button — stops the loop before the next concurrency window */}
+                {!bulkProgress.cancelled && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    aria-label="Cancel bulk operation"
+                    onClick={handleCancelBulk}
+                    className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </>
             )}
 
             {/* Scan Inbox button */}
@@ -568,6 +656,46 @@ export function PendingApprovalPanel({
             message={error.message || "Failed to load pending items."}
             onRetry={refetch}
           />
+        )}
+
+        {/* ---------------------------------------------------------------- */}
+        {/* P2-09 / F-14: per-item bulk failure detail (expandable)          */}
+        {/* Shown after a bulk operation completes with partial failures.     */}
+        {/* ---------------------------------------------------------------- */}
+        {bulkFailures.length > 0 && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-destructive">
+                {bulkFailures.length} item{bulkFailures.length !== 1 ? "s" : ""} failed
+              </span>
+              <button
+                type="button"
+                aria-expanded={showFailures}
+                aria-controls={failuresId}
+                onClick={() => setShowFailures((v) => !v)}
+                className={cn(
+                  "shrink-0 text-[11px] font-medium text-destructive/80 underline-offset-2",
+                  "hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                {showFailures ? "Hide details" : "Show details"}
+              </button>
+            </div>
+            {showFailures && (
+              <ul
+                id={failuresId}
+                role="list"
+                aria-label="Failed items"
+                className="mt-2 flex flex-col gap-1"
+              >
+                {bulkFailures.map(({ id, label }) => (
+                  <li key={id} className="truncate text-destructive/80">
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         )}
 
         {/* ---------------------------------------------------------------- */}
@@ -623,8 +751,9 @@ export function PendingApprovalPanel({
         )}
       </section>
 
-      {/* Toast banner — fixed-position, auto-dismisses after 3 s */}
-      {toast && <ToastBanner key={toast.id} toast={toast} />}
+      {/* Toast banner — fixed-position.
+          P2-08 / F-13: success at 3s; errors at 8s + explicit dismiss button. */}
+      {toast && <ToastBanner key={toast.id} toast={toast} onDismiss={dismissPanelToast} />}
     </>
   );
 }
