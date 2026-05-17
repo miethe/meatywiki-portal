@@ -24,6 +24,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PendingApprovalItem } from "@/components/inbox/PendingApprovalItem";
 import { approveIntake, rejectIntake, scanInbox } from "@/lib/api/intake";
 import type { IntakePendingItem } from "@/lib/api/intake";
+import { useToast } from "@/hooks/use-toast";
 
 // ---------------------------------------------------------------------------
 // Inline spinner (mirrors PendingApprovalItem's Spinner)
@@ -55,122 +56,8 @@ function Spinner() {
 }
 
 // ---------------------------------------------------------------------------
-// Lightweight toast (same pattern as PendingApprovalItem)
+// (Inline toast hooks removed — toast now dispatched via global useToast())
 // ---------------------------------------------------------------------------
-
-type ToastKind = "success" | "error";
-
-interface ToastMessage {
-  id: number;
-  kind: ToastKind;
-  text: string;
-}
-
-let panelToastSeq = 0;
-
-// P2-08 / F-13: error toasts stay for 8s; success toasts dismiss at 3s.
-const PANEL_TOAST_DISMISS_MS: Record<ToastKind, number> = {
-  success: 3_000,
-  error: 8_000,
-};
-
-function usePanelToast() {
-  const [toast, setToast] = useState<ToastMessage | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const dismiss = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setToast(null);
-  }, []);
-
-  const show = useCallback((kind: ToastKind, text: string) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setToast({ id: ++panelToastSeq, kind, text });
-    timerRef.current = setTimeout(() => setToast(null), PANEL_TOAST_DISMISS_MS[kind]);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  return { toast, show, dismiss };
-}
-
-interface ToastBannerProps {
-  toast: ToastMessage;
-  /** P2-08 / F-13: explicit dismiss callback — shown as X button on errors. */
-  onDismiss?: () => void;
-}
-
-function ToastBanner({ toast, onDismiss }: ToastBannerProps) {
-  const isSuccess = toast.kind === "success";
-  return (
-    <div
-      role={isSuccess ? "status" : "alert"}
-      aria-live={isSuccess ? "polite" : "assertive"}
-      aria-label={toast.text}
-      className={cn(
-        "fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-md border px-4 py-2.5 text-sm font-medium shadow-lg",
-        "transition-all duration-200",
-        isSuccess
-          ? "border-emerald-500/30 bg-emerald-50 text-emerald-800 dark:border-emerald-500/20 dark:bg-emerald-950/80 dark:text-emerald-300"
-          : "border-destructive/30 bg-destructive/5 text-destructive",
-      )}
-    >
-      {isSuccess ? (
-        <svg
-          aria-hidden="true"
-          className="size-4 shrink-0"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"
-          />
-        </svg>
-      ) : (
-        <svg
-          aria-hidden="true"
-          className="size-4 shrink-0"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M10 14l2-2m0 0 2-2m-2 2-2-2m2 2 2 2m7-2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"
-          />
-        </svg>
-      )}
-      <span>{toast.text}</span>
-      {/* P2-08: explicit dismiss button for errors (and optionally success) */}
-      {onDismiss && (
-        <button
-          type="button"
-          aria-label="Dismiss notification"
-          onClick={onDismiss}
-          className={cn(
-            "ml-1 shrink-0 rounded-sm p-0.5 opacity-70 transition-opacity hover:opacity-100",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            isSuccess ? "text-emerald-800 dark:text-emerald-300" : "text-destructive",
-          )}
-        >
-          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18 18 6M6 6l12 12" />
-          </svg>
-        </button>
-      )}
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Loading skeleton
@@ -297,7 +184,7 @@ export function PendingApprovalPanel({
   const failuresId = useId();
   // P2-09: cancellation signal ref — set to true when user hits "Cancel".
   const cancelBulkRef = useRef(false);
-  const { toast, show: showToast, dismiss: dismissPanelToast } = usePanelToast();
+  const { add: showToast } = useToast();
 
   /**
    * Ref for the section header element — used as the focus fallback when the
@@ -358,13 +245,13 @@ export function PendingApprovalPanel({
     setScanState("scanning");
     try {
       const result = await scanInbox();
-      showToast(
-        "success",
-        `Scan complete: ${result.files_enqueued} file${result.files_enqueued !== 1 ? "s" : ""} enqueued`,
-      );
+      showToast({
+        type: "success",
+        message: `Scan complete: ${result.files_enqueued} file${result.files_enqueued !== 1 ? "s" : ""} enqueued`,
+      });
       refetch();
     } catch {
-      showToast("error", "Inbox scan failed. Please try again.");
+      showToast({ type: "error", message: "Inbox scan failed. Please try again." });
     } finally {
       setScanState("idle");
     }
@@ -447,15 +334,17 @@ export function PendingApprovalPanel({
 
       if (failures.length > 0) {
         setBulkFailures(failures);
-        showToast(
-          "error",
-          `${action === "approve" ? "Approved" : "Rejected"} ${successCount}; ${failures.length} failed`,
-        );
+        showToast({
+          type: "error",
+          message: `${action === "approve" ? "Approved" : "Rejected"} ${successCount}; ${failures.length} failed`,
+          // Bulk failures need extra read time — 15s so the detail section can be reviewed
+          duration: 15_000,
+        });
       } else {
-        showToast(
-          "success",
-          `${action === "approve" ? "Approved" : "Rejected"} ${successCount} item${successCount !== 1 ? "s" : ""}`,
-        );
+        showToast({
+          type: "success",
+          message: `${action === "approve" ? "Approved" : "Rejected"} ${successCount} item${successCount !== 1 ? "s" : ""}`,
+        });
       }
 
       refetch();
@@ -751,9 +640,8 @@ export function PendingApprovalPanel({
         )}
       </section>
 
-      {/* Toast banner — fixed-position.
-          P2-08 / F-13: success at 3s; errors at 8s + explicit dismiss button. */}
-      {toast && <ToastBanner key={toast.id} toast={toast} onDismiss={dismissPanelToast} />}
+      {/* Toast banners are rendered globally by <ToastRenderer> in root layout.
+          Portal Global Toast Consolidation — F-13 full resolution. */}
     </>
   );
 }

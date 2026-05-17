@@ -3,9 +3,8 @@ import nextJest from "next/jest.js";
 
 const createJestConfig = nextJest({
   // Path to Next.js app — loads next.config.mjs and .env* files in test mode.
-  // next.config.mjs includes `transpilePackages: ["rettime"]` so that next/jest
-  // generates a transformIgnorePatterns that transforms rettime (an ESM-only
-  // transitive dependency of MSW v2) with SWC.
+  // next.config.mjs includes `transpilePackages: [...]` so that next/jest
+  // generates a transformIgnorePatterns that transforms ESM-only node_modules.
   dir: "./",
 });
 
@@ -47,6 +46,12 @@ const config: Config = {
     // wraps DOMPurify directly (no jsdom layer) and works fine with Jest.
     "^isomorphic-dompurify$":
       "<rootDir>/node_modules/.pnpm/isomorphic-dompurify@3.10.0/node_modules/isomorphic-dompurify/dist/browser.js",
+    // @miethe/ui ships ESM-only with a deep chain of ESM transitive deps
+    // (react-markdown, remark-*, rehype-*, unified) that cannot be reliably
+    // transpiled by Jest's SWC transform in the jsdom environment. Map to a
+    // manual mock stub that provides minimal RTL-testable stubs for all
+    // exported components. When @miethe/ui ships a CJS build, remove this entry.
+    "^@miethe/ui$": "<rootDir>/tests/mocks/miethe-ui.tsx",
   },
 
   // Discover tests in tests/**

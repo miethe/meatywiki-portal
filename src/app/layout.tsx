@@ -3,6 +3,8 @@ import { Fraunces } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { PwaProviders } from "@/components/pwa/pwa-providers";
+import { ToastProvider } from "@/hooks/use-toast";
+import { ToastRenderer } from "@/components/ui/toast-renderer";
 
 /**
  * Fraunces — variable display serif for the Portal brand lockup.
@@ -65,16 +67,25 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={fraunces.variable}>
       <body>
-        <QueryProvider>{children}</QueryProvider>
-        {/*
-         * PwaProviders — client-side wrapper that lazy-loads ServiceWorkerRegister
-         * and OfflineQueueSync via dynamic() with ssr:false (P4-04 perf tuning).
-         * Both inner components render null — they are pure side-effect shells.
-         * The dynamic() + ssr:false wrapper must live in a Client Component;
-         * it is not permitted directly in this Server Component layout.
-         * Traces FR-1.5-15, FR-1.5-17, FR-1.5-18.
-         */}
-        <PwaProviders />
+        <ToastProvider>
+          <QueryProvider>{children}</QueryProvider>
+          {/*
+           * PwaProviders — client-side wrapper that lazy-loads ServiceWorkerRegister
+           * and OfflineQueueSync via dynamic() with ssr:false (P4-04 perf tuning).
+           * Both inner components render null — they are pure side-effect shells.
+           * The dynamic() + ssr:false wrapper must live in a Client Component;
+           * it is not permitted directly in this Server Component layout.
+           * Traces FR-1.5-15, FR-1.5-17, FR-1.5-18.
+           */}
+          <PwaProviders />
+          {/*
+           * ToastRenderer — global toast overlay (fixed bottom-4 right-4 z-50).
+           * Consumes ToastContext established by ToastProvider. All Portal
+           * components dispatch toasts via useToast().add(...).
+           * Portal Global Toast Consolidation — F-13 full resolution.
+           */}
+          <ToastRenderer />
+        </ToastProvider>
       </body>
     </html>
   );

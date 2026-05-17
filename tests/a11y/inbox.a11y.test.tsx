@@ -17,6 +17,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { InboxClient } from "@/app/(main)/inbox/InboxClient";
 import { INBOX_PENDING_QUERY_KEY } from "@/hooks/useInboxPending";
 import type { ServiceModeEnvelope, ArtifactCard } from "@/types/artifact";
+import { ToastProvider } from "@/hooks/use-toast";
 
 // expect.extend(toHaveNoViolations) is registered globally in tests/setup.ts
 
@@ -54,9 +55,11 @@ function renderInbox(initialData: ServiceModeEnvelope<ArtifactCard> = stubInitia
   queryClient.setQueryData(INBOX_PENDING_QUERY_KEY, { items: [], count: 0 });
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <InboxClient initialData={initialData} />
-    </QueryClientProvider>,
+    <ToastProvider>
+      <QueryClientProvider client={queryClient}>
+        <InboxClient initialData={initialData} />
+      </QueryClientProvider>
+    </ToastProvider>,
   );
 }
 

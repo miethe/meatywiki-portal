@@ -22,6 +22,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "../utils/userEvent";
 import { PendingApprovalPanel } from "@/components/inbox/PendingApprovalPanel";
 import type { IntakePendingItem } from "@/lib/api/intake";
+import { ToastProvider } from "@/hooks/use-toast";
+import { ToastRenderer } from "@/components/ui/toast-renderer";
 
 // ---------------------------------------------------------------------------
 // Mock intake API at module boundary
@@ -88,15 +90,19 @@ function renderPanel({
   });
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <PendingApprovalPanel
-        items={items}
-        count={count}
-        isLoading={isLoading}
-        error={error}
-        refetch={refetch}
-      />
-    </QueryClientProvider>,
+    <ToastProvider>
+      <QueryClientProvider client={queryClient}>
+        <PendingApprovalPanel
+          items={items}
+          count={count}
+          isLoading={isLoading}
+          error={error}
+          refetch={refetch}
+        />
+      </QueryClientProvider>
+      {/* ToastRenderer must be inside ToastProvider to receive global toasts */}
+      <ToastRenderer />
+    </ToastProvider>,
   );
 }
 

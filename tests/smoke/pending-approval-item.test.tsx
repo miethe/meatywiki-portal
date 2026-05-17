@@ -22,6 +22,8 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { userEvent } from "../utils/userEvent";
 import { PendingApprovalItem } from "@/components/inbox/PendingApprovalItem";
 import type { IntakePendingItem } from "@/lib/api/intake";
+import { ToastProvider } from "@/hooks/use-toast";
+import { ToastRenderer } from "@/components/ui/toast-renderer";
 
 // ---------------------------------------------------------------------------
 // Mock intake API at module boundary
@@ -70,9 +72,13 @@ function renderItem(
   const item: IntakePendingItem = { ...mockItem, ...overrides };
 
   return render(
-    <QueryClientProvider client={queryClient}>
-      <PendingApprovalItem item={item} onActionComplete={onActionComplete} />
-    </QueryClientProvider>,
+    <ToastProvider>
+      <QueryClientProvider client={queryClient}>
+        <PendingApprovalItem item={item} onActionComplete={onActionComplete} />
+      </QueryClientProvider>
+      {/* ToastRenderer must be inside ToastProvider to receive global toasts */}
+      <ToastRenderer />
+    </ToastProvider>,
   );
 }
 
