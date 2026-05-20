@@ -1,9 +1,10 @@
 /**
  * Animation timing constants derived from interaction spec §12.
  *
- * All 21 rows of the animation timing table are encoded here as typed
- * constants. Consumers should reference these instead of inline magic numbers
- * so that the performance-guard fallback (performanceGuardThresholdMs) and any
+ * All 19 timing rows from the animation timing table — plus the
+ * performance-guard threshold — are encoded here as typed constants.
+ * Consumers should reference these instead of inline magic numbers so that
+ * the performance-guard fallback (performanceGuardThresholdMs) and any
  * future global timing adjustments apply consistently.
  *
  * NOTE: "3D mode switch" is deferred per spec; its entry is omitted.

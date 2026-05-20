@@ -20,19 +20,12 @@
  * CSS transition: width 280px ↔ 48px at 200ms cubic-bezier(0.65,0,0.35,1)
  * (easeInOutCubic per interaction-spec §12)
  *
- * ⚠ Backward-compat: the old v2.1 props (nodeTypes, edgeTypes, onNodeTypesChange,
- *   onEdgeTypesChange, onClearAll, alwaysVisible) are still accepted so that
- *   VaultGraphPageClient.tsx continues to type-check until P3-02 replaces the
- *   wiring. They are forwarded to legacy sub-sections if present, but the new
- *   controlled API (open / onOpenChange) takes precedence for the shell layout.
- *
  * v2.2 — vault graph filter overhaul (P3-01).
  */
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { GraphNodeType, GraphEdgeType } from "@/types/graph";
 import { FilterPanelContent } from "./FilterPanelContent";
 import type { GraphFiltersValues } from "./GraphFilters";
 
@@ -143,19 +136,11 @@ export interface FilterSidebarProps {
   /** Called when the search input value changes. */
   onSearchChange?: (value: string) => void;
 
-  // ── v2.1 backward-compat props (no-op wrappers until P3-02) ─────────────
-  /** @deprecated v2.1 — will be replaced by children in P3-02. */
-  nodeTypes?: GraphNodeType[];
-  /** @deprecated v2.1 */
-  edgeTypes?: GraphEdgeType[];
-  /** @deprecated v2.1 */
-  onNodeTypesChange?: (types: GraphNodeType[]) => void;
-  /** @deprecated v2.1 */
-  onEdgeTypesChange?: (types: GraphEdgeType[]) => void;
-  /** @deprecated v2.1 */
+  /**
+   * Called when the user clicks "Clear all filters" in the panel footer.
+   * Forwarded to FilterPanelContent.
+   */
   onClearAll?: () => void;
-  /** @deprecated v2.1 — has no effect in v2.2; use breakpoint hook instead. */
-  alwaysVisible?: boolean;
   /**
    * Called when the user clicks a quick-start preset card (P5-11).
    * Forwarded to FilterPanelContent; preset cards are shown when
@@ -248,9 +233,6 @@ export function FilterSidebar({
   className,
   searchValue,
   onSearchChange,
-  // v2.1 backward-compat props
-  nodeTypes,
-  edgeTypes,
   onClearAll,
   onApplyPreset,
 }: FilterSidebarProps) {
@@ -283,10 +265,7 @@ export function FilterSidebar({
   const hidden = useFilterSidebarHidden();
   if (hidden) return null;
 
-  // ── Active filter count (derived from v2.1 compat props if not provided) ─
-  const legacyActiveCount =
-    (nodeTypes?.length ?? 0) + (edgeTypes?.length ?? 0);
-  const activeFilterCount = activeFilterCountProp ?? legacyActiveCount;
+  const activeFilterCount = activeFilterCountProp ?? 0;
 
   // ── ESC key collapses the sidebar ────────────────────────────────────────
   const handleKeyDown = (e: KeyboardEvent<HTMLElement>) => {

@@ -1306,10 +1306,6 @@ export function VaultGraphPageClient() {
     error,
     refetch,
     fetchNextPage,
-    nodeTypes,
-    edgeTypes,
-    setNodeTypes,
-    setEdgeTypes,
   } = useVaultGraph({
     ws:           graphFilterValues.ws,
     types:        graphFilterValues.types,
@@ -3330,12 +3326,6 @@ export function VaultGraphPageClient() {
             onSearchChange={(q) => setGraphFilter({ q })}
             onClearAll={handleOverlayClearAll}
             onApplyPreset={(partial) => setGraphFilter(partial)}
-            // v2.1 legacy props — retained for FilterSidebar compat; the actual
-            // filtering is now driven by useGraphFilterState server dims.
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodeTypesChange={setNodeTypes}
-            onEdgeTypesChange={setEdgeTypes}
           >
             {/* P3-03: subtle loading indicator during debounce/refetch window */}
             {isFilterPending && (

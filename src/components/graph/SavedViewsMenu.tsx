@@ -193,6 +193,7 @@ export function SavedViewsMenu({
       {/* Trigger button — matches EncodingToolbar button style */}
       <button
         type="button"
+        data-testid="saved-views-trigger"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Saved graph views"
