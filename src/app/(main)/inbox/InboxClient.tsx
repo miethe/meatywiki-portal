@@ -60,15 +60,21 @@
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { ArtifactCard } from "@/components/ui/artifact-card";
 import { StatusGroupSection } from "@/components/ui/status-group-section";
 import { QuickAddModal } from "@/components/quick-add/quick-add-modal";
 import { InboxContextRail } from "@/components/inbox/InboxContextRail";
+import { CompileStageIndicator } from "@/components/inbox/CompileStageIndicator";
+import { CompileErrorPill } from "@/components/inbox/CompileErrorPill";
+import { ProcessedSection } from "@/components/inbox/ProcessedSection";
 import { useInboxArtifacts } from "@/hooks/useInboxArtifacts";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import { useCompileEvents } from "@/hooks/useCompileEvents";
 import { useInboxPending } from "@/hooks/useInboxPending";
 import { PendingApprovalPanel } from "@/components/inbox/PendingApprovalPanel";
+import { invalidateActivityCache } from "@/lib/api/artifacts";
 import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
@@ -301,122 +307,6 @@ function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
 }
 
 // ---------------------------------------------------------------------------
-// CompileButton — FE-04
-// ---------------------------------------------------------------------------
-
-/**
- * CompileButton owns its own useCompileArtifact state so each inbox item
- * can be independently compiling without lifting all compile state to the
- * parent. This is Option (a) from the FE-04 task spec.
- *
- * Lifecycle:
- *   idle      → "Compile" button shown
- *   compiling → spinner + "Compiling…" label, button disabled
- *   success   → "Compiled ✓" shown for 3 s, then reverts to idle
- *               (parent also receives onSuccess callback to trigger optimistic update)
- *   error     → parent receives onError callback; button reverts to idle
- *
- * Accessibility:
- *   - aria-busy on the button during in-flight request
- *   - aria-label includes artifact title for screen-reader context
- *   - pointer-events-auto: sits inside the ArtifactCard stretch-link overlay,
- *     so onClick must stopPropagation to prevent navigation.
- */
-interface CompileButtonProps {
-  artifactId: string;
-  artifactTitle: string;
-  onSuccess: () => void;
-  onError: (msg: string) => void;
-}
-
-function CompileButton({
-  artifactId,
-  artifactTitle,
-  onSuccess,
-  onError,
-}: CompileButtonProps) {
-  const [showSuccess, setShowSuccess] = useState(false);
-  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const { compile, isCompiling } = useCompileArtifact({
-    artifactId,
-    onSuccess: () => {
-      setShowSuccess(true);
-      // Auto-clear success label after 3 s
-      if (successTimerRef.current) clearTimeout(successTimerRef.current);
-      successTimerRef.current = setTimeout(() => setShowSuccess(false), 3000);
-      onSuccess();
-    },
-    onError,
-  });
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (successTimerRef.current) clearTimeout(successTimerRef.current);
-    };
-  }, []);
-
-  const label = isCompiling ? "Compiling…" : showSuccess ? "Compiled ✓" : "Compile";
-  const ariaLabel = isCompiling
-    ? `Compilation in progress for ${artifactTitle}`
-    : showSuccess
-    ? `Compilation queued for ${artifactTitle}`
-    : `Compile ${artifactTitle}`;
-
-  return (
-    <button
-      type="button"
-      aria-label={ariaLabel}
-      aria-busy={isCompiling}
-      disabled={isCompiling}
-      onClick={(e) => {
-        // Prevent the ArtifactCard stretch link from navigating
-        e.preventDefault();
-        e.stopPropagation();
-        if (!isCompiling && !showSuccess) {
-          compile();
-        }
-      }}
-      className={cn(
-        "pointer-events-auto inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5",
-        "text-xs font-medium transition-colors",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        isCompiling || showSuccess
-          ? "cursor-not-allowed opacity-70 text-muted-foreground border-border"
-          : "text-foreground hover:bg-accent hover:text-accent-foreground",
-        showSuccess && "border-emerald-500/40 text-emerald-600 dark:text-emerald-400",
-      )}
-    >
-      {isCompiling && (
-        // Inline spinner — CSS animation, no extra dependency
-        <svg
-          aria-hidden="true"
-          className="size-3 animate-spin"
-          fill="none"
-          viewBox="0 0 24 24"
-        >
-          <circle
-            className="opacity-25"
-            cx="12"
-            cy="12"
-            r="10"
-            stroke="currentColor"
-            strokeWidth="4"
-          />
-          <path
-            className="opacity-75"
-            fill="currentColor"
-            d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-          />
-        </svg>
-      )}
-      {label}
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // SelectableCardWrapper — thin a11y wrapper (P5-03)
 // ---------------------------------------------------------------------------
 
@@ -545,38 +435,166 @@ function InboxItemWithCompile({
   onSelect,
   onCompileSuccess,
 }: InboxItemWithCompileProps) {
-  const [itemError, setItemError] = useState<string | null>(null);
+  // P3-02: SSE streaming state — enabled after 202 ACK from compile POST.
+  const [sseEnabled, setSseEnabled] = useState(false);
+  const [stageIndicatorVisible, setStageIndicatorVisible] = useState(false);
+  const [sseError, setSseError] = useState<{ code: string; message: string } | null>(null);
+
+  const { events, terminal, reconnect: sseReconnect } = useCompileEvents({
+    artifactId: artifact.id,
+    enabled: sseEnabled,
+  });
+
+  // When terminal success arrives, refresh the processed section + disable SSE.
+  useEffect(() => {
+    if (terminal?.status === "success") {
+      onCompileSuccess(artifact.id);
+    }
+    if (terminal?.status === "error" && terminal.error) {
+      setSseError(terminal.error);
+      setSseEnabled(false);
+    }
+  }, [terminal, artifact.id, onCompileSuccess]);
+
+  // P3-06: Item-level compile error (from HTTP POST, not SSE).
+  const [httpError, setHttpError] = useState<string | null>(null);
 
   // P1-04 / F-03: No auto-clear timer — error persists until dismissed.
-  const handleError = useCallback((msg: string) => {
-    setItemError(msg);
+  const handleHttpError = useCallback((msg: string) => {
+    setHttpError(msg);
+    setSseEnabled(false);
   }, []);
 
-  const handleDismissError = useCallback(() => {
-    setItemError(null);
+  const handleDismissHttpError = useCallback(() => {
+    setHttpError(null);
   }, []);
 
-  const compileSlot = (
-    <CompileButton
-      artifactId={artifact.id}
-      artifactTitle={artifact.title}
-      onSuccess={() => onCompileSuccess(artifact.id)}
-      onError={handleError}
+  const handleDismissSseError = useCallback(() => {
+    setSseError(null);
+    setStageIndicatorVisible(false);
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    setSseError(null);
+    setHttpError(null);
+    setStageIndicatorVisible(false);
+    sseReconnect();
+  }, [sseReconnect]);
+
+  // --- Compile Button ---
+  // After 202 ACK: enable SSE, show stage indicator, disable button.
+  const handleCompileSuccess202 = useCallback(() => {
+    setSseEnabled(true);
+    setStageIndicatorVisible(true);
+    setHttpError(null);
+    setSseError(null);
+  }, []);
+
+  const { compile, isCompiling } = useCompileArtifact({
+    artifactId: artifact.id,
+    onSuccess: handleCompileSuccess202,
+    onError: handleHttpError,
+  });
+
+  const compileSlot = stageIndicatorVisible ? (
+    <CompileStageIndicator
+      events={events}
+      terminal={terminal}
+      onDone={() => setStageIndicatorVisible(false)}
     />
+  ) : (
+    <button
+      type="button"
+      aria-label={
+        isCompiling
+          ? `Compilation in progress for ${artifact.title}`
+          : `Compile ${artifact.title}`
+      }
+      aria-busy={isCompiling}
+      disabled={isCompiling}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!isCompiling) {
+          compile();
+        }
+      }}
+      className={cn(
+        "pointer-events-auto inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5",
+        "text-xs font-medium transition-colors",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isCompiling
+          ? "cursor-not-allowed opacity-70 text-muted-foreground border-border"
+          : "text-foreground hover:bg-accent hover:text-accent-foreground",
+      )}
+    >
+      {isCompiling && (
+        <svg aria-hidden="true" className="size-3 animate-spin" fill="none" viewBox="0 0 24 24">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+        </svg>
+      )}
+      {isCompiling ? "Compiling…" : "Compile"}
+    </button>
   );
 
-  return (
-    <SelectableCardWrapper
-      artifact={artifact}
-      inboxGroup={inboxGroup}
-      urgencyLevel={urgencyLevel}
-      urgencyMinutesAgo={urgencyMinutesAgo}
-      isSelected={isSelected}
-      onSelect={onSelect}
-      compileSlot={compileSlot}
-      compileError={itemError}
-      onDismissCompileError={handleDismissError}
+  // SSE error pill — inline, below the card (higher priority than HTTP error).
+  const errorPill = sseError ? (
+    <CompileErrorPill
+      error={sseError}
+      onRetry={handleRetry}
+      onDismiss={handleDismissSseError}
     />
+  ) : null;
+
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div
+        className={cn(
+          "rounded-md transition-all",
+          isSelected ? "ring-2 ring-primary ring-offset-1" : "ring-0",
+        )}
+      >
+        <ArtifactCard
+          artifact={artifact}
+          variant="list"
+          inboxGroup={inboxGroup}
+          urgencyLevel={urgencyLevel}
+          urgencyMinutesAgo={urgencyMinutesAgo}
+          ctaSlot={compileSlot}
+          onCardClick={(event) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            onSelect(artifact);
+          }}
+        />
+      </div>
+
+      {/* SSE error pill — sticky, no auto-dismiss */}
+      {errorPill && <div className="px-1">{errorPill}</div>}
+
+      {/* HTTP error — legacy inline text (P1-04 / F-03) */}
+      {!errorPill && httpError && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="flex items-center justify-between gap-2 px-3 py-1"
+        >
+          <p className="text-xs text-destructive">{httpError}</p>
+          <button
+            type="button"
+            aria-label="Dismiss compile error"
+            onClick={handleDismissHttpError}
+            className={cn(
+              "shrink-0 text-xs font-medium text-destructive underline-offset-2",
+              "hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -595,6 +613,7 @@ interface InboxClientProps {
 export function InboxClient({ initialData }: InboxClientProps) {
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
 
   // P5-03: selected item state — null until data loads, then auto-selects first.
   const [selectedItem, setSelectedItem] = useState<ArtifactCardType | null>(null);
@@ -605,8 +624,8 @@ export function InboxClient({ initialData }: InboxClientProps) {
   // feedback until SSE/poll delivers a terminal event (future phase).
   const compilingIdsRef = useRef<Set<string>>(new Set<string>());
 
-  const { artifacts, hasMore, isLoading, error, loadMore } =
-    useInboxArtifacts({ initialData });
+  const { artifacts, hasMore, isLoading, error, loadMore, processedItems, refreshProcessed } =
+    useInboxArtifacts({ initialData, includeProcessed: true });
 
   const {
     items: pendingItems,
@@ -637,10 +656,14 @@ export function InboxClient({ initialData }: InboxClientProps) {
   const handleCompileSuccess = useCallback(
     (artifactId: string) => {
       compilingIdsRef.current.add(artifactId);
-      // No group flip — CompileButton's own isCompiling/showSuccess states
-      // give per-button feedback. SSE wiring can consume compilingIdsRef later.
+      // P3-06: refresh the processed section so the newly compiled artifact
+      // appears there after a successful terminal SSE event.
+      void refreshProcessed();
+      // P4-04: invalidate the Library card activity cache so the status badge
+      // for this artifact refreshes within ~5 s (staleTime budget).
+      invalidateActivityCache(queryClient, artifactId);
     },
-    [],
+    [refreshProcessed, queryClient],
   );
 
   // P1-02 / F-08: Auto-select first visible inbox item on mount when:
@@ -893,6 +916,9 @@ export function InboxClient({ initialData }: InboxClientProps) {
               All artifacts loaded
             </p>
           )}
+
+          {/* P3-05 / P3-06: Recently processed artifacts (past 24 h). */}
+          <ProcessedSection items={processedItems} />
         </section>
 
         {/* ---------------------------------------------------------------- */}

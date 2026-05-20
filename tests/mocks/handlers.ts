@@ -1,4 +1,5 @@
 import { http, HttpResponse } from "msw";
+import { compileEventsHandlers } from "./handlers/compileEvents";
 
 /**
  * MSW v2 request handlers — baseline stubs for the Portal backend API.
@@ -777,6 +778,12 @@ export const handlers = [
       cursor: "page2",
     });
   }),
+
+  // ------------------------------------------------------------------
+  // Compile events (inbox-live-status P3-07) — baseline empty stream handlers.
+  // Override per-test with mockCompileSuccess() / mockCompileFailure().
+  // ------------------------------------------------------------------
+  ...compileEventsHandlers,
 
   // ------------------------------------------------------------------
   // Research — contradictions (GET /api/artifacts/research/contradictions)

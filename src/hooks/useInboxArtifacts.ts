@@ -20,9 +20,10 @@
  *           optimisticUpdateArtifact } = useInboxArtifacts({ initialData });
  */
 
-import { useCallback, useState } from "react";
-import { listArtifacts } from "@/lib/api/artifacts";
+import { useCallback, useEffect, useState } from "react";
+import { listArtifacts, listInboxWithProcessed } from "@/lib/api/artifacts";
 import type { ArtifactCard, ServiceModeEnvelope } from "@/types/artifact";
+import type { ProcessedItemDTO } from "@/types/compileEvents";
 
 // ---------------------------------------------------------------------------
 // Options
@@ -33,6 +34,11 @@ interface UseInboxArtifactsOptions {
   initialData: ServiceModeEnvelope<ArtifactCard>;
   /** Page size for subsequent load-more fetches. */
   limit?: number;
+  /**
+   * P3-06 inbox-live-status: when true, the hook fetches the inbox with the
+   * `processed` extension array on mount and after each load-more. Defaults to false.
+   */
+  includeProcessed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +61,17 @@ export interface UseInboxArtifactsResult {
    * Use after compile success to reflect the new status without a full refetch.
    */
   optimisticUpdateArtifact: (id: string, patch: Partial<ArtifactCard>) => void;
+  /**
+   * P3-06 inbox-live-status: recently processed artifacts (past 24 h).
+   * Only populated when `includeProcessed=true` is passed in options.
+   */
+  processedItems: ProcessedItemDTO[];
+  /**
+   * P3-06: manually refresh the processed section (e.g. after a terminal
+   * success event so the newly processed artifact appears without a full
+   * page reload).
+   */
+  refreshProcessed: () => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -64,6 +81,7 @@ export interface UseInboxArtifactsResult {
 export function useInboxArtifacts({
   initialData,
   limit = 50,
+  includeProcessed = false,
 }: UseInboxArtifactsOptions): UseInboxArtifactsResult {
   const [artifacts, setArtifacts] = useState<ArtifactCard[]>(
     initialData.data ?? [],
@@ -73,8 +91,25 @@ export function useInboxArtifacts({
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [processedItems, setProcessedItems] = useState<ProcessedItemDTO[]>([]);
 
   const hasMore = cursor != null && cursor !== "";
+
+  // P3-06: fetch processed section on mount (and on demand via refreshProcessed).
+  const refreshProcessed = useCallback(async () => {
+    if (!includeProcessed) return;
+    try {
+      const envelope = await listInboxWithProcessed({ limit });
+      setProcessedItems(envelope.processed ?? []);
+    } catch {
+      // Silently ignore — processed section is non-critical
+    }
+  }, [includeProcessed, limit]);
+
+  useEffect(() => {
+    void refreshProcessed();
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on mount
+  }, []); // intentionally empty — refreshProcessed is stable
 
   const loadMore = useCallback(async () => {
     if (isLoading || !hasMore) return;
@@ -110,5 +145,15 @@ export function useInboxArtifacts({
     [],
   );
 
-  return { artifacts, cursor, hasMore, isLoading, error, loadMore, optimisticUpdateArtifact };
+  return {
+    artifacts,
+    cursor,
+    hasMore,
+    isLoading,
+    error,
+    loadMore,
+    optimisticUpdateArtifact,
+    processedItems,
+    refreshProcessed,
+  };
 }

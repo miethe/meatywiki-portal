@@ -48,6 +48,7 @@ import type {
   RollupArtifactItem,
   ServiceModeEnvelope,
 } from "@/types/artifact";
+import type { InboxWithProcessedEnvelope } from "@/types/compileEvents";
 
 // ---------------------------------------------------------------------------
 // Query parameter shape
@@ -131,6 +132,14 @@ export interface ListArtifactsParams {
    * Serialised as ?rollup_lens=orphans.
    */
   rollupLens?: "orphans";
+  /**
+   * P3-06 (inbox-live-status): when true and workspace=inbox, the response
+   * uses InboxWithProcessedEnvelope which adds a `processed` array containing
+   * recently compiled artifacts (past 24 h, cap 50, desc by terminal created_at).
+   * Silently ignored when workspace is not "inbox".
+   * Serialised as ?include_processed=true.
+   */
+  includeProcessed?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -168,6 +177,7 @@ export async function listArtifacts(
     lensVerification,
     view,
     rollupLens,
+    includeProcessed,
   } = params;
 
   const query = new URLSearchParams();
@@ -222,10 +232,46 @@ export async function listArtifacts(
   if (view) query.set("view", view);
   if (rollupLens) query.set("rollup_lens", rollupLens);
 
+  // P3-06 inbox-live-status: processed artifacts extension
+  if (includeProcessed) query.set("include_processed", "true");
+
   const qs = query.toString();
   const path = `/artifacts${qs ? `?${qs}` : ""}`;
 
   return apiFetch<ServiceModeEnvelope<ArtifactCard>>(path, { method: "GET" });
+}
+
+// ---------------------------------------------------------------------------
+// List inbox artifacts with processed section (inbox-live-status P3-06)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch inbox artifacts including the `processed` extension array.
+ *
+ * Returns `InboxWithProcessedEnvelope<ArtifactCard>` which adds the
+ * `processed` array containing recently compiled artifacts (past 24 h, cap 50).
+ *
+ * Uses `include_processed=true` query param; workspace is forced to "inbox".
+ */
+export async function listInboxWithProcessed(
+  params: Omit<ListArtifactsParams, "workspace" | "includeProcessed"> = {},
+): Promise<InboxWithProcessedEnvelope<ArtifactCard>> {
+  const envelope = await listArtifacts({
+    ...params,
+    workspace: "inbox",
+    includeProcessed: true,
+  });
+  // If the backend returns the extended shape, the `processed` field is present.
+  // Cast safely; if backend hasn't shipped the extension yet, fall back to [].
+  const extended = envelope as unknown as InboxWithProcessedEnvelope<ArtifactCard> & {
+    data?: ArtifactCard[];
+  };
+  return {
+    items: extended.items ?? extended.data ?? [],
+    processed: extended.processed ?? [],
+    cursor: extended.cursor ?? null,
+    etag: extended.etag,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -807,4 +853,73 @@ export async function patchArtifactLens(
     `/artifacts/${encodeURIComponent(id)}/lens`,
     { method: "PATCH", body: JSON.stringify(body) },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Activity endpoint (P4-01 — Library card status badge)
+// ---------------------------------------------------------------------------
+
+import type { ActivityResponse } from "@/types/compileEvents";
+
+export interface FetchArtifactActivityParams {
+  /** Maximum number of events to fetch. Defaults to 10 for badge; 100 for full history. */
+  limit?: number;
+  /** ISO 8601 cursor — fetch events before this timestamp (DESC pagination). */
+  before?: string;
+}
+
+/**
+ * Fetch paginated workflow stage event history for a single artifact.
+ *
+ * Endpoint: GET /api/artifacts/{id}/activity?limit={n}&before={iso}
+ * Response: { items: WorkflowStageEventDTO[], next_cursor: string | null }
+ *
+ * Returns an empty ActivityResponse on 404 (endpoint not yet live in dev).
+ *
+ * P4-01: Used by useArtifactActivity to power LibraryCardStatusBadge.
+ */
+export async function fetchArtifactActivity(
+  artifactId: string,
+  params: FetchArtifactActivityParams = {},
+): Promise<ActivityResponse> {
+  const qs = new URLSearchParams();
+  if (params.limit !== undefined) qs.set("limit", String(params.limit));
+  if (params.before) qs.set("before", params.before);
+  const query = qs.toString() ? `?${qs.toString()}` : "";
+
+  try {
+    return await apiFetch<ActivityResponse>(
+      `/artifacts/${encodeURIComponent(artifactId)}/activity${query}`,
+    );
+  } catch (err) {
+    // Graceful degradation: treat 404 as "no history yet" (endpoint may not be
+    // available in all deploy targets).
+    if (err instanceof Error && err.message.includes("404")) {
+      return { items: [], next_cursor: null };
+    }
+    throw err;
+  }
+}
+
+/**
+ * TanStack Query cache key for artifact activity.
+ * Stable shape: ["artifact", "activity", artifactId].
+ * Used by useArtifactActivity and for manual invalidation from InboxClient
+ * on terminal-success events.
+ */
+export const artifactActivityQueryKey = (artifactId: string) =>
+  ["artifact", "activity", artifactId] as const;
+
+/**
+ * Convenience helper: invalidate the activity cache for a single artifact.
+ * Call this from InboxClient on terminal-success so Library badges for the
+ * same artifact refresh within <5 s (query staleTime + refetch on focus).
+ *
+ * Requires a TanStack QueryClient instance.
+ */
+export function invalidateActivityCache(
+  queryClient: import("@tanstack/react-query").QueryClient,
+  artifactId: string,
+): void {
+  void queryClient.invalidateQueries({ queryKey: artifactActivityQueryKey(artifactId) });
 }

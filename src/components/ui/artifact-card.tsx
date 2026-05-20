@@ -69,6 +69,8 @@ import { ArtifactFreshnessBadge } from "@/components/artifact/freshness-badge";
 import { UrgencyBadge } from "./urgency-badge";
 import type { UrgencyLevel } from "./urgency-badge";
 import type { ArtifactFacet } from "@/types/artifact";
+import { LibraryCardStatusBadge } from "@/components/library/LibraryCardStatusBadge";
+import { ActivityHistoryTooltip } from "@/components/library/ActivityHistoryTooltip";
 import { getArtifactTypeAccentColor } from "@/lib/artifact-type-presentation";
 import {
   DropdownMenu,
@@ -810,6 +812,21 @@ export function ArtifactCard({
                   count={derivative_count}
                   href={`/artifact/${id}?tab=derivatives`}
                 />
+              )}
+              {/*
+               * P4-03: Library compile status badge + activity tooltip.
+               * Only rendered in Library mode (inboxGroup === undefined) and not
+               * in compact/workbench variants to avoid clutter.
+               * The tooltip wraps the badge and controls SSE subscription gating.
+               * pointer-events-auto re-enables click since the parent uses
+               * pointer-events-none.
+               */}
+              {inboxGroup === undefined && !isCompact && !isWorkbench && (
+                <span className="pointer-events-auto">
+                  <ActivityHistoryTooltip artifactId={id}>
+                    <LibraryCardStatusBadge artifactId={id} />
+                  </ActivityHistoryTooltip>
+                </span>
               )}
             </div>
             <div className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
