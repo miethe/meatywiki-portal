@@ -3663,6 +3663,7 @@ export function VaultGraphPageClient() {
                         <div
                           ref={canvasContainerRef}
                           role="application"
+                          data-testid="graph-canvas"
                           aria-label={`Knowledge graph — ${displayNodes.length} nodes visible. Tab to cycle nodes by degree, arrow keys to traverse neighbors, Space to open popover, Enter for detail, Escape to dismiss.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
                           tabIndex={0}
                           onKeyDown={handleKeyDown}
