@@ -385,7 +385,11 @@ function buildVaultGraph(
     }
   }
 
-  circularLayout.assign(graph);
+  // Seed initial positions on a wide circle so FA2 has room to spread before
+  // gravity pulls nodes back toward center. Default `scale: 1` packs every
+  // node onto a unit circle and FA2 struggles to escape that starting bubble
+  // at typical canvas sizes, leaving the graph stuck in a tight orbit.
+  circularLayout.assign(graph, { scale: 100 });
   return graph;
 }
 
@@ -753,11 +757,16 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
       settings: {
         barnesHutOptimize: isLarge,
         barnesHutTheta: isLarge ? 0.8 : 0.5,
-        gravity: 1,
-        // Raised from 2 → 8: dominant spacing lever — longer equilibrium edges
-        // give leaves more breathing room and naturally orbit high-mass anchors.
-        // Mobile path gets a gentler 5 to avoid over-expansion on small viewports.
-        scalingRatio: isLarge ? 8 : 8,
+        // Lowered from 1 → 0.2 so the central pull doesn't compress the graph
+        // back into a tight orbit. Combined with the wider initial circular
+        // seed (scale=100) and bumped scalingRatio, this lets the layout
+        // breathe out to the canvas edges instead of clustering near center.
+        gravity: 0.2,
+        // Raised from 8 → 16: dominant spacing lever — longer equilibrium
+        // edges give leaves more breathing room and naturally orbit high-mass
+        // anchors. With reduced gravity, repulsion now wins out to the
+        // canvas edges rather than being capped by a tight gravity well.
+        scalingRatio: isLarge ? 16 : 16,
         // linLogMode: logarithmic attraction so high-degree nodes act as gravity
         // wells (mass-proportional clustering) while damping over-pull on dense
         // clusters — produces the natural orbit pattern around hub nodes.
@@ -3916,8 +3925,11 @@ export function VaultGraphPageClient() {
                           )}
                         </div>
 
-                        {/* Screen-reader fallback list (P3-11) */}
-                        <div id="graph-sr-fallback">
+                        {/* Screen-reader fallback list (P3-11) — sr-only so
+                            it stays in the a11y tree without consuming any
+                            visible vertical space; the graph canvas now takes
+                            the full remaining height of the column. */}
+                        <div id="graph-sr-fallback" className="sr-only">
                           <ScreenReaderFallback
                             nodes={displayNodes}
                             onViewNeighborhood={handleViewNeighborhood}
