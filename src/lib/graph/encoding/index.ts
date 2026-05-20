@@ -104,7 +104,9 @@ export function resolveNodeSize(
   if (mode === "degree") {
     // log2(degree + 1) gives 0 for degree=0, ~3.32 for degree=9, ~10 for degree=1023.
     // Multiply by 3.5 and clamp to a visible range.
-    base = Math.min(18, Math.max(5, Math.log2(degree + 1) * 3.5));
+    // Floor raised from 5→8 so isolated (degree=0) nodes don't visually pile up
+    // at minimum size when many unconnected nodes are present (B-fix, 2026-05-20).
+    base = Math.min(18, Math.max(8, Math.log2(degree + 1) * 3.5));
   } else {
     // fidelity mode — discrete buckets
     base = fidelityLevel != null ? (FIDELITY_SIZES[fidelityLevel] ?? FIDELITY_SIZE_DEFAULT) : FIDELITY_SIZE_DEFAULT;

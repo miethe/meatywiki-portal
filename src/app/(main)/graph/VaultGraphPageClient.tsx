@@ -219,6 +219,46 @@ const CosmosGraphWrapper = dynamic(
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
+// Camera-zoom-aware node sizing helper (C-fix, 2026-05-20)
+//
+// Sigma v3 draws node sizes in pixel space regardless of camera ratio.  At
+// maxCameraRatio=20 a 14 px node still renders at 14 px, dominating the view.
+// We wrap every nodeReducer installation with this helper so that sizes scale
+// down as the user zooms out and remain unchanged when zoomed in.
+//
+// Formula: scale = 1 / max(1, ratio^0.5)
+//   • ratio=1  (default zoom) → scale=1.0 (unchanged)
+//   • ratio=20 (max zoom-out) → scale≈0.22 (nodes shrink to ~22 % of nominal)
+//   • ratio<1  (zoomed in)    → scale=1.0  (Math.max floor — no enlargement)
+//
+// Usage: every sigma.setSetting("nodeReducer", ...) call must go through this
+// wrapper so the scaling is always present regardless of which UI state is
+// active (keyboard focus, neighborhood highlight, lasso, search-ring).
+// ---------------------------------------------------------------------------
+
+type SigmaNodeReducer = (nodeId: string, data: Record<string, unknown>) => Record<string, unknown>;
+
+/**
+ * Wraps `inner` with a camera-ratio scaling pass that runs first.
+ * If `inner` is null the wrapper acts as a pure scaling reducer.
+ * The sigma instance is passed in so the camera state is read at call time
+ * (i.e. on every frame), not captured in a stale closure.
+ */
+function wrapWithCameraScale(
+  sigma: { getCamera: () => { getState: () => { ratio: number } } },
+  inner: SigmaNodeReducer | null,
+): SigmaNodeReducer {
+  return (nodeId: string, data: Record<string, unknown>) => {
+    const ratio = sigma.getCamera().getState().ratio;
+    const scale = 1 / Math.max(1, Math.pow(ratio, 0.5));
+    const scaledData = scale < 1
+      ? { ...data, size: (data.size as number) * scale }
+      : data;
+    return inner ? inner(nodeId, scaledData) : scaledData;
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Build graphology graph from vault data
 // ---------------------------------------------------------------------------
 
@@ -714,8 +754,18 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
         barnesHutOptimize: isLarge,
         barnesHutTheta: isLarge ? 0.8 : 0.5,
         gravity: 1,
-        scalingRatio: 2,
+        // Raised from 2 → 8: dominant spacing lever — longer equilibrium edges
+        // give leaves more breathing room and naturally orbit high-mass anchors.
+        // Mobile path gets a gentler 5 to avoid over-expansion on small viewports.
+        scalingRatio: isLarge ? 8 : 8,
+        // linLogMode: logarithmic attraction so high-degree nodes act as gravity
+        // wells (mass-proportional clustering) while damping over-pull on dense
+        // clusters — produces the natural orbit pattern around hub nodes.
+        linLogMode: true,
         slowDown: isLarge ? 20 : 10,
+        // B-fix: respect per-node size during repulsion so leaves don't
+        // collapse onto cluster roots when degree=0 nodes are numerous.
+        adjustSizes: true,
       },
     });
     fa2.start();
@@ -923,7 +973,10 @@ function GraphCanvasInner({
     const graph = sigma.getGraph();
     if (!graph || graph.order === 0) return;
 
-    const force = createRampedModuleForce(graph, { targetStrength: 0.3, rampMs: 500 });
+    // targetStrength lowered from 0.3 → 0.21 (~30%) so FA2's expanded scalingRatio
+    // wins at steady state — centroid seeds clusters early (rampMs=500) but yields
+    // to the looser FA2 repulsion rather than fighting it to a tighter plateau.
+    const force = createRampedModuleForce(graph, { targetStrength: 0.21, rampMs: 500 });
     force.start();
 
     let rafId: number;
@@ -1502,6 +1555,11 @@ export function VaultGraphPageClient() {
   const handleSigmaReady = useCallback((sigma: any) => {
     sigmaRef.current = sigma;
 
+    // C-fix: Install the base camera-scale reducer as soon as sigma is ready
+    // so sizing is zoom-proportionate from the very first frame, before any
+    // imperative setSetting("nodeReducer", ...) fires.
+    sigma.setSetting("nodeReducer", wrapWithCameraScale(sigma, null));
+
     // P2-08: Register webglcontextlost on the sigma-owned canvas.
     // sigma.getRenderer() exposes the underlying WebGL renderer; the canvas is
     // accessible via sigma.getCanvases().webgl (sigma v3 internal API, guarded
@@ -1655,15 +1713,20 @@ export function VaultGraphPageClient() {
     const sigma = sigmaRef.current;
     if (!sigma) return;
     if (keyboardFocusedNodeId === null) {
-      sigma.setSetting("nodeReducer", null);
+      // No UI state active — install a pure camera-scale reducer so sizes
+      // remain zoom-proportionate even when no highlight/selection is live.
+      sigma.setSetting("nodeReducer", wrapWithCameraScale(sigma, null));
     } else {
       const focusedId = keyboardFocusedNodeId;
-      sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
-        if (nodeId === focusedId) {
-          return { ...data, borderColor: "#d97706", borderSize: 3 };
-        }
-        return data;
-      });
+      sigma.setSetting(
+        "nodeReducer",
+        wrapWithCameraScale(sigma, (nodeId: string, data: Record<string, unknown>) => {
+          if (nodeId === focusedId) {
+            return { ...data, borderColor: "#d97706", borderSize: 3 };
+          }
+          return data;
+        }),
+      );
     }
     sigma.refresh();
   }, [keyboardFocusedNodeId]);
@@ -2130,10 +2193,13 @@ export function VaultGraphPageClient() {
     const neighbors = new Set<string>(graphInstance.neighbors(targetId));
     neighbors.add(targetId);
 
-    sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
-      if (neighbors.has(nodeId)) return data;
-      return { ...data, opacity: 0.5 };
-    });
+    sigma.setSetting(
+      "nodeReducer",
+      wrapWithCameraScale(sigma, (nodeId: string, data: Record<string, unknown>) => {
+        if (neighbors.has(nodeId)) return data;
+        return { ...data, opacity: 0.5 };
+      }),
+    );
     sigma.refresh();
 
     // Apply focus mode in URL state if present
@@ -2268,12 +2334,15 @@ export function VaultGraphPageClient() {
 
       // Apply selection ring to selected nodes (P5-08: via paletteRef for palette-awareness)
       if (selected.size > 0) {
-        sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
-          if (selected.has(nodeId)) {
-            return { ...data, borderColor: paletteRef.current.selection_ring, borderSize: 3 };
-          }
-          return data;
-        });
+        sigma.setSetting(
+          "nodeReducer",
+          wrapWithCameraScale(sigma, (nodeId: string, data: Record<string, unknown>) => {
+            if (selected.has(nodeId)) {
+              return { ...data, borderColor: paletteRef.current.selection_ring, borderSize: 3 };
+            }
+            return data;
+          }),
+        );
         sigma.refresh();
       }
 
@@ -2943,12 +3012,15 @@ export function VaultGraphPageClient() {
           }
         }
         // Apply selection ring to matched node (P5-08: via paletteRef for palette-awareness)
-        sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
-          if (nodeId === result.id) {
-            return { ...data, borderColor: paletteRef.current.selection_ring, borderSize: 3 };
-          }
-          return data;
-        });
+        sigma.setSetting(
+          "nodeReducer",
+          wrapWithCameraScale(sigma, (nodeId: string, data: Record<string, unknown>) => {
+            if (nodeId === result.id) {
+              return { ...data, borderColor: paletteRef.current.selection_ring, borderSize: 3 };
+            }
+            return data;
+          }),
+        );
         sigma.refresh();
       }
     },

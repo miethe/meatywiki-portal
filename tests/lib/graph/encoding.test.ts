@@ -60,13 +60,13 @@ describe("resolveNodeSize — fidelity mode", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveNodeSize — degree mode", () => {
-  test("degree 0 → floor clamped to 5", () => {
-    // log2(1) = 0, 0 * 3.5 = 0, clamp to 5
-    expect(resolveNodeSize(null, 0, "degree")).toBe(5);
+  test("degree 0 → floor clamped to 8 (raised from 5, B-fix 2026-05-20)", () => {
+    // log2(1) = 0, 0 * 3.5 = 0, clamp to 8
+    expect(resolveNodeSize(null, 0, "degree")).toBe(8);
   });
 
-  test("degree 1 → log2(2) * 3.5 = 3.5, clamped to 5", () => {
-    expect(resolveNodeSize(null, 1, "degree")).toBe(5);
+  test("degree 1 → log2(2) * 3.5 = 3.5, clamped to 8 floor (raised from 5)", () => {
+    expect(resolveNodeSize(null, 1, "degree")).toBe(8);
   });
 
   test("degree 7 → log2(8) * 3.5 = 10.5", () => {
