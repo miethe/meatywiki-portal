@@ -225,6 +225,17 @@ export interface UseVaultGraphServerFilters {
    * results are then highlighted client-side by useGraphSearch.
    */
   q?: string;
+  /**
+   * When true, the hook automatically fetches all pages until `nextCursor`
+   * is null or `maxAutoPages` is reached. Defaults to `false`.
+   */
+  autoLoadAll?: boolean;
+  /**
+   * Safety cap on the number of pages fetched when `autoLoadAll` is true.
+   * At the default limit of 100 nodes/page, 500 pages = up to 50K nodes.
+   * Defaults to 500.
+   */
+  maxAutoPages?: number;
 }
 
 /**
@@ -239,6 +250,8 @@ export interface UseVaultGraphServerFilters {
 export function useVaultGraph(
   serverFilters?: UseVaultGraphServerFilters,
 ): UseVaultGraphResult {
+  const autoLoadAll = serverFilters?.autoLoadAll ?? false;
+  const maxAutoPages = serverFilters?.maxAutoPages ?? 500;
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -264,6 +277,10 @@ export function useVaultGraph(
   // Track whether we're fetching an additional page (vs initial load).
   const isFetchingMoreRef = useRef(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+
+  // Auto-load page counter — resets when filters change (cursor reset path
+  // also resets accNodes/accEdges, so this stays consistent).
+  const pagesLoadedRef = useRef(0);
 
   // Build TanStack Query key — changes when filters or cursor change.
   // v2.2: server filter dims included so refetch triggers on filter changes.
@@ -304,10 +321,12 @@ export function useVaultGraph(
     if (!data) return;
 
     if (cursor === null) {
-      // First page (or filter reset) — replace accumulated data.
+      // First page (or filter reset) — replace accumulated data and reset counter.
+      pagesLoadedRef.current = 1;
       setAccNodes(data.nodes);
       setAccEdges(data.edges);
     } else {
+      pagesLoadedRef.current += 1;
       // Additional page — deduplicate by id and append.
       setAccNodes((prev) => {
         const existingIds = new Set(prev.map((n) => n.id));
@@ -383,6 +402,22 @@ export function useVaultGraph(
     setIsFetchingMore(true);
     setCursor(nextCursor);
   }, [nextCursor]);
+
+  // Auto-load all pages when `autoLoadAll` is true.
+  useEffect(() => {
+    if (!autoLoadAll) return;
+    if (!nextCursor) return;
+    if (isLoading || isFetchingMore) return;
+    if (pagesLoadedRef.current >= maxAutoPages) {
+      console.warn(
+        `[useVaultGraph] autoLoadAll hit safety cap of ${maxAutoPages} pages ` +
+          `(${pagesLoadedRef.current * VAULT_GRAPH_DEFAULT_LIMIT} nodes max). ` +
+          `Stopping auto-pagination.`,
+      );
+      return;
+    }
+    fetchNextPage();
+  }, [autoLoadAll, nextCursor, isLoading, isFetchingMore, maxAutoPages, fetchNextPage]);
 
   const degraded =
     sampled || totalNodeCount >= VAULT_GRAPH_NODE_CAP || accNodes.length >= VAULT_GRAPH_NODE_CAP;

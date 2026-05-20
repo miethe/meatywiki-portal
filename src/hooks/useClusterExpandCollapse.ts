@@ -249,6 +249,7 @@ export function useClusterExpandCollapse(
         size: superSize,
         label: `${count} ${repType}${count !== 1 ? "s" : ""}`,
         color: clusterColor(clusterId),
+        type: "circle",
         isSuperNode: true,
         cluster_id: clusterId,
         // Super-node is never hidden by the cluster logic.

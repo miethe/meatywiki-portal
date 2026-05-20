@@ -98,7 +98,7 @@ const HINT_CARDS: HintCard[] = [
   {
     icon: <Move aria-hidden="true" className="size-5 text-primary" />,
     label: "Navigate",
-    body: "Drag to pan, scroll to zoom, click a node to open it",
+    body: "Drag to pan, scroll to zoom, click a node to open it. Shift+drag to select multiple nodes.",
   },
 ];
 

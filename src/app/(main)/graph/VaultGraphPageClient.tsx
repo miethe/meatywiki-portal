@@ -71,6 +71,7 @@ import {
   useSigma,
 } from "@react-sigma/core";
 import "@react-sigma/core/lib/style.css";
+import { NodeCircleProgram } from "sigma/rendering";
 import Graph from "graphology";
 import circularLayout from "graphology-layout/circular";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
@@ -78,6 +79,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Crosshair,
   X,
   ExternalLink,
   Network,
@@ -520,9 +522,10 @@ interface ZoomControlsProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFitView: () => void;
+  onToggleFullscreen: () => void;
 }
 
-function ZoomControls({ onZoomIn, onZoomOut, onFitView }: ZoomControlsProps) {
+function ZoomControls({ onZoomIn, onZoomOut, onFitView, onToggleFullscreen }: ZoomControlsProps) {
   return (
     <div
       role="group"
@@ -533,7 +536,8 @@ function ZoomControls({ onZoomIn, onZoomOut, onFitView }: ZoomControlsProps) {
         [
           { fn: onZoomIn, label: "Zoom in", icon: <ZoomIn aria-hidden="true" className="size-3.5" /> },
           { fn: onZoomOut, label: "Zoom out", icon: <ZoomOut aria-hidden="true" className="size-3.5" /> },
-          { fn: onFitView, label: "Fit graph to view", icon: <Maximize2 aria-hidden="true" className="size-3.5" /> },
+          { fn: onFitView, label: "Fit graph to view", icon: <Crosshair aria-hidden="true" className="size-3.5" /> },
+          { fn: onToggleFullscreen, label: "Toggle fullscreen", icon: <Maximize2 aria-hidden="true" className="size-3.5" /> },
         ] as const
       ).map(({ fn, label, icon }) => (
         <button
@@ -1319,6 +1323,7 @@ export function VaultGraphPageClient() {
     updated_to:   graphFilterValues.updated_to,
     // P3-05: only pass to API when server fallback is active; undefined otherwise.
     q:            serverSearchQuery ?? undefined,
+    autoLoadAll:  true,
   });
 
   // -------------------------------------------------------------------------
@@ -1808,6 +1813,16 @@ export function VaultGraphPageClient() {
     sigmaRef.current?.refresh();
   }, [prefersReducedMotion]);
 
+  const handleToggleFullscreen = useCallback(() => {
+    const el = canvasContainerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else {
+      void el.requestFullscreen().catch(() => {});
+    }
+  }, []);
+
   // -------------------------------------------------------------------------
   // Saved views — apply view handler (P3-06)
   // -------------------------------------------------------------------------
@@ -2160,8 +2175,8 @@ export function VaultGraphPageClient() {
 
   const handleCanvasPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      // Only start lasso on primary button (left-click) when not on a node
-      if (e.button !== 0) return;
+      // Only start lasso on Shift+left-click; plain left-drag remains Sigma camera pan
+      if (e.button !== 0 || !e.shiftKey) return;
       const target = e.target as HTMLElement;
       // Don't start lasso if clicking on a UI overlay element
       if (target.closest("button, a, [role=button]")) return;
@@ -3664,7 +3679,7 @@ export function VaultGraphPageClient() {
                           ref={canvasContainerRef}
                           role="application"
                           data-testid="graph-canvas"
-                          aria-label={`Knowledge graph — ${displayNodes.length} nodes visible. Tab to cycle nodes by degree, arrow keys to traverse neighbors, Space to open popover, Enter for detail, Escape to dismiss.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
+                          aria-label={`Knowledge graph — ${displayNodes.length} nodes visible. Tab to cycle nodes by degree, arrow keys to traverse neighbors, Space to open popover, Enter for detail, Escape to dismiss. Shift+drag to select multiple nodes.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
                           tabIndex={0}
                           onKeyDown={handleKeyDown}
                           onPointerDown={(e) => {
@@ -3732,6 +3747,8 @@ export function VaultGraphPageClient() {
                             settings={{
                               renderEdgeLabels: false,
                               defaultEdgeType: "arrow",
+                              defaultNodeType: "circle",
+                              nodeProgramClasses: { circle: NodeCircleProgram },
                               labelFont: "Inter, sans-serif",
                               labelSize: 10,
                               // P4-03: label color updated to slate-600 (#475569) — 5.90:1 vs white.
@@ -3789,6 +3806,7 @@ export function VaultGraphPageClient() {
                             onZoomIn={handleZoomIn}
                             onZoomOut={handleZoomOut}
                             onFitView={handleFitView}
+                            onToggleFullscreen={handleToggleFullscreen}
                           />
 
                           {/* Tooltip (P3-06) */}

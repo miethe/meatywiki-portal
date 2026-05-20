@@ -1,13 +1,15 @@
 "use client";
 
 /**
- * Global error boundary — catches unhandled errors in the React tree.
+ * Segment-level error boundary — catches unhandled errors in the React tree
+ * below the root layout.
  *
- * Next.js 15 requires this to be a Client Component (it receives an Error
- * object and a reset callback from the React error boundary mechanism).
- *
- * This is the top-level boundary; nested layouts can define their own
- * `error.tsx` for more granular recovery (e.g., partial screen errors).
+ * Next.js 15 App Router rules:
+ * - `app/error.tsx` is a per-segment boundary; it MUST NOT render <html>/<body>
+ *   (those are owned by layout.tsx). Only `app/global-error.tsx` may render
+ *   the full document shell.
+ * - This file must remain a Client Component (receives Error + reset callback
+ *   from React's error boundary mechanism).
  */
 
 import Link from "next/link";
@@ -26,13 +28,12 @@ export default function GlobalError({ error, reset }: ErrorPageProps) {
   }, [error]);
 
   return (
-    <html lang="en">
-      <body>
-        <main
-          className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background p-8 text-center"
-          role="alert"
-          aria-live="assertive"
-        >
+    <div className="contents">
+      <main
+        className="flex min-h-screen flex-col items-center justify-center gap-6 bg-background p-8 text-center"
+        role="alert"
+        aria-live="assertive"
+      >
           <div className="space-y-2">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Something went wrong
@@ -64,7 +65,6 @@ export default function GlobalError({ error, reset }: ErrorPageProps) {
             </Link>
           </div>
         </main>
-      </body>
-    </html>
+    </div>
   );
 }
