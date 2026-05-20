@@ -81,10 +81,17 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useVaultGraph, VAULT_GRAPH_NODE_CAP } from "@/hooks/useVaultGraph";
+import { useGraphFilterState } from "@/hooks/useGraphFilterState";
 import { useArtifactNeighborhood } from "@/hooks/useArtifactNeighborhood";
 import { FilterSidebar } from "@/components/graph/FilterSidebar";
+import { GraphFilters, GRAPH_FILTERS_DEFAULT, type GraphFiltersValues } from "@/components/graph/GraphFilters";
+import { GraphFilterChips } from "@/components/graph/GraphFilterChips";
+import type { FilterDimKey } from "@/components/graph/filterChipFormatters";
+import { SavedViewsMenu } from "@/components/graph/SavedViewsMenu";
+import type { SavedView } from "@/lib/graph/savedViews";
 import { DegradedFallback } from "@/components/graph/DegradedFallback";
 import type { FallbackView } from "@/components/graph/DegradedFallback";
+import { GraphCanvasOverlay } from "@/components/graph/GraphCanvasOverlay";
 import { GraphLegend } from "@/components/shared/GraphLegend";
 import type {
   VaultGraphNode,
@@ -94,6 +101,21 @@ import type {
 } from "@/types/graph";
 // NODE_TYPE_COLORS / EDGE_TYPE_STYLES etc. are used by ArtifactMiniGraph (its own file).
 // This file uses the encoding helpers from @/lib/graph/encoding instead.
+import { useClientFilters } from "@/hooks/useClientFilters";
+import { useGraphSearch } from "@/hooks/useGraphSearch";
+import { useGroupingMode } from "@/hooks/useGroupingMode";
+import { useClusterAssignment } from "@/hooks/useClusterAssignment";
+import {
+  useClusterExpandCollapse,
+  isSuperNode,
+  clusterIdFromSuperNode,
+} from "@/hooks/useClusterExpandCollapse";
+import { ClusterHalos } from "@/components/graph/ClusterHalos";
+import {
+  createRampedModuleForce,
+  isCentroidForceModeActive,
+} from "@/lib/graph/createModuleForce";
+import { GraphGroupingSelector } from "@/components/graph/GraphGroupingSelector";
 import {
   resolveNodeColor,
   resolveNodeSize,
@@ -586,9 +608,11 @@ interface GraphEventsProps {
   onHover: (tooltip: TooltipData | null) => void;
   onSelect: (popover: PopoverData | null) => void;
   focusedNodeId: string | null;
+  /** P3-11: called when user clicks a super-node to expand the collapsed cluster. */
+  onExpandCluster: (clusterId: string) => void;
 }
 
-function GraphEvents({ nodes, onHover, onSelect, focusedNodeId }: GraphEventsProps) {
+function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster }: GraphEventsProps) {
   const sigma = useSigma();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fa2Ref = useRef<any>(null);
@@ -668,6 +692,11 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId }: GraphEventsPro
       },
       leaveNode: () => onHover(null),
       clickNode: ({ node }: { node: string }) => {
+        // P3-11: super-node click expands the collapsed cluster.
+        if (isSuperNode(node)) {
+          onExpandCluster(clusterIdFromSuperNode(node));
+          return;
+        }
         const nd = nodeMap.get(node);
         const displayData = sigma.getNodeDisplayData(node);
         if (!nd || !displayData) return;
@@ -700,6 +729,16 @@ interface GraphCanvasInnerProps {
   onSelect: (p: PopoverData | null) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onSigmaReady: (s: any) => void;
+  /** P3-04: client-side filter dims (8–14); applied without refetch. */
+  filterValues: GraphFiltersValues;
+  /** P3-05: free-text query from GraphFiltersValues.q. */
+  searchQuery: string;
+  /** P3-05: callback when server FTS5 fallback is needed (or null to cancel). */
+  onServerSearchNeeded: (q: string | null) => void;
+  /** P3-09: active grouping mode; drives cluster_id assignment on each node. */
+  groupingMode: import("@/lib/graph/groupingModes").GroupingMode;
+  /** P3-11: called when user clicks a super-node to expand the collapsed cluster. */
+  onExpandCluster: (clusterId: string) => void;
 }
 
 function GraphCanvasInner({
@@ -708,15 +747,80 @@ function GraphCanvasInner({
   onHover,
   onSelect,
   onSigmaReady,
+  filterValues,
+  searchQuery,
+  onServerSearchNeeded,
+  groupingMode,
+  onExpandCluster,
 }: GraphCanvasInnerProps) {
   const sigma = useSigma();
   useEffect(() => { onSigmaReady(sigma); }, [sigma, onSigmaReady]);
+
+  // P3-04: apply client-side dims 8–14 by toggling graphology `hidden` attr.
+  // useClientFilters must be called inside SigmaContainer so useSigma() resolves.
+  useClientFilters(filterValues);
+
+  // P3-05: hybrid free-text search — Fuse.js (≤2K nodes) + server FTS5 fallback.
+  // Must be called inside SigmaContainer so useSigma() resolves.
+  useGraphSearch({ query: searchQuery, nodes, onServerSearchNeeded });
+
+  // P3-09: assign cluster_id to each node based on the active grouping mode.
+  // Called inside SigmaContainer so useSigma() resolves correctly.
+  useClusterAssignment(groupingMode);
+
+  // P3-10: centroid-pull force via RAF loop (workspace + project modes only).
+  //
+  // FA2 runs as a Web Worker (graphology-layout-forceatlas2/worker) and does not
+  // expose a mid-tick plugin-force API. We therefore run a separate RAF loop that
+  // reads graphology node positions (which FA2 updates through graphology's shared
+  // attribute store), applies centroid forces, and re-writes positions. The loop
+  // self-terminates after the FA2 settle timeout (~1.5–2.5 s) by tracking the
+  // running flag below.
+  useEffect(() => {
+    if (!isCentroidForceModeActive(groupingMode)) return;
+
+    const graph = sigma.getGraph();
+    if (!graph || graph.order === 0) return;
+
+    const force = createRampedModuleForce(graph, { targetStrength: 0.3, rampMs: 500 });
+    force.start();
+
+    let rafId: number;
+    let running = true;
+
+    const loop = () => {
+      if (!running) return;
+      force.tick();
+      sigma.refresh();
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+
+    // Match FA2 settle time: stop the RAF loop when FA2 would have settled.
+    // (FA2 itself is started in GraphEvents; we mirror the settle window here.)
+    const isLarge = graph.order > 500;
+    const settleMs = isLarge ? 1500 : 2500;
+    const stopTimer = setTimeout(() => {
+      running = false;
+      force.stop();
+    }, settleMs + 200); // +200ms grace past FA2 settle
+
+    return () => {
+      running = false;
+      force.stop();
+      cancelAnimationFrame(rafId);
+      clearTimeout(stopTimer);
+    };
+  }, [sigma, groupingMode]);
+
   return (
     <GraphEvents
       nodes={nodes}
       onHover={onHover}
       onSelect={onSelect}
       focusedNodeId={focusedNodeId}
+      onExpandCluster={onExpandCluster}
     />
   );
 }
@@ -1034,7 +1138,28 @@ function ScreenReaderFallback({
 
 export function VaultGraphPageClient() {
   // -------------------------------------------------------------------------
-  // Vault graph data + filter state (P3-01, P3-02, P3-03)
+  // P3-03: 16-dimension filter state — URL-backed via useGraphFilterState.
+  // Server dims (1-7) are wired to useVaultGraph; client dims (8-14) pass
+  // through to GraphFilters and will be consumed by P3-04's client filter.
+  // -------------------------------------------------------------------------
+  const {
+    values: graphFilterValues,
+    setFilter: setGraphFilter,
+    isPending: isFilterPending,
+    resetAll: resetAllFilters,
+  } = useGraphFilterState();
+
+  // -------------------------------------------------------------------------
+  // P3-05: server FTS5 search query state.
+  // useGraphSearch calls onServerSearchNeeded when a server fallback is
+  // required; we store the query here and pass it to useVaultGraph so a
+  // re-fetch is triggered with the `?q=` param.
+  // -------------------------------------------------------------------------
+  const [serverSearchQuery, setServerSearchQuery] = useState<string | null>(null);
+
+  // -------------------------------------------------------------------------
+  // Vault graph data — server-side filter dims passed so refetch triggers.
+  // P3-05: serverSearchQuery (FTS5 fallback) included in params.
   // -------------------------------------------------------------------------
   const {
     nodes,
@@ -1054,7 +1179,20 @@ export function VaultGraphPageClient() {
     setNodeTypes,
     setEdgeTypes,
     clearFilters,
-  } = useVaultGraph();
+  } = useVaultGraph({
+    ws:           graphFilterValues.ws,
+    types:        graphFilterValues.types,
+    edges:        graphFilterValues.edges,
+    freshness:    graphFilterValues.freshness,
+    project:      graphFilterValues.project,
+    domain:       graphFilterValues.domain,
+    date_from:    graphFilterValues.date_from,
+    date_to:      graphFilterValues.date_to,
+    updated_from: graphFilterValues.updated_from,
+    updated_to:   graphFilterValues.updated_to,
+    // P3-05: only pass to API when server fallback is active; undefined otherwise.
+    q:            serverSearchQuery ?? undefined,
+  });
 
   // -------------------------------------------------------------------------
   // Neighborhood focus mode (P3-05)
@@ -1087,6 +1225,50 @@ export function VaultGraphPageClient() {
     return edges;
   }, [isNeighborhoodMode, neighborhoodData, edges]);
 
+  // -------------------------------------------------------------------------
+  // P3-03: Derive facet option lists from loaded nodes.
+  //
+  // The v2.2 VaultGraphResponse does not carry facet aggregates (follow-up
+  // work required on backend — see P3-03 deferred note). We derive distinct
+  // values from the loaded node attributes. This gives correct counts for the
+  // currently-loaded page(s); counts will grow as further pages load.
+  // -------------------------------------------------------------------------
+  const filterOptions = useMemo(() => {
+    const projectSet  = new Map<string, number>();
+    const domainSet   = new Map<string, number>();
+    const tagsSet     = new Map<string, number>();
+
+    for (const node of nodes) {
+      for (const p of (node.project ?? [])) {
+        projectSet.set(p, (projectSet.get(p) ?? 0) + 1);
+      }
+      for (const d of (node.domain ?? [])) {
+        domainSet.set(d, (domainSet.get(d) ?? 0) + 1);
+      }
+      for (const t of (node.tags ?? [])) {
+        tagsSet.set(t, (tagsSet.get(t) ?? 0) + 1);
+      }
+    }
+
+    return {
+      project: Array.from(projectSet.entries()).map(([value, count]) => ({
+        value,
+        label: value,
+        count,
+      })),
+      domain: Array.from(domainSet.entries()).map(([value, count]) => ({
+        value,
+        label: value,
+        count,
+      })),
+      tags: Array.from(tagsSet.entries()).map(([value, count]) => ({
+        value,
+        label: value,
+        count,
+      })),
+    };
+  }, [nodes]);
+
   const handleViewNeighborhood = useCallback(
     (nodeId: string) => {
       const node = nodes.find((n) => n.id === nodeId);
@@ -1108,6 +1290,19 @@ export function VaultGraphPageClient() {
   const [sizeMode, setSizeMode] = useState<NodeSizeMode>("fidelity");
   // selectedLens is only relevant when colorMode === "lens"; null = no lens selected
   const [selectedLens] = useState<string | null>(null);
+
+  // -------------------------------------------------------------------------
+  // Saved views — active camera preset name (P3-06)
+  // Tracks which named camera preset is currently active so SavedViewsMenu can
+  // snapshot it. Camera is applied imperatively via sigmaRef; we mirror the
+  // name here so we can serialize it into a saved view.
+  // -------------------------------------------------------------------------
+  const [activeCameraPreset, setActiveCameraPreset] = useState<string | null>("default");
+
+  // -------------------------------------------------------------------------
+  // P3-09: Grouping mode — URL-backed via useGroupingMode.
+  // -------------------------------------------------------------------------
+  const { mode: groupingMode, setMode: setGroupingMode } = useGroupingMode();
 
   // -------------------------------------------------------------------------
   // Degraded fallback view toggle (P3-07)
@@ -1246,6 +1441,29 @@ export function VaultGraphPageClient() {
   }, [displayNodes, displayEdges, focusedArtifactId, colorMode, sizeMode, selectedLens]);
 
   // -------------------------------------------------------------------------
+  // P3-11: Cluster expand/collapse state machine.
+  //
+  // Must be declared AFTER the `graph` useMemo above so TypeScript can see the
+  // graph type. Passed `graph` so the hook can read cluster_id attributes and
+  // write clusterHidden + super-nodes. `graph` is null before the first render
+  // and in cosmos renderer mode (where clustering is a visual no-op).
+  // -------------------------------------------------------------------------
+  const {
+    expanded: expandedClusters,
+    expand: expandCluster,
+    collapse: collapseCluster,
+    syncClusters,
+  } = useClusterExpandCollapse(graph);
+
+  // Sync clusters whenever grouping mode changes (new cluster_id assignments
+  // land via useClusterAssignment inside SigmaContainer).
+  useEffect(() => {
+    if (graph && groupingMode !== "none" && groupingMode !== "semantic_cluster") {
+      syncClusters(graph);
+    }
+  }, [graph, groupingMode, syncClusters]);
+
+  // -------------------------------------------------------------------------
   // Keyboard handler (P3-10)
   // P4-04: Tab key intercepts focus within the graph region to cycle nodes.
   //        Normal Tab order (outside the canvas div) is unaffected.
@@ -1323,14 +1541,126 @@ export function VaultGraphPageClient() {
   }, []);
 
   // -------------------------------------------------------------------------
+  // Saved views — apply view handler (P3-06)
+  // -------------------------------------------------------------------------
+  const handleApplyView = useCallback(
+    (view: SavedView) => {
+      // Apply filter state
+      setGraphFilter(view.filter);
+
+      // Apply camera preset (animates sigma camera imperatively)
+      if (view.cameraPreset && sigmaRef.current) {
+        // Camera preset application: animate to the named preset state.
+        // The named preset string maps to cameraPresets entries (see cameraPresets.ts).
+        // We use a direct camera reset to "default" for the common case; the full
+        // cameraPresets map integration requires the graph reference which lives in
+        // GraphEventsController. For now we reset the camera on view apply and log
+        // the intended preset — full preset dispatch can be wired when P3-09 ships
+        // and both graph + sigma refs are exposed at this level.
+        if (view.cameraPreset === "default") {
+          sigmaRef.current.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: 400 });
+        } else {
+          // For non-default named presets, reset to default and log.
+          // Full preset dispatch requires graph ref; deferred until P3-09 refactor.
+          sigmaRef.current.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: 400 });
+          console.info(
+            `[SavedViews] Camera preset "${view.cameraPreset}" requested — full preset dispatch deferred to P3-09.`,
+          );
+        }
+        setActiveCameraPreset(view.cameraPreset);
+      }
+
+      // P3-09: apply grouping mode from saved view
+      if (view.grouping) {
+        setGroupingMode(
+          view.grouping as import("@/lib/graph/groupingModes").GroupingMode,
+        );
+      } else {
+        setGroupingMode("none");
+      }
+    },
+    [setGraphFilter, setGroupingMode],
+  );
+
+  // -------------------------------------------------------------------------
   // Mobile filters drawer
   // -------------------------------------------------------------------------
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // -------------------------------------------------------------------------
+  // P3-07: Filter sidebar open state (controlled so chips can open it).
+  // We start uncontrolled (FilterSidebar uses its own breakpoint default),
+  // but chips clicking "Focus filter panel" forces it open.
+  // -------------------------------------------------------------------------
+  const [sidebarOpen, setSidebarOpen] = useState<boolean | undefined>(undefined);
+
+  // P3-07: onFocusFilterPanel — opens sidebar and scrolls to the dim anchor.
+  const handleFocusFilterPanel = useCallback((key: FilterDimKey) => {
+    setSidebarOpen(true);
+    // Defer to next frame so the sidebar has time to open before scrollIntoView.
+    requestAnimationFrame(() => {
+      const anchor = document.querySelector(`[data-filter-dim="${key}"]`);
+      anchor?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }, []);
+
+  // -------------------------------------------------------------------------
   // Active filter count badge
   // -------------------------------------------------------------------------
-  const activeFilterCount = nodeTypes.length + edgeTypes.length;
+  // P3-03: count active server-side dims (dims 1-7 + free-text).
+  // Client dims (8-14) will be added by P3-04.
+  const activeFilterCount = (
+    (graphFilterValues.ws.length        > 0 ? 1 : 0) +
+    (graphFilterValues.types.length     > 0 ? 1 : 0) +
+    (graphFilterValues.edges.length     > 0 ? 1 : 0) +
+    (graphFilterValues.freshness.length > 0 ? 1 : 0) +
+    (graphFilterValues.project.length   > 0 ? 1 : 0) +
+    (graphFilterValues.domain.length    > 0 ? 1 : 0) +
+    (graphFilterValues.date_from || graphFilterValues.date_to ||
+     graphFilterValues.updated_from || graphFilterValues.updated_to ? 1 : 0) +
+    (graphFilterValues.q                     ? 1 : 0)
+  );
+
+  // -------------------------------------------------------------------------
+  // P3-08: hasActiveFilters — true when any dim deviates from its default.
+  // Derived from activeFilterCount (already includes all server dims + q).
+  // Client dims (8-14) are not yet counted; they will extend this in P3-04.
+  // -------------------------------------------------------------------------
+  const hasActiveFilters = activeFilterCount > 0;
+
+  // -------------------------------------------------------------------------
+  // P3-08: onClearAll — resets all filter state to GRAPH_FILTERS_DEFAULT.
+  // -------------------------------------------------------------------------
+  const handleOverlayClearAll = resetAllFilters;
+
+  // -------------------------------------------------------------------------
+  // P3-07: onClearDim — resets one filter dimension to its default value.
+  // Multi-key dims (date_range uses date_from as primary key) need special handling.
+  // -------------------------------------------------------------------------
+  const handleClearFilterDim = useCallback((key: FilterDimKey) => {
+    if (key === "date_from") {
+      // date_range dim covers 4 keys: date_from, date_to, updated_from, updated_to
+      setGraphFilter({
+        date_from:    GRAPH_FILTERS_DEFAULT.date_from,
+        date_to:      GRAPH_FILTERS_DEFAULT.date_to,
+        updated_from: GRAPH_FILTERS_DEFAULT.updated_from,
+        updated_to:   GRAPH_FILTERS_DEFAULT.updated_to,
+      });
+    } else if (key === "fscore_min") {
+      setGraphFilter({
+        fscore_min: GRAPH_FILTERS_DEFAULT.fscore_min,
+        fscore_max: GRAPH_FILTERS_DEFAULT.fscore_max,
+      });
+    } else if (key === "conf_min") {
+      setGraphFilter({
+        conf_min: GRAPH_FILTERS_DEFAULT.conf_min,
+        conf_max: GRAPH_FILTERS_DEFAULT.conf_max,
+      });
+    } else {
+      // Single-key dims — cast is safe: key is a valid FilterDimKey
+      setGraphFilter({ [key]: GRAPH_FILTERS_DEFAULT[key] } as Partial<GraphFiltersValues>);
+    }
+  }, [setGraphFilter]);
 
   // -------------------------------------------------------------------------
   // Currently focused node label (for screen-reader live region)
@@ -1484,12 +1814,37 @@ export function VaultGraphPageClient() {
         {/* Left filter sidebar (P3-02, P3-03) — hidden on mobile */}
         {!isNeighborhoodMode && (
           <FilterSidebar
+            activeFilterCount={activeFilterCount}
+            open={sidebarOpen}
+            onOpenChange={setSidebarOpen}
+            searchValue={graphFilterValues.q}
+            onSearchChange={(q) => setGraphFilter({ q })}
+            onClearAll={resetAllFilters}
+            // v2.1 legacy props — retained for FilterSidebar compat; the actual
+            // filtering is now driven by useGraphFilterState server dims.
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             onNodeTypesChange={setNodeTypes}
             onEdgeTypesChange={setEdgeTypes}
-            onClearAll={clearFilters}
-          />
+          >
+            {/* P3-03: subtle loading indicator during debounce/refetch window */}
+            {isFilterPending && (
+              <div
+                aria-live="polite"
+                aria-label="Updating graph…"
+                className="px-3 py-1.5 text-[10px] text-muted-foreground animate-pulse"
+              >
+                Updating…
+              </div>
+            )}
+            <GraphFilters
+              values={graphFilterValues}
+              onChange={(next) => setGraphFilter(next)}
+              // Facet options: API spec v2.2 VaultGraphResponse does not include
+              // facet aggregates. Options are derived client-side from loaded nodes.
+              options={filterOptions}
+            />
+          </FilterSidebar>
         )}
 
         {/* Main canvas area */}
@@ -1502,14 +1857,38 @@ export function VaultGraphPageClient() {
           aria-busy={isLoading || isNeighborhoodLoading}
           className="flex flex-1 min-w-0 flex-col gap-3"
         >
-          {/* Encoding toolbar (P2-09) — color/size mode toggles */}
-          {!isLoading && !isNeighborhoodLoading && displayNodes.length > 0 && (
-            <EncodingToolbar
-              colorMode={colorMode}
-              sizeMode={sizeMode}
-              onColorModeChange={setColorMode}
-              onSizeModeChange={setSizeMode}
+          {/* P3-07: Filter chip strip — above toolbar, visible when any filter is active */}
+          {!isNeighborhoodMode && (
+            <GraphFilterChips
+              values={graphFilterValues}
+              onClearDim={handleClearFilterDim}
+              onClearAll={handleOverlayClearAll}
+              onFocusFilterPanel={handleFocusFilterPanel}
             />
+          )}
+
+          {/* Toolbar row: encoding toggles (P2-09) + saved views (P3-06) */}
+          {!isLoading && !isNeighborhoodLoading && displayNodes.length > 0 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <EncodingToolbar
+                colorMode={colorMode}
+                sizeMode={sizeMode}
+                onColorModeChange={setColorMode}
+                onSizeModeChange={setSizeMode}
+              />
+              {/* P3-09: Grouping selector */}
+              <GraphGroupingSelector
+                mode={groupingMode}
+                onChange={setGroupingMode}
+              />
+              {/* Saved views menu (P3-06) — passes live grouping so it is captured in snapshots */}
+              <SavedViewsMenu
+                currentFilter={graphFilterValues}
+                currentCameraPreset={activeCameraPreset}
+                currentGrouping={groupingMode}
+                onApplyView={handleApplyView}
+              />
+            </div>
           )}
 
           {/* Pagination bar (P3-04) — shown above graph */}
@@ -1656,8 +2035,36 @@ export function VaultGraphPageClient() {
                               onHover={setTooltip}
                               onSelect={setPopover}
                               onSigmaReady={handleSigmaReady}
+                              filterValues={graphFilterValues}
+                              searchQuery={graphFilterValues.q}
+                              onServerSearchNeeded={setServerSearchQuery}
+                              groupingMode={groupingMode}
+                              onExpandCluster={expandCluster}
                             />
                           </SigmaContainer>
+
+                          {/* P3-12: SVG convex-hull cluster halos (sigma-only).
+                           * Mounted only when sigma is the active renderer AND a
+                           * grouping mode that produces clusters is active.
+                           * ClusterHalos is no-op in cosmos renderer mode (cosmos
+                           * branch above never mounts this). */}
+                          {sigmaRef.current && graph && groupingMode !== "none" && groupingMode !== "semantic_cluster" && (
+                            <ClusterHalos
+                              sigma={sigmaRef.current}
+                              graph={graph}
+                              expanded={expandedClusters}
+                              onCollapseCluster={collapseCluster}
+                            />
+                          )}
+
+                          {/* P3-08: canvas overlay (loading / empty / error) */}
+                          <GraphCanvasOverlay
+                            loading={isFilterPending}
+                            error={null}
+                            nodeCount={displayNodes.length}
+                            hasActiveFilters={hasActiveFilters}
+                            onClearAll={handleOverlayClearAll}
+                          />
 
                           <ZoomControls
                             onZoomIn={handleZoomIn}

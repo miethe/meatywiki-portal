@@ -137,6 +137,21 @@ export interface VaultGraphNode {
    * Absent in older API responses — default to null (no lens coloring).
    */
   lens_scores_jsonb?: Record<string, number | undefined> | null;
+  // ── v2.2 expanded DTO fields (P3-03) ─────────────────────────────────────
+  /**
+   * Project memberships from artifact_metadata.project_refs.
+   * Absent in v2.1 responses — default to [].
+   */
+  project?: string[] | null;
+  /**
+   * Domain tags from artifact_metadata.domain_tags.
+   * Absent in v2.1 responses — default to [].
+   */
+  domain?: string[] | null;
+  /**
+   * Artifact tags. Absent in v2.1 responses — default to [].
+   */
+  tags?: string[] | null;
 }
 
 /**
