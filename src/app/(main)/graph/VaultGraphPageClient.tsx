@@ -3743,7 +3743,11 @@ export function VaultGraphPageClient() {
                         >
                           <SigmaContainer
                             graph={graph}
-                            style={{ width: "100%", height: "100%" }}
+                            // Absolute fill of relative parent. height:100% doesn't
+                            // resolve when parent has only min-height (not an explicit
+                            // height), so Sigma reads clientHeight=0 on init and throws
+                            // "Container has no height".
+                            style={{ position: "absolute", inset: 0 }}
                             settings={{
                               renderEdgeLabels: false,
                               defaultEdgeType: "arrow",
