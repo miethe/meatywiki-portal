@@ -45,6 +45,32 @@ export interface VaultGraphFetchOptions {
   edgeTypes?: GraphEdgeType[];
   limit?: number;
   cursor?: string | null;
+  // ── v2.2 server-side filter dims (P3-03) ──────────────────────────────────
+  /** Dim 1: workspace filter — maps to `workspace[]` API param. */
+  ws?: string[];
+  /** Dim 2: artifact_type filter — passed via `node_types[]` (kept for compat). */
+  types?: string[];
+  /** Dim 3: edge_type filter — passed via `edge_types[]` (kept for compat). */
+  edges?: string[];
+  /** Dim 4: freshness_class filter — maps to `freshness_class[]` API param. */
+  freshness?: string[];
+  /** Dim 5: project filter — maps to `project[]` API param. */
+  project?: string[];
+  /** Dim 6: domain filter — maps to `domain[]` API param. */
+  domain?: string[];
+  /** Dim 7: created date range — maps to `created_after` / `created_before`. */
+  date_from?: string;
+  date_to?: string;
+  /** Dim 7: updated date range — maps to `updated_after` / `updated_before`. */
+  updated_from?: string;
+  updated_to?: string;
+  /**
+   * Dim 16: free-text FTS5 server fallback (P3-05).
+   * When provided, the API applies a full-text search filter and returns only
+   * matching nodes. Used by useGraphSearch when client-side Fuse.js returns
+   * < 3 results or the loaded node count exceeds VAULT_GRAPH_NODE_CAP.
+   */
+  q?: string;
 }
 
 async function fetchVaultGraph(
@@ -52,14 +78,46 @@ async function fetchVaultGraph(
 ): Promise<VaultGraphData> {
   const params = new URLSearchParams();
 
-  if (options.nodeTypes?.length) {
-    for (const nt of options.nodeTypes) params.append("node_types[]", nt);
+  // Legacy compat: nodeTypes → node_types[] (also covers types[] from filter state)
+  const mergedNodeTypes = [
+    ...(options.nodeTypes ?? []),
+    ...(options.types ?? []),
+  ];
+  if (mergedNodeTypes.length) {
+    for (const nt of mergedNodeTypes) params.append("node_types[]", nt);
   }
-  if (options.edgeTypes?.length) {
-    for (const et of options.edgeTypes) params.append("edge_types[]", et);
+
+  // Legacy compat: edgeTypes → edge_types[] (also covers edges[] from filter state)
+  const mergedEdgeTypes = [
+    ...(options.edgeTypes ?? []),
+    ...(options.edges ?? []),
+  ];
+  if (mergedEdgeTypes.length) {
+    for (const et of mergedEdgeTypes) params.append("edge_types[]", et);
   }
+
   params.set("limit", String(options.limit ?? VAULT_GRAPH_DEFAULT_LIMIT));
   if (options.cursor) params.set("cursor", options.cursor);
+
+  // v2.2 server-side filter dims (P3-03) — additively appended
+  if (options.ws?.length) {
+    for (const w of options.ws) params.append("workspace[]", w);
+  }
+  if (options.freshness?.length) {
+    for (const f of options.freshness) params.append("freshness_class[]", f);
+  }
+  if (options.project?.length) {
+    for (const p of options.project) params.append("project[]", p);
+  }
+  if (options.domain?.length) {
+    for (const d of options.domain) params.append("domain[]", d);
+  }
+  if (options.date_from)    params.set("created_after",  options.date_from);
+  if (options.date_to)      params.set("created_before", options.date_to);
+  if (options.updated_from) params.set("updated_after",  options.updated_from);
+  if (options.updated_to)   params.set("updated_before", options.updated_to);
+  // P3-05: FTS5 server fallback — only sent when non-empty.
+  if (options.q)            params.set("q",              options.q);
 
   const response = await apiFetch<VaultGraphResponse>(
     `/portal/graph/vault?${params.toString()}`,
@@ -145,12 +203,42 @@ export interface UseVaultGraphResult {
 // ---------------------------------------------------------------------------
 
 /**
+ * v2.2 server-side filter params accepted by useVaultGraph.
+ * All fields are optional — omitting them preserves current behavior for
+ * existing v2.1 callers.
+ */
+export interface UseVaultGraphServerFilters {
+  ws?: string[];
+  types?: string[];
+  edges?: string[];
+  freshness?: string[];
+  project?: string[];
+  domain?: string[];
+  date_from?: string;
+  date_to?: string;
+  updated_from?: string;
+  updated_to?: string;
+  /**
+   * Dim 16 FTS5 server fallback (P3-05). Pass the free-text query when
+   * useGraphSearch determines a server-side search is needed (node count > 2K
+   * or Fuse.js returned < 3 results). The hook re-fetches with this param;
+   * results are then highlighted client-side by useGraphSearch.
+   */
+  q?: string;
+}
+
+/**
  * useVaultGraph — manages vault-wide graph data with filtering and pagination.
  *
  * Filters are synced to URL query params so pages are shareable.
  * When filters change, pagination resets to page 1.
+ *
+ * @param serverFilters Optional v2.2 server-side filter dims (P3-03).
+ *   Omit or pass undefined to retain v2.1 behavior (no additional filters sent).
  */
-export function useVaultGraph(): UseVaultGraphResult {
+export function useVaultGraph(
+  serverFilters?: UseVaultGraphServerFilters,
+): UseVaultGraphResult {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -178,11 +266,34 @@ export function useVaultGraph(): UseVaultGraphResult {
   const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   // Build TanStack Query key — changes when filters or cursor change.
-  const queryKey = ["vault-graph", nodeTypes, edgeTypes, cursor] as const;
+  // v2.2: server filter dims included so refetch triggers on filter changes.
+  const queryKey = [
+    "vault-graph",
+    nodeTypes,
+    edgeTypes,
+    cursor,
+    serverFilters?.ws,
+    serverFilters?.types,
+    serverFilters?.edges,
+    serverFilters?.freshness,
+    serverFilters?.project,
+    serverFilters?.domain,
+    serverFilters?.date_from,
+    serverFilters?.date_to,
+    serverFilters?.updated_from,
+    serverFilters?.updated_to,
+    serverFilters?.q,
+  ] as const;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey,
-    queryFn: () => fetchVaultGraph({ nodeTypes, edgeTypes, cursor }),
+    queryFn: () =>
+      fetchVaultGraph({
+        nodeTypes,
+        edgeTypes,
+        cursor,
+        ...(serverFilters ?? {}),
+      }),
     staleTime: 2 * 60_000,
     gcTime: 10 * 60_000,
     retry: false,
