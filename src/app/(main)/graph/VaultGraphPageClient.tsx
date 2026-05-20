@@ -3753,6 +3753,12 @@ export function VaultGraphPageClient() {
                               defaultEdgeType: "arrow",
                               defaultNodeType: "circle",
                               nodeProgramClasses: { circle: NodeCircleProgram },
+                              // Container height may be 0 on initial mount before
+                              // the absolute-positioned parent finishes layout;
+                              // sigma's resize() retries on container change so
+                              // tolerating an invalid-container start avoids a
+                              // one-shot ErrorBoundary trip.
+                              allowInvalidContainer: true,
                               labelFont: "Inter, sans-serif",
                               labelSize: 10,
                               // P4-03: label color updated to slate-600 (#475569) — 5.90:1 vs white.

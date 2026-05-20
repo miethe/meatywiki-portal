@@ -13,6 +13,7 @@
 import { useEffect } from "react";
 import { useSigma } from "@react-sigma/core";
 import { type GroupingMode, computeClusterId } from "@/lib/graph/groupingModes";
+import { isSigmaKilled } from "@/lib/graph/sigmaLifecycle";
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -25,6 +26,15 @@ export function useClusterAssignment(groupingMode: GroupingMode): void {
   const sigma = useSigma();
 
   useEffect(() => {
+    // Guard against the @react-sigma/core killed-instance window. When the
+    // SigmaContainer `graph` prop changes ref, the parent's useEffect cleanup
+    // calls `kill()` BEFORE this child's setup re-runs with the new sigma
+    // (effect setups also run child-first, but the parent's cleanup precedes
+    // all setups). The stale closure here would otherwise call refresh() on a
+    // dead instance and throw "could not find a suitable program for node
+    // type 'circle'". See src/lib/graph/sigmaLifecycle.ts for full rationale.
+    if (isSigmaKilled(sigma)) return;
+
     const graph = sigma.getGraph();
     if (!graph) return;
 

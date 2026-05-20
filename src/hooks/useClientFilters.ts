@@ -41,6 +41,7 @@
 import { useEffect, useRef } from "react";
 import { useSigma } from "@react-sigma/core";
 import type { GraphFiltersValues } from "@/components/graph/GraphFilters";
+import { isSigmaKilled } from "@/lib/graph/sigmaLifecycle";
 
 // ---------------------------------------------------------------------------
 // Fidelity level → numeric index mapping
@@ -176,6 +177,14 @@ export function useClientFilters(filterValues: GraphFiltersValues): void {
 
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
+
+      // Guard against the @react-sigma/core killed-instance window. The
+      // captured `sigma` closure can outlive its instance when the
+      // SigmaContainer `graph` prop changes ref (parent cleanup kills the
+      // instance before subsequent renders propagate a new sigma). Skipping
+      // here is safe — the next render will mount this effect again with the
+      // fresh sigma. See src/lib/graph/sigmaLifecycle.ts.
+      if (isSigmaKilled(sigma)) return;
 
       const graph = sigma.getGraph();
       if (graph.order === 0) return;
