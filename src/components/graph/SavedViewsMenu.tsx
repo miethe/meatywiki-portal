@@ -18,7 +18,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Bookmark, X, ChevronDown } from "lucide-react";
+import { Bookmark, X, ChevronDown, Download } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_VIEWS } from "@/lib/graph/defaultViews";
 import {
@@ -159,6 +159,19 @@ export function SavedViewsMenu({
     setUserViews(listSavedViews());
   }, []);
 
+  const handleExport = useCallback(() => {
+    const payload = [...DEFAULT_VIEWS, ...listSavedViews()];
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "graph-views.json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
   const handleSaveCurrent = useCallback(() => {
     // native prompt — lightweight for single-user personal tool (v1)
     const name = window.prompt("Name for this view:");
@@ -231,7 +244,7 @@ export function SavedViewsMenu({
             </>
           )}
 
-          {/* Save current view action */}
+          {/* Save current view + Export actions */}
           <div className="my-1 border-t" />
           <div className="px-1">
             <button
@@ -246,6 +259,19 @@ export function SavedViewsMenu({
             >
               <Bookmark aria-hidden="true" className="size-3" />
               Save current view…
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={handleExport}
+              className={cn(
+                "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-xs",
+                "text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              )}
+            >
+              <Download aria-hidden="true" className="size-3" />
+              Export views JSON
             </button>
           </div>
         </div>

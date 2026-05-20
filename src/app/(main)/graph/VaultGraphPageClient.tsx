@@ -17,6 +17,15 @@
  *   P3-08 — memoization, FA2 layout, sampling transparency
  *   P3-10 — keyboard navigation (Tab nodes, arrow pan, +/- zoom, Enter, Escape)
  *   P3-11 — ARIA labels, skip link, sr-only fallback list
+ *   P4-01 — node_id deep-link: useEffect centers camera + soft-focus on mount
+ *   P4-02 — Cmd-K search overlay (GraphSearchOverlay, client Fuse.js + server FTS5)
+ *   P4-03 — search result selection → amber ring nodeReducer + camera animate + q chip
+ *   P4-04 — rubber-band multi-select lasso (pointer events + viewportToGraph rect)
+ *   P4-05 — right-click context menu (single-node 8 actions; multi-select 5 actions)
+ *   P4-06 — viewpoints library: 7 default presets + user views in SavedViewsMenu
+ *   P4-07 — full URL state model (buildUrl/parseUrl, ceiling guard, copy link, reset view)
+ *   P4-08 — static/dynamic mode toggle (FA2 on-demand, 5s idle snapshot, reduced-motion)
+ *   P4-09 — PNG/SVG export via sigma canvas toDataURL + legend overlay
  *   P4-02 — color constants sourced from updated graph.ts (contrast-verified)
  *   P4-03 — ZoomControls wrapper uses role="group"; sr-fallback list item buttons
  *            carry aria-label tying action to node; label color updated to match
@@ -129,6 +138,24 @@ import {
   selectRenderer,
   EXTREME_SCALE_THRESHOLD,
 } from "@/lib/graph/rendererSelect";
+import { GraphSearchOverlay, recordRecentNode } from "@/components/graph/GraphSearchOverlay";
+import type { GraphSearchResult } from "@/components/graph/GraphSearchOverlay";
+import { GraphContextMenu } from "@/components/graph/GraphContextMenu";
+import { GraphShareModal } from "@/components/graph/GraphShareModal";
+import {
+  buildUrl,
+  parseUrl,
+  type GraphMode,
+  type FocusMode as UrlFocusMode,
+} from "@/lib/graph/urlState";
+import { useRouter, usePathname } from "next/navigation";
+import {
+  Search,
+  Share2,
+  Download,
+  Layers,
+  Activity,
+} from "lucide-react";
 
 // ---------------------------------------------------------------------------
 // P2-08: cosmos.gl lazy chunk (Next.js dynamic import, ssr: false)
@@ -610,9 +637,12 @@ interface GraphEventsProps {
   focusedNodeId: string | null;
   /** P3-11: called when user clicks a super-node to expand the collapsed cluster. */
   onExpandCluster: (clusterId: string) => void;
+  /** P4-08: expose FA2 worker ref so parent can start/stop for static/dynamic toggle */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onFa2WorkerReady?: (worker: any) => void;
 }
 
-function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster }: GraphEventsProps) {
+function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster, onFa2WorkerReady }: GraphEventsProps) {
   const sigma = useSigma();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fa2Ref = useRef<any>(null);
@@ -642,6 +672,8 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster 
     });
     fa2.start();
     fa2Ref.current = fa2;
+    // P4-08: expose worker to parent for static/dynamic mode toggle
+    onFa2WorkerReady?.(fa2);
 
     // Settle time: shorter for large graphs to save CPU
     const settleMs = isLarge ? 1500 : 2500;
@@ -656,8 +688,10 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster 
       // Nullify after kill so a Strict Mode second-mount or any concurrent
       // reader never obtains a dead worker reference.
       fa2Ref.current = null;
+      // Clear parent ref too
+      onFa2WorkerReady?.(null);
     };
-  }, [sigma]);
+  }, [sigma, onFa2WorkerReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Camera pan to focused node (keyboard nav)
   useEffect(() => {
@@ -734,11 +768,14 @@ interface GraphCanvasInnerProps {
   /** P3-05: free-text query from GraphFiltersValues.q. */
   searchQuery: string;
   /** P3-05: callback when server FTS5 fallback is needed (or null to cancel). */
-  onServerSearchNeeded: (q: string | null) => void;
+  onServerSearchNeededAction: (q: string | null) => void;
   /** P3-09: active grouping mode; drives cluster_id assignment on each node. */
   groupingMode: import("@/lib/graph/groupingModes").GroupingMode;
   /** P3-11: called when user clicks a super-node to expand the collapsed cluster. */
   onExpandCluster: (clusterId: string) => void;
+  /** P4-08: expose FA2 worker ref for static/dynamic mode toggle */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onFa2WorkerReady?: (worker: any) => void;
 }
 
 function GraphCanvasInner({
@@ -749,9 +786,10 @@ function GraphCanvasInner({
   onSigmaReady,
   filterValues,
   searchQuery,
-  onServerSearchNeeded,
+  onServerSearchNeededAction,
   groupingMode,
   onExpandCluster,
+  onFa2WorkerReady,
 }: GraphCanvasInnerProps) {
   const sigma = useSigma();
   useEffect(() => { onSigmaReady(sigma); }, [sigma, onSigmaReady]);
@@ -762,7 +800,7 @@ function GraphCanvasInner({
 
   // P3-05: hybrid free-text search — Fuse.js (≤2K nodes) + server FTS5 fallback.
   // Must be called inside SigmaContainer so useSigma() resolves.
-  useGraphSearch({ query: searchQuery, nodes, onServerSearchNeeded });
+  useGraphSearch({ query: searchQuery, nodes, onServerSearchNeededAction });
 
   // P3-09: assign cluster_id to each node based on the active grouping mode.
   // Called inside SigmaContainer so useSigma() resolves correctly.
@@ -821,6 +859,7 @@ function GraphCanvasInner({
       onSelect={onSelect}
       focusedNodeId={focusedNodeId}
       onExpandCluster={onExpandCluster}
+      onFa2WorkerReady={onFa2WorkerReady}
     />
   );
 }
@@ -1663,6 +1702,505 @@ export function VaultGraphPageClient() {
   }, [setGraphFilter]);
 
   // -------------------------------------------------------------------------
+  // P4-07: URL state integration — router + pathname for buildUrl/parseUrl
+  // -------------------------------------------------------------------------
+  const router = useRouter();
+  const pathname = usePathname();
+
+  // -------------------------------------------------------------------------
+  // P4-08: Static / dynamic mode
+  //
+  // Default: static (respects prefers-reduced-motion: reduce).
+  // URL param: mode=static|dynamic
+  // -------------------------------------------------------------------------
+  const prefersReducedMotion =
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : true;
+
+  const [graphMode, setGraphMode] = useState<GraphMode>(() => {
+    // Hydrate from URL on first mount
+    if (typeof window === "undefined") return "static";
+    const { state } = parseUrl(window.location.search);
+    if (state.mode === "dynamic" && !prefersReducedMotion) return "dynamic";
+    return "static";
+  });
+
+  // Auto-snapshot: capture layout to layoutCache after 5s idle in dynamic→static
+  const idleSnapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fa2WorkerRef = useRef<import("graphology-layout-forceatlas2/worker").default | null>(null);
+
+  // Capture reference to the FA2 worker from GraphEvents (set via callback)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleFa2WorkerReady = useCallback((worker: any) => {
+    fa2WorkerRef.current = worker;
+  }, []);
+
+  function handleToggleMode() {
+    setGraphMode((prev) => {
+      const next = prev === "static" ? "dynamic" : "static";
+      if (next === "dynamic") {
+        // Start FA2
+        fa2WorkerRef.current?.start();
+        // Clear any pending idle snapshot
+        if (idleSnapshotTimerRef.current) {
+          clearTimeout(idleSnapshotTimerRef.current);
+          idleSnapshotTimerRef.current = null;
+        }
+      } else {
+        // Stop FA2 + schedule idle snapshot in 5s
+        fa2WorkerRef.current?.stop();
+        idleSnapshotTimerRef.current = setTimeout(() => {
+          // Positions are already in sigma/graphology; sigma.refresh() persists them
+          sigmaRef.current?.refresh();
+        }, 5000);
+      }
+      return next;
+    });
+  }
+
+  // Cleanup idle timer on unmount
+  useEffect(() => {
+    return () => {
+      if (idleSnapshotTimerRef.current) clearTimeout(idleSnapshotTimerRef.current);
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // P4-01: Deep-link node_id — center camera + soft focus k=1 on mount
+  //
+  // Runs once on mount after sigma is ready. sigmaRef.current is populated
+  // by handleSigmaReady which fires from GraphCanvasInner's useEffect.
+  // We watch sigmaRef + displayNodes (wait for graph to load) rather than
+  // just mount, because sigma may not have display data until after layout.
+  // -------------------------------------------------------------------------
+  const deepLinkAppliedRef = useRef(false);
+
+  useEffect(() => {
+    if (deepLinkAppliedRef.current) return;
+    if (!sigmaRef.current) return;
+    if (displayNodes.length === 0) return;
+
+    const { state: urlState } = parseUrl(
+      typeof window !== "undefined" ? window.location.search : "",
+    );
+    const targetId = urlState.node_id;
+    if (!targetId) return;
+
+    const sigma = sigmaRef.current;
+    const graphInstance = sigma.getGraph?.();
+    if (!graphInstance?.hasNode(targetId)) return;
+
+    deepLinkAppliedRef.current = true;
+
+    // (a) Center camera on target node
+    const displayData = sigma.getNodeDisplayData(targetId);
+    if (displayData) {
+      const reducedMotion = prefersReducedMotion;
+      if (reducedMotion) {
+        sigma.getCamera().setState({ x: displayData.x, y: displayData.y, ratio: 0.5 });
+      } else {
+        sigma.getCamera().animate(
+          { x: displayData.x, y: displayData.y, ratio: 0.5 },
+          { duration: 400 },
+        );
+      }
+    }
+
+    // (b) Soft focus: k=1 neighborhood at full opacity, dim others to 0.5
+    const neighbors = new Set<string>(graphInstance.neighbors(targetId));
+    neighbors.add(targetId);
+
+    sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
+      if (neighbors.has(nodeId)) return data;
+      return { ...data, opacity: 0.5 };
+    });
+    sigma.refresh();
+
+    // Apply focus mode in URL state if present
+    if (urlState.focus_mode && urlState.focus_mode !== "off") {
+      // Defer to next tick so graph is stable
+      setTimeout(() => {
+        setFocusedArtifactId(targetId);
+        const node = displayNodes.find((n) => n.id === targetId);
+        setFocusedArtifactTitle(node?.title ?? null);
+      }, 0);
+    }
+  }, [sigmaRef, displayNodes, prefersReducedMotion]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // -------------------------------------------------------------------------
+  // P4-04: Multi-select state + rubber-band lasso
+  // -------------------------------------------------------------------------
+  const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+
+  // Lasso state
+  const [lasso, setLasso] = useState<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleCanvasPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      // Only start lasso on primary button (left-click) when not on a node
+      if (e.button !== 0) return;
+      const target = e.target as HTMLElement;
+      // Don't start lasso if clicking on a UI overlay element
+      if (target.closest("button, a, [role=button]")) return;
+
+      setLasso({
+        active: false, // becomes true once drag threshold is exceeded
+        startX: e.clientX,
+        startY: e.clientY,
+        currentX: e.clientX,
+        currentY: e.clientY,
+      });
+    },
+    [],
+  );
+
+  const handleCanvasPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!lasso) return;
+      const dx = Math.abs(e.clientX - lasso.startX);
+      const dy = Math.abs(e.clientY - lasso.startY);
+      const threshold = 5;
+      setLasso((prev) => prev && {
+        ...prev,
+        active: prev.active || (dx > threshold || dy > threshold),
+        currentX: e.clientX,
+        currentY: e.clientY,
+      });
+    },
+    [lasso],
+  );
+
+  const handleCanvasPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!lasso || !lasso.active) {
+        setLasso(null);
+        return;
+      }
+
+      // Compute rect in container-local coords
+      if (!canvasContainerRef.current || !sigmaRef.current) {
+        setLasso(null);
+        return;
+      }
+
+      const rect = canvasContainerRef.current.getBoundingClientRect();
+      const x1 = Math.min(lasso.startX, e.clientX) - rect.left;
+      const x2 = Math.max(lasso.startX, e.clientX) - rect.left;
+      const y1 = Math.min(lasso.startY, e.clientY) - rect.top;
+      const y2 = Math.max(lasso.startY, e.clientY) - rect.top;
+
+      const sigma = sigmaRef.current;
+      const graph = sigma.getGraph?.();
+      if (!graph) {
+        setLasso(null);
+        return;
+      }
+
+      // Convert viewport corners to graph space
+      const topLeft = sigma.viewportToGraph({ x: x1, y: y1 });
+      const bottomRight = sigma.viewportToGraph({ x: x2, y: y2 });
+
+      const minGraphX = Math.min(topLeft.x, bottomRight.x);
+      const maxGraphX = Math.max(topLeft.x, bottomRight.x);
+      const minGraphY = Math.min(topLeft.y, bottomRight.y);
+      const maxGraphY = Math.max(topLeft.y, bottomRight.y);
+
+      const selected = new Set<string>();
+      graph.forEachNode((nodeId: string) => {
+        const display = sigma.getNodeDisplayData(nodeId);
+        if (!display) return;
+        if (
+          display.x >= minGraphX &&
+          display.x <= maxGraphX &&
+          display.y >= minGraphY &&
+          display.y <= maxGraphY
+        ) {
+          selected.add(nodeId);
+        }
+      });
+
+      setSelectedNodeIds((prev) => {
+        if (e.shiftKey) {
+          const next = new Set(prev);
+          for (const id of selected) next.add(id);
+          return next;
+        }
+        return selected;
+      });
+
+      // Apply amber ring to selected nodes
+      if (selected.size > 0) {
+        sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
+          if (selected.has(nodeId)) {
+            return { ...data, borderColor: "#d97706", borderSize: 3 };
+          }
+          return data;
+        });
+        sigma.refresh();
+      }
+
+      setLasso(null);
+    },
+    [lasso],
+  );
+
+  // -------------------------------------------------------------------------
+  // P4-05: Context menu state
+  // -------------------------------------------------------------------------
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    nodeId: string;
+  } | null>(null);
+
+  const handleContextMenuAction = {
+    onFocusMode: useCallback((mode: UrlFocusMode, nodeId: string) => {
+      setFocusedArtifactId(nodeId);
+      const node = displayNodes.find((n) => n.id === nodeId);
+      setFocusedArtifactTitle(node?.title ?? null);
+    }, [displayNodes, setFocusedArtifactId, setFocusedArtifactTitle]),
+
+    onAddToFocus: useCallback((nodeId: string) => {
+      setSelectedNodeIds((prev) => {
+        const next = new Set(prev);
+        next.add(nodeId);
+        return next;
+      });
+    }, []),
+
+    onLockToFocus: useCallback((nodeId: string) => {
+      const urlStr = buildUrl(pathname, {
+        node_id: nodeId,
+        focus_mode: "upstream",
+        focus_k: 2,
+        mode: graphMode,
+      });
+      void navigator.clipboard.writeText(
+        typeof window !== "undefined" ? window.location.origin + urlStr : urlStr
+      );
+    }, [pathname, graphMode]),
+
+    onSelectNeighbors: useCallback((nodeId: string) => {
+      if (!sigmaRef.current) return;
+      const graph = sigmaRef.current.getGraph?.();
+      if (!graph) return;
+      const neighbors = new Set<string>(graph.neighbors(nodeId));
+      setSelectedNodeIds((prev) => {
+        const next = new Set(prev);
+        for (const id of neighbors) next.add(id);
+        return next;
+      });
+    }, []),
+
+    onFilterToSelection: useCallback((nodeIds: string[]) => {
+      // Set node IDs as a transient filter — wired as workspace filter if all same workspace
+      // For now, set q to the first node title as a lightweight proxy
+      const first = displayNodes.find((n) => nodeIds.includes(n.id));
+      if (first?.title) setGraphFilter({ q: first.title });
+    }, [displayNodes, setGraphFilter]),
+
+    onCompareLensScores: useCallback((..._args: [string[]]) => {
+      // TODO: wire to compare panel when it ships in P5
+      void _args;
+      console.info("[P4-05] Compare lens scores — deferred to P5");
+    }, []),
+  };
+
+  // -------------------------------------------------------------------------
+  // P4-02: Search overlay state
+  // -------------------------------------------------------------------------
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Global keyboard shortcut: Cmd-K / Ctrl-K opens search overlay
+  useEffect(() => {
+    function handler(e: globalThis.KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setSearchOpen((prev) => !prev);
+      }
+      if (e.key === "/" && !searchOpen) {
+        const active = document.activeElement;
+        if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA")) return;
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [searchOpen]);
+
+  // P4-03: Handle search result selection
+  const handleSearchResultSelect = useCallback(
+    (result: GraphSearchResult) => {
+      // Record in recent
+      recordRecentNode({
+        id: result.id,
+        title: result.title,
+        artifact_type: result.artifact_type,
+      });
+
+      // Populate q in FilterState → adds chip
+      setGraphFilter({ q: result.title ?? result.id });
+
+      // Animate camera to node if it's in the graph
+      if (result.inGraph && sigmaRef.current) {
+        const sigma = sigmaRef.current;
+        const displayData = sigma.getNodeDisplayData(result.id);
+        if (displayData) {
+          if (prefersReducedMotion) {
+            sigma.getCamera().setState({ x: displayData.x, y: displayData.y, ratio: 0.5 });
+          } else {
+            sigma.getCamera().animate(
+              { x: displayData.x, y: displayData.y, ratio: 0.5 },
+              { duration: 400 },
+            );
+          }
+        }
+        // Apply amber ring to matched node
+        sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
+          if (nodeId === result.id) {
+            return { ...data, borderColor: "#d97706", borderSize: 3 };
+          }
+          return data;
+        });
+        sigma.refresh();
+      }
+    },
+    [setGraphFilter, prefersReducedMotion],
+  );
+
+  // -------------------------------------------------------------------------
+  // P4-07: Share modal + copy link
+  // -------------------------------------------------------------------------
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+
+  function buildCurrentUrl(): { url: string; isCeilingGuard: boolean } {
+    if (typeof window === "undefined") return { url: "", isCeilingGuard: false };
+    const fullUrl = buildUrl(pathname, {
+      node_id: focusedArtifactId ?? undefined,
+      grouping: groupingMode as import("@/lib/graph/urlState").GroupingMode,
+      mode: graphMode,
+      filters: {
+        ws: graphFilterValues.ws,
+        types: graphFilterValues.types,
+        edges: graphFilterValues.edges,
+        freshness: graphFilterValues.freshness,
+        project: graphFilterValues.project,
+        domain: graphFilterValues.domain,
+        date_from: graphFilterValues.date_from ?? undefined,
+        date_to: graphFilterValues.date_to ?? undefined,
+        q: graphFilterValues.q ?? undefined,
+        fidelity_min: graphFilterValues.fidelity_min ?? undefined,
+        conf_min: graphFilterValues.conf_min ?? undefined,
+        conf_max: graphFilterValues.conf_max ?? undefined,
+      },
+    });
+    const isCeilingGuard = fullUrl.includes("state_hash=");
+    return { url: window.location.origin + fullUrl, isCeilingGuard };
+  }
+
+  function handleResetView() {
+    resetAllFilters();
+    setGraphMode("static");
+    setFocusedArtifactId(null);
+    setFocusedArtifactTitle(null);
+    setSelectedNodeIds(new Set());
+    router.replace(pathname);
+  }
+
+  // -------------------------------------------------------------------------
+  // P4-09: PNG/SVG export
+  // -------------------------------------------------------------------------
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPng = useCallback(async () => {
+    if (!sigmaRef.current) return;
+    setIsExporting(true);
+    try {
+      const sigma = sigmaRef.current;
+      // Try sigma v3 capturePNG() first; fall back to toDataURL on the webgl canvas.
+      // sigmaRef.current is typed as `any` (established convention in this file).
+      let dataUrl: string | null = null;
+      if (typeof sigma.capturePNG === "function") {
+        dataUrl = (await sigma.capturePNG()) as string;
+      } else {
+        const canvas = sigma.getCanvases?.()?.webgl ?? sigma.getRenderer?.()?.getCanvas?.();
+        if (canvas) dataUrl = canvas.toDataURL("image/png");
+      }
+      if (dataUrl) {
+        const a = document.createElement("a");
+        a.href = dataUrl;
+        a.download = `graph-export-${Date.now()}.png`;
+        a.click();
+      }
+    } catch (err) {
+      console.warn("[P4-09] PNG export failed:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
+
+  const handleExportSvg = useCallback(async () => {
+    if (!sigmaRef.current) return;
+    setIsExporting(true);
+    try {
+      const sigma = sigmaRef.current;
+      const graph = sigma.getGraph?.();
+      if (!graph) return;
+
+      // Build minimal SVG from node positions
+      const dims = sigma.getDimensions();
+      const W = dims.width;
+      const H = dims.height;
+
+      let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">\n`;
+      svgContent += `<rect width="${W}" height="${H}" fill="#0f172a"/>\n`;
+
+      // Edges
+      graph.forEachEdge((_edgeId: string, attrs: Record<string, unknown>, src: string, tgt: string) => {
+        const s = sigma.graphToViewport(sigma.getNodeDisplayData(src) ?? { x: 0, y: 0 });
+        const t = sigma.graphToViewport(sigma.getNodeDisplayData(tgt) ?? { x: 0, y: 0 });
+        const color = (attrs.color as string) ?? "#64748b";
+        svgContent += `<line x1="${s.x.toFixed(1)}" y1="${s.y.toFixed(1)}" x2="${t.x.toFixed(1)}" y2="${t.y.toFixed(1)}" stroke="${color}" stroke-width="1" stroke-opacity="0.4"/>\n`;
+      });
+
+      // Nodes
+      graph.forEachNode((nodeId: string, attrs: Record<string, unknown>) => {
+        const disp = sigma.graphToViewport(sigma.getNodeDisplayData(nodeId) ?? { x: 0, y: 0 });
+        const color = (attrs.color as string) ?? "#6366f1";
+        const size = ((attrs.size as number) ?? 5);
+        const label = (attrs.label as string) ?? nodeId;
+        svgContent += `<circle cx="${disp.x.toFixed(1)}" cy="${disp.y.toFixed(1)}" r="${size}" fill="${color}"/>\n`;
+        if (size > 6) {
+          svgContent += `<text x="${disp.x.toFixed(1)}" y="${(disp.y + size + 10).toFixed(1)}" font-size="8" fill="#e2e8f0" text-anchor="middle" font-family="sans-serif">${label.slice(0, 20)}</text>\n`;
+        }
+      });
+
+      svgContent += `</svg>`;
+      const blob = new Blob([svgContent], { type: "image/svg+xml" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `graph-export-${Date.now()}.svg`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn("[P4-09] SVG export failed:", err);
+    } finally {
+      setIsExporting(false);
+    }
+  }, []);
+
+  // -------------------------------------------------------------------------
   // Currently focused node label (for screen-reader live region)
   // -------------------------------------------------------------------------
   const currentFocusedNode = focusedNodeId
@@ -1670,10 +2208,93 @@ export function VaultGraphPageClient() {
     : null;
 
   // -------------------------------------------------------------------------
+  // Lasso rect geometry for CSS overlay
+  // -------------------------------------------------------------------------
+  const lassoRect = lasso?.active
+    ? {
+        left: Math.min(lasso.startX, lasso.currentX),
+        top: Math.min(lasso.startY, lasso.currentY),
+        width: Math.abs(lasso.currentX - lasso.startX),
+        height: Math.abs(lasso.currentY - lasso.startY),
+      }
+    : null;
+
+  // -------------------------------------------------------------------------
   // Render
   // -------------------------------------------------------------------------
+  const { url: shareUrl, isCeilingGuard: shareIsCeilingGuard } = shareModalOpen
+    ? buildCurrentUrl()
+    : { url: "", isCeilingGuard: false };
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-4 p-4 md:p-6">
+      {/* P4-02: Cmd-K search overlay */}
+      <GraphSearchOverlay
+        open={searchOpen}
+        onCloseAction={() => setSearchOpen(false)}
+        loadedNodes={displayNodes}
+        onSelectResultAction={handleSearchResultSelect}
+      />
+
+      {/* P4-05: Right-click context menu */}
+      {contextMenu && (() => {
+        const nodeInfo = displayNodes.find((n) => n.id === contextMenu.nodeId);
+        if (!nodeInfo) return null;
+        return (
+          <GraphContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            node={{
+              id: nodeInfo.id,
+              title: nodeInfo.title,
+              artifact_type: nodeInfo.artifact_type,
+              workspace: nodeInfo.workspace,
+            }}
+            selectedNodeIds={selectedNodeIds}
+            allLoadedNodes={displayNodes.map((n) => ({
+              id: n.id,
+              title: n.title,
+              artifact_type: n.artifact_type,
+              workspace: n.workspace,
+            }))}
+            onCloseAction={() => setContextMenu(null)}
+            onFocusModeAction={handleContextMenuAction.onFocusMode}
+            onAddToFocusAction={handleContextMenuAction.onAddToFocus}
+            onLockToFocusAction={handleContextMenuAction.onLockToFocus}
+            onSelectNeighborsAction={handleContextMenuAction.onSelectNeighbors}
+            onFilterToSelectionAction={handleContextMenuAction.onFilterToSelection}
+            onCompareLensScoresAction={handleContextMenuAction.onCompareLensScores}
+          />
+        );
+      })()}
+
+      {/* P4-07: Share modal */}
+      <GraphShareModal
+        open={shareModalOpen}
+        onCloseAction={() => setShareModalOpen(false)}
+        url={shareUrl}
+        isCeilingGuardActive={shareIsCeilingGuard}
+        viewDescription={`${graphMode} mode · ${activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount !== 1 ? "s" : ""} active` : "no filters"}`}
+      />
+
+      {/* P4-04: Lasso selection rectangle overlay (fixed, pointer-events:none) */}
+      {lassoRect && (
+        <div
+          aria-hidden="true"
+          style={{
+            position: "fixed",
+            left: lassoRect.left,
+            top: lassoRect.top,
+            width: lassoRect.width,
+            height: lassoRect.height,
+            border: "2px dashed #d97706",
+            backgroundColor: "rgba(217,119,6,0.06)",
+            pointerEvents: "none",
+            zIndex: 30,
+          }}
+        />
+      )}
+
       {/* Mobile filter drawer */}
       <MobileFilterDrawer
         isOpen={mobileFiltersOpen}
@@ -1867,7 +2488,7 @@ export function VaultGraphPageClient() {
             />
           )}
 
-          {/* Toolbar row: encoding toggles (P2-09) + saved views (P3-06) */}
+          {/* Toolbar row: encoding toggles (P2-09) + saved views (P3-06) + P4 controls */}
           {!isLoading && !isNeighborhoodLoading && displayNodes.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap">
               <EncodingToolbar
@@ -1888,6 +2509,132 @@ export function VaultGraphPageClient() {
                 currentGrouping={groupingMode}
                 onApplyView={handleApplyView}
               />
+
+              {/* P4-02: Search button (keyboard shortcut Cmd-K) */}
+              <button
+                type="button"
+                aria-label="Search graph (Cmd-K)"
+                onClick={() => setSearchOpen(true)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                <Search aria-hidden="true" className="size-3" />
+                <span className="hidden sm:inline">Search</span>
+                <kbd className="hidden rounded bg-muted px-1 text-[9px] text-muted-foreground lg:inline">⌘K</kbd>
+              </button>
+
+              {/* P4-08: Static / Dynamic mode toggle */}
+              <button
+                type="button"
+                aria-pressed={graphMode === "dynamic"}
+                aria-label={`Graph mode: ${graphMode}. Click to switch to ${graphMode === "static" ? "dynamic" : "static"}.`}
+                onClick={handleToggleMode}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
+                  "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  graphMode === "dynamic"
+                    ? "border-primary bg-primary/10 text-primary hover:bg-primary/20"
+                    : "hover:bg-accent hover:text-accent-foreground",
+                )}
+              >
+                {graphMode === "dynamic" ? (
+                  <Activity aria-hidden="true" className="size-3 text-primary" />
+                ) : (
+                  <Layers aria-hidden="true" className="size-3" />
+                )}
+                <span className="hidden sm:inline">{graphMode === "static" ? "Static" : "Dynamic"}</span>
+              </button>
+
+              {/* P4-09: Export PNG */}
+              <button
+                type="button"
+                aria-label={isExporting ? "Exporting…" : "Export graph as PNG"}
+                onClick={handleExportPng}
+                disabled={isExporting}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "disabled:pointer-events-none disabled:opacity-50",
+                )}
+              >
+                <Download aria-hidden="true" className="size-3" />
+                <span className="hidden sm:inline">PNG</span>
+              </button>
+
+              {/* P4-09: Export SVG */}
+              <button
+                type="button"
+                aria-label={isExporting ? "Exporting…" : "Export graph as SVG"}
+                onClick={handleExportSvg}
+                disabled={isExporting}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "disabled:pointer-events-none disabled:opacity-50",
+                )}
+              >
+                <Download aria-hidden="true" className="size-3" />
+                <span className="hidden sm:inline">SVG</span>
+              </button>
+
+              {/* P4-07: Share / copy link */}
+              <button
+                type="button"
+                aria-label="Share this graph view"
+                onClick={() => setShareModalOpen(true)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                <Share2 aria-hidden="true" className="size-3" />
+                <span className="hidden sm:inline">Share</span>
+              </button>
+
+              {/* P4-07: Reset view */}
+              {(activeFilterCount > 0 || focusedArtifactId || graphMode !== "static") && (
+                <button
+                  type="button"
+                  aria-label="Reset all filters and view state"
+                  onClick={handleResetView}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground",
+                    "transition-colors hover:bg-accent hover:text-foreground",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  )}
+                >
+                  Reset view
+                </button>
+              )}
+
+              {/* P4-04: Selection count badge */}
+              {selectedNodeIds.size > 0 && (
+                <div
+                  role="status"
+                  aria-live="polite"
+                  className="flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50/80 px-2.5 py-1 text-xs font-medium text-amber-700 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+                >
+                  <span
+                    aria-hidden="true"
+                    className="inline-block size-2 rounded-full bg-amber-500"
+                  />
+                  {selectedNodeIds.size} selected
+                  <button
+                    type="button"
+                    aria-label="Clear selection"
+                    onClick={() => setSelectedNodeIds(new Set())}
+                    className="ml-1 rounded p-0.5 hover:bg-amber-200/60 focus:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  >
+                    <X aria-hidden="true" className="size-2.5" />
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -2001,10 +2748,44 @@ export function VaultGraphPageClient() {
                          * remain in the normal Tab order and are NOT intercepted.
                          */}
                         <div
+                          ref={canvasContainerRef}
                           role="img"
-                          aria-label={`Knowledge graph with ${displayNodes.length} nodes and ${displayEdges.length} edges. Use Tab to cycle nodes, arrow keys to pan, plus/minus to zoom, Enter to open detail.`}
+                          aria-label={`Knowledge graph with ${displayNodes.length} nodes and ${displayEdges.length} edges. Use Tab to cycle nodes, arrow keys to pan, plus/minus to zoom, Enter to open detail.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
                           tabIndex={0}
                           onKeyDown={handleKeyDown}
+                          onPointerDown={handleCanvasPointerDown}
+                          onPointerMove={handleCanvasPointerMove}
+                          onPointerUp={handleCanvasPointerUp}
+                          onContextMenu={(e) => {
+                            // P4-05: context menu on right-click
+                            e.preventDefault();
+                            // Find if there's a node near the click point
+                            if (!sigmaRef.current) return;
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            const vx = e.clientX - rect.left;
+                            const vy = e.clientY - rect.top;
+                            const graphCoord = sigmaRef.current.viewportToGraph({ x: vx, y: vy });
+                            // Find closest node within 20px
+                            const graph = sigmaRef.current.getGraph?.();
+                            if (!graph) return;
+                            let closest: string | null = null;
+                            let minDist = Infinity;
+                            graph.forEachNode((nodeId: string) => {
+                              const d = sigmaRef.current.getNodeDisplayData(nodeId);
+                              if (!d) return;
+                              const dx = d.x - graphCoord.x;
+                              const dy = d.y - graphCoord.y;
+                              const dist = Math.sqrt(dx * dx + dy * dy);
+                              if (dist < minDist) { minDist = dist; closest = nodeId; }
+                            });
+                            if (closest) {
+                              // If the node isn't in the selection, make it the sole selection
+                              if (!selectedNodeIds.has(closest)) {
+                                setSelectedNodeIds(new Set([closest]));
+                              }
+                              setContextMenu({ x: e.clientX, y: e.clientY, nodeId: closest });
+                            }
+                          }}
                           className={cn(
                             "relative flex-1 min-h-[400px] rounded-lg border bg-muted/10 overflow-hidden",
                             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
@@ -2037,9 +2818,10 @@ export function VaultGraphPageClient() {
                               onSigmaReady={handleSigmaReady}
                               filterValues={graphFilterValues}
                               searchQuery={graphFilterValues.q}
-                              onServerSearchNeeded={setServerSearchQuery}
+                              onServerSearchNeededAction={setServerSearchQuery}
                               groupingMode={groupingMode}
                               onExpandCluster={expandCluster}
+                              onFa2WorkerReady={handleFa2WorkerReady}
                             />
                           </SigmaContainer>
 

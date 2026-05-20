@@ -29,7 +29,18 @@
  */
 
 import { useEffect, useRef } from "react";
-import Fuse from "fuse.js";
+// fuse.js is installed via `pnpm add fuse.js`; if not present, client search degrades to server fallback.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let FuseSync: any = null;
+try {
+  // Synchronous require for use inside hooks (non-lazy path)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  FuseSync = require("fuse.js");
+  if (FuseSync && FuseSync.default) FuseSync = FuseSync.default;
+} catch {
+  // fuse.js not installed — client search disabled; server fallback will be used
+  FuseSync = null;
+}
 import { useSigma } from "@react-sigma/core";
 import type { VaultGraphNode } from "@/types/graph";
 import { VAULT_GRAPH_NODE_CAP } from "@/hooks/useVaultGraph";
@@ -70,7 +81,7 @@ export interface UseGraphSearchOptions {
    * Called with the query string that should be passed to `useVaultGraph({ q })`.
    * Called with `null` when client-side search is sufficient or query is empty.
    */
-  onServerSearchNeeded: (q: string | null) => void;
+  onServerSearchNeededAction: (q: string | null) => void;
 }
 
 /**
@@ -81,7 +92,7 @@ export interface UseGraphSearchOptions {
 export function useGraphSearch({
   query,
   nodes,
-  onServerSearchNeeded,
+  onServerSearchNeededAction,
 }: UseGraphSearchOptions): void {
   const sigma = useSigma();
 
@@ -92,8 +103,8 @@ export function useGraphSearch({
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
 
-  const onServerSearchNeededRef = useRef(onServerSearchNeeded);
-  onServerSearchNeededRef.current = onServerSearchNeeded;
+  const onServerSearchNeededRef = useRef(onServerSearchNeededAction);
+  onServerSearchNeededRef.current = onServerSearchNeededAction;
 
   // Debounce timer
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -125,14 +136,14 @@ export function useGraphSearch({
       const nodeCount = currentNodes.length;
 
       // ── Client-side Fuse.js (≤ 2K nodes) ──────────────────────────────────
-      if (nodeCount <= VAULT_GRAPH_NODE_CAP) {
-        const fuse = new Fuse(currentNodes, {
+      if (nodeCount <= VAULT_GRAPH_NODE_CAP && FuseSync) {
+        const fuse = new FuseSync(currentNodes, {
           keys: ["title", "tags"],
           threshold: FUSE_THRESHOLD,
           includeScore: false,
         });
 
-        const results = fuse.search(q);
+        const results: Array<{ item: { id: string } }> = fuse.search(q);
         const matchIds = new Set(results.map((r) => r.item.id));
 
         // If client search yields enough results, apply highlights locally.

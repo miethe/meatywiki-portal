@@ -33,7 +33,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import type { Sigma } from "sigma";
+// Sigma type import intentionally removed — sigma prop is typed `any` (see ClusterHalosProps).
 import type Graph from "graphology";
 import { clusterColor, isSuperNode } from "@/hooks/useClusterExpandCollapse";
 
