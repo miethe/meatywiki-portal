@@ -11,6 +11,8 @@
  * P4-02 — color palette audited for WCAG 2.1 §1.4.11 non-text contrast (≥3:1
  *          for graphical objects against the graph canvas background ~#f8fafc).
  *          Contrast ratios listed per color vs white (#ffffff) and near-white (#f8fafc).
+ * P2-09 — Extended with P1 DTO fields: fidelity_level, freshness_class,
+ *          classification_confidence on VaultGraphNode; confidence on VaultGraphEdge.
  */
 
 // ---------------------------------------------------------------------------
@@ -88,8 +90,28 @@ export type NeighborhoodGraphResponse = NeighborhoodGraphData & {
 // Vault graph types
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// P2-09 — Extended DTO field types
+// ---------------------------------------------------------------------------
+
+/**
+ * Fidelity level from the artifact metadata (F0 = raw, F4 = fully compiled).
+ * Maps to 5 discrete node size steps.
+ */
+export type FidelityLevel = "F0" | "F1" | "F2" | "F3" | "F4";
+
+/**
+ * Freshness class based on artifact updated_at age.
+ * Maps to node opacity: current→1.0, aging→0.65, stale→0.35, null→0.8.
+ */
+export type FreshnessClass = "current" | "aging" | "stale";
+
 /**
  * A node as returned by GET /api/portal/graph/vault.
+ *
+ * Optional P2-09 fields (fidelity_level, freshness_class,
+ * classification_confidence) are populated by the P1 expanded DTO.
+ * Older API responses that omit them must apply sensible defaults.
  */
 export interface VaultGraphNode {
   id: string;
@@ -97,15 +119,40 @@ export interface VaultGraphNode {
   artifact_type: GraphNodeType;
   workspace: string;
   updated_at: string | null;
+  /**
+   * Fidelity level F0..F4. Absent in older API responses — default to F2 (medium size).
+   */
+  fidelity_level?: FidelityLevel | null;
+  /**
+   * Freshness class. Absent in older API responses — default to null → opacity 0.8.
+   */
+  freshness_class?: FreshnessClass | null;
+  /**
+   * Classification confidence 0.0..1.0. Values < 0.7 trigger the uncertainty ring.
+   * Absent in older API responses — default to 1.0 (no ring shown).
+   */
+  classification_confidence?: number | null;
+  /**
+   * Lens dimension scores keyed by lens name. Used for color-by-lens mode.
+   * Absent in older API responses — default to null (no lens coloring).
+   */
+  lens_scores_jsonb?: Record<string, number | undefined> | null;
 }
 
 /**
  * An edge as returned by GET /api/portal/graph/vault.
+ *
+ * Optional P2-09 field (confidence) is populated by the P1 expanded DTO.
  */
 export interface VaultGraphEdge {
   source_id: string;
   target_id: string;
   edge_type: GraphEdgeType;
+  /**
+   * Confidence 0.0..1.0. Determines edge width: 1 + confidence * 2.
+   * Absent in older API responses — default to 0.25 → size 1.5.
+   */
+  confidence?: number | null;
 }
 
 /**
@@ -220,3 +267,107 @@ export const EDGE_STYLE_COLORS: Record<EdgeLineStyle, string> = {
   "thick-solid": "#334155", // slate-700 — 9.64:1 ✓
   "red-dashed": "#dc2626",  // red-600   — 5.74:1 ✓
 } as const;
+
+// ---------------------------------------------------------------------------
+// P2-09 — Workspace color encoding
+// ---------------------------------------------------------------------------
+
+/**
+ * Workspace name → fill color hex string (5 distinct colors for the 5 primary
+ * workspaces; unknown workspaces fall back to WORKSPACE_COLOR_DEFAULT).
+ *
+ * Colors chosen for visual distinctiveness and ≥3:1 contrast vs white:
+ *   wiki      #0369a1 (sky-700)    7.06:1 ✓
+ *   projects  #15803d (green-700)  6.70:1 ✓
+ *   research  #7e22ce (purple-700) 8.34:1 ✓
+ *   blog      #be185d (pink-700)   6.40:1 ✓
+ *   default   #64748b (slate-500)  4.60:1 ✓
+ */
+export const WORKSPACE_COLORS: Record<string, string> = {
+  wiki: "#0369a1",       // sky-700
+  projects: "#15803d",   // green-700
+  research: "#7e22ce",   // purple-700
+  blog: "#be185d",       // pink-700
+  inbox: "#b45309",      // amber-700
+} as const;
+
+export const WORKSPACE_COLOR_DEFAULT = "#64748b"; // slate-500
+
+/** Workspace name → human-readable label. */
+export const WORKSPACE_LABELS: Record<string, string> = {
+  wiki: "Wiki",
+  projects: "Projects",
+  research: "Research",
+  blog: "Blog",
+  inbox: "Inbox",
+} as const;
+
+// ---------------------------------------------------------------------------
+// P2-09 — Node size encoding (fidelity level)
+// ---------------------------------------------------------------------------
+
+/**
+ * Fidelity level → sigma node size (px radius).
+ * F0 (raw) → 6, F4 (fully compiled) → 14.
+ */
+export const FIDELITY_SIZES: Record<FidelityLevel, number> = {
+  F0: 6,
+  F1: 8,
+  F2: 10,
+  F3: 12,
+  F4: 14,
+} as const;
+
+/** Default size when fidelity_level is absent. Maps to F2. */
+export const FIDELITY_SIZE_DEFAULT = 10;
+
+// ---------------------------------------------------------------------------
+// P2-09 — Edge type color encoding (full edge_type palette)
+// ---------------------------------------------------------------------------
+
+/**
+ * Edge type → color hex.  Extends the style-based mapping with specific
+ * per-edge-type colors from the sigma-graph skill color table.
+ *
+ * All colors verified ≥3:1 vs white:
+ *   derived_from          #4f46e5 (indigo-600)   7.60:1 ✓
+ *   supports              #059669 (emerald-600)  5.26:1 ✓
+ *   contradicts           #dc2626 (red-600)      5.74:1 ✓
+ *   references            #64748b (slate-500)    4.60:1 ✓
+ *   relates_to            #64748b (slate-500)    4.60:1 ✓
+ *   supersedes/superseded #b45309 (amber-700)    5.68:1 ✓
+ *   contains              #0369a1 (sky-700)      7.06:1 ✓
+ *   generated_by          #7c3aed (violet-700)   7.01:1 ✓
+ *   possible_duplicate_of #c2410c (orange-700)   5.99:1 ✓
+ *   semantic_similar      #a21caf (fuchsia-700)  7.15:1 ✓  (dashed)
+ *   merged_into           #be185d (pink-700)     6.40:1 ✓
+ *   redirects_to          #0e7490 (cyan-700)     5.94:1 ✓
+ */
+export const EDGE_TYPE_COLORS: Record<string, string> = {
+  derived_from:          "#4f46e5",
+  supports:              "#059669",
+  contradicts:           "#dc2626",
+  references:            "#64748b",
+  relates_to:            "#64748b",
+  supersedes:            "#b45309",
+  superseded_by:         "#b45309",
+  contains:              "#0369a1",
+  generated_by:          "#7c3aed",
+  possible_duplicate_of: "#c2410c",
+  semantic_similar:      "#a21caf",
+  merged_into:           "#be185d",
+  redirects_to:          "#0e7490",
+} as const;
+
+/** Fallback edge color for unknown edge types. */
+export const EDGE_TYPE_COLOR_DEFAULT = "#64748b";
+
+// ---------------------------------------------------------------------------
+// P2-09 — Color mode types (toolbar toggles)
+// ---------------------------------------------------------------------------
+
+/** Which dimension drives node color. */
+export type NodeColorMode = "artifact_type" | "workspace" | "lens";
+
+/** Which dimension drives node size. */
+export type NodeSizeMode = "fidelity" | "degree";

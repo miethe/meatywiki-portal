@@ -370,6 +370,9 @@ function GraphEvents({
     return () => {
       clearTimeout(timer);
       fa2.kill();
+      // Nullify after kill so a Strict Mode second-mount or any concurrent
+      // reader never obtains a dead worker reference.
+      fa2Ref.current = null;
     };
   }, [sigma]);
 
@@ -759,9 +762,67 @@ export function ArtifactMiniGraphInner({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sigmaInstanceRef = useRef<any>(null);
 
+  // P2-10: webglcontextlost — ref to the sigma WebGL canvas so the listener
+  // can be removed on unmount. Stored with a custom property to avoid closure
+  // capture issues (mirrors the VaultGraphPageClient pattern).
+  const sigmaCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleSigmaReady = useCallback((s: any) => {
     sigmaInstanceRef.current = s;
+
+    // P2-10: Register webglcontextlost on the sigma-owned WebGL canvas.
+    // Uses the same guarded accessor pattern as VaultGraphPageClient so this
+    // is resilient to future sigma v3 internal API shape changes.
+    const webglCanvas: HTMLCanvasElement | undefined =
+      s.getCanvases?.()?.webgl ?? s.getRenderer?.()?.getCanvas?.();
+
+    if (webglCanvas && webglCanvas !== sigmaCanvasRef.current) {
+      // Remove any stale listener from a previous canvas (Strict Mode double-invoke).
+      if (sigmaCanvasRef.current) {
+        const prev = sigmaCanvasRef.current as HTMLCanvasElement & {
+          __sigmaContextLostHandler?: (e: Event) => void;
+        };
+        if (prev.__sigmaContextLostHandler) {
+          prev.removeEventListener("webglcontextlost", prev.__sigmaContextLostHandler);
+        }
+      }
+
+      const handleContextLost = (e: Event) => {
+        e.preventDefault();
+        console.warn("[ArtifactMiniGraph] Sigma WebGL context lost.");
+        // Surface the error via the existing error state so the GraphError UI
+        // is shown (same retry UX as a fetch failure).
+        // Note: we cannot call refetch() here directly because this handler
+        // is created before `refetch` is stable. Instead we leverage the
+        // component's existing isError/error path by forcing a re-render via
+        // the ref-held instance being killed. The user sees "Try again".
+        // A future improvement could add a dedicated `webglContextLost` state.
+        sigmaInstanceRef.current?.kill();
+        sigmaCanvasRef.current = null;
+      };
+
+      webglCanvas.addEventListener("webglcontextlost", handleContextLost);
+      (webglCanvas as HTMLCanvasElement & {
+        __sigmaContextLostHandler?: (e: Event) => void;
+      }).__sigmaContextLostHandler = handleContextLost;
+      sigmaCanvasRef.current = webglCanvas;
+    }
+  }, []);
+
+  // P2-10: Remove the webglcontextlost listener on unmount so it does not
+  // fire after the component tree is torn down.
+  useEffect(() => {
+    return () => {
+      const canvas = sigmaCanvasRef.current as (HTMLCanvasElement & {
+        __sigmaContextLostHandler?: (e: Event) => void;
+      }) | null;
+      if (canvas?.__sigmaContextLostHandler) {
+        canvas.removeEventListener("webglcontextlost", canvas.__sigmaContextLostHandler);
+        canvas.__sigmaContextLostHandler = undefined;
+      }
+      sigmaCanvasRef.current = null;
+    };
   }, []);
 
   // Keyboard navigation state

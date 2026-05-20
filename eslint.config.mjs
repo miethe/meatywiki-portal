@@ -21,6 +21,22 @@ const eslintConfig = [
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  // Graph utilities (P2 phase): preset/callback signatures and try/catch
+  // error bindings carry intentionally-unused params/vars prefixed with "_".
+  // Allow underscore-prefix to suppress without losing the rule globally.
+  {
+    files: ["src/lib/graph/**/*.{ts,tsx}"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_|^err$",
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;
