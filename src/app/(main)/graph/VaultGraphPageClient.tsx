@@ -96,6 +96,8 @@ import { FilterSidebar } from "@/components/graph/FilterSidebar";
 import { GraphFilters, GRAPH_FILTERS_DEFAULT, type GraphFiltersValues } from "@/components/graph/GraphFilters";
 import { GraphFilterChips } from "@/components/graph/GraphFilterChips";
 import type { FilterDimKey } from "@/components/graph/filterChipFormatters";
+import { GraphFilterSheet } from "@/components/graph/GraphFilterSheet";
+import { FilterPanelContent } from "@/components/graph/FilterPanelContent";
 import { SavedViewsMenu } from "@/components/graph/SavedViewsMenu";
 import type { SavedView } from "@/lib/graph/savedViews";
 import { DegradedFallback } from "@/components/graph/DegradedFallback";
@@ -126,14 +128,19 @@ import {
 } from "@/lib/graph/createModuleForce";
 import { GraphGroupingSelector } from "@/components/graph/GraphGroupingSelector";
 import {
-  resolveNodeColor,
   resolveNodeSize,
   resolveNodeOpacity,
   hasUncertaintyRing,
-  resolveEdgeColor,
   resolveEdgeSize,
   isSemanticEdge,
 } from "@/lib/graph/encoding";
+import {
+  resolveNodeColorWithPalette,
+  resolveEdgeColorWithPalette,
+} from "@/lib/graph/encoding-palette";
+import type { ColorPalette } from "@/lib/graph/palette";
+import { usePalette } from "@/lib/graph/palette-context";
+import { GraphSettingsMenu } from "@/components/graph/GraphSettingsMenu";
 import {
   selectRenderer,
   EXTREME_SCALE_THRESHOLD,
@@ -142,6 +149,7 @@ import { GraphSearchOverlay, recordRecentNode } from "@/components/graph/GraphSe
 import type { GraphSearchResult } from "@/components/graph/GraphSearchOverlay";
 import { GraphContextMenu } from "@/components/graph/GraphContextMenu";
 import { GraphShareModal } from "@/components/graph/GraphShareModal";
+import { useAriaAnnouncer } from "@/components/graph/GraphAriaLive";
 import {
   buildUrl,
   parseUrl,
@@ -155,7 +163,20 @@ import {
   Download,
   Layers,
   Activity,
+  HelpCircle,
 } from "lucide-react";
+import {
+  GraphOnboardingOverlay,
+  useOnboardingState,
+} from "@/components/graph/GraphOnboardingOverlay";
+import {
+  measureDeviceSpeed,
+  chooseGraphMode,
+  buildOptInWarningCopy,
+  type DegradeConfig,
+} from "@/lib/graph/autoDegrade";
+import { ANIMATION_TIMINGS } from "@/lib/graph/animationTimings";
+import { useAnimationBudget } from "@/hooks/useAnimationBudget";
 
 // ---------------------------------------------------------------------------
 // P2-08: cosmos.gl lazy chunk (Next.js dynamic import, ssr: false)
@@ -204,6 +225,10 @@ interface BuildVaultGraphOptions {
   colorMode: NodeColorMode;
   sizeMode: NodeSizeMode;
   selectedLens: string | null;
+  /** P5-04: when true, store enlarged hit radius on each node for touch targets ≥44px. */
+  touchHitRadius: boolean;
+  /** P5-08: Active color palette (default or colorblind). */
+  palette: ColorPalette;
 }
 
 function buildVaultGraph(
@@ -211,7 +236,7 @@ function buildVaultGraph(
   edges: VaultGraphEdge[],
   options: BuildVaultGraphOptions,
 ): Graph {
-  const { highlightedNodeId, colorMode, sizeMode, selectedLens } = options;
+  const { highlightedNodeId, colorMode, sizeMode, selectedLens, touchHitRadius, palette } = options;
   const graph = new Graph({ multi: false, type: "directed" });
 
   // Pre-compute degree map for degree-based sizing
@@ -227,12 +252,13 @@ function buildVaultGraph(
     const isHighlighted = node.id === highlightedNodeId;
     const degree = degreeMap.get(node.id) ?? 0;
 
-    const baseColor = resolveNodeColor(
+    const baseColor = resolveNodeColorWithPalette(
       node.artifact_type,
       node.workspace,
       node.lens_scores_jsonb,
       selectedLens,
       colorMode,
+      palette,
     );
     const baseSize = resolveNodeSize(
       node.fidelity_level,
@@ -280,6 +306,15 @@ function buildVaultGraph(
       fidelity_level: node.fidelity_level ?? null,
       freshness_class: node.freshness_class ?? null,
       classification_confidence: node.classification_confidence ?? null,
+      // P5-04: touch hit radius — stored as a graphology attribute so the
+      // touch-target hit-test handler in GraphEvents can read it without
+      // referencing the visual `size`. Visual size is UNCHANGED (F0-fidelity
+      // nodes remain small on screen); only the pointer event detection uses
+      // this enlarged radius.
+      //
+      // Formula per interaction spec §10: Math.max(node.size * 2, 22)
+      // (sigma coordinate units; 22 ≈ half of 44px minimum touch target)
+      hitRadius: touchHitRadius ? Math.max(baseSize * 2, 22) : baseSize,
     });
   }
 
@@ -287,7 +322,7 @@ function buildVaultGraph(
     if (!graph.hasNode(edge.source_id) || !graph.hasNode(edge.target_id)) continue;
     const edgeId = `${edge.source_id}__${edge.target_id}__${edge.edge_type}`;
     if (!graph.hasEdge(edgeId)) {
-      const edgeColor = resolveEdgeColor(edge.edge_type);
+      const edgeColor = resolveEdgeColorWithPalette(edge.edge_type, palette);
       const edgeSize = resolveEdgeSize(edge.confidence);
       const dashed = isSemanticEdge(edge.edge_type);
 
@@ -640,9 +675,18 @@ interface GraphEventsProps {
   /** P4-08: expose FA2 worker ref so parent can start/stop for static/dynamic toggle */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onFa2WorkerReady?: (worker: any) => void;
+  /**
+   * P5-04: when true, `clickStage` events perform an enlarged-radius node
+   * hit-test using the `hitRadius` graphology attribute before deselecting.
+   * This lets F0-fidelity nodes receive ≥44px touch targets without changing
+   * their visual size.
+   */
+  touchHitRadius?: boolean;
+  /** P5-07: when true, camera.animate() is replaced with camera.setState() (no animation). */
+  prefersReducedMotion?: boolean;
 }
 
-function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster, onFa2WorkerReady }: GraphEventsProps) {
+function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster, onFa2WorkerReady, touchHitRadius, prefersReducedMotion = false }: GraphEventsProps) {
   const sigma = useSigma();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const fa2Ref = useRef<any>(null);
@@ -700,11 +744,15 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
     if (!graph.hasNode(focusedNodeId)) return;
     const displayData = sigma.getNodeDisplayData(focusedNodeId);
     if (!displayData) return;
-    sigma.getCamera().animate(
-      { x: displayData.x, y: displayData.y, ratio: 0.5 },
-      { duration: 300 },
-    );
-  }, [focusedNodeId, sigma]);
+    if (prefersReducedMotion) {
+      sigma.getCamera().setState({ x: displayData.x, y: displayData.y, ratio: 0.5 });
+    } else {
+      sigma.getCamera().animate(
+        { x: displayData.x, y: displayData.y, ratio: 0.5 },
+        { duration: 300 },
+      );
+    }
+  }, [focusedNodeId, sigma, prefersReducedMotion]);
 
   const registerEvents = useRegisterEvents();
 
@@ -745,9 +793,54 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
           y,
         });
       },
-      clickStage: () => onSelect(null),
+      clickStage: ({ event }: { event: { x: number; y: number } }) => {
+        // P5-04: On touch devices, sigma's built-in hit detection may miss
+        // small (F0) nodes because their visual radius is below 22px. Before
+        // deselecting, we run a secondary enlarged-radius hit-test using the
+        // `hitRadius` attribute stored on each graphology node.
+        if (touchHitRadius) {
+          const graph = sigma.getGraph();
+          const graphCoord = sigma.viewportToGraph({ x: event.x, y: event.y });
+          let hitNode: string | null = null;
+          let minDist = Infinity;
+
+          graph.forEachNode((nodeId: string, attrs: Record<string, unknown>) => {
+            if (attrs.hidden) return;
+            const displayData = sigma.getNodeDisplayData(nodeId);
+            if (!displayData) return;
+            const dx = displayData.x - graphCoord.x;
+            const dy = displayData.y - graphCoord.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const radius = typeof attrs.hitRadius === "number" ? attrs.hitRadius : (attrs.size as number ?? 5);
+            if (dist <= radius && dist < minDist) {
+              minDist = dist;
+              hitNode = nodeId;
+            }
+          });
+
+          if (hitNode) {
+            // Treat as a node click — re-use the clickNode path.
+            const nd = nodeMap.get(hitNode);
+            const displayData = sigma.getNodeDisplayData(hitNode);
+            if (nd && displayData) {
+              const { x, y } = sigma.graphToViewport({ x: displayData.x, y: displayData.y });
+              onSelect({
+                nodeId: hitNode,
+                title: nd.title,
+                artifactType: nd.artifact_type,
+                workspace: nd.workspace,
+                updatedAt: nd.updated_at,
+                x,
+                y,
+              });
+              return; // do not deselect
+            }
+          }
+        }
+        onSelect(null);
+      },
     });
-  }, [registerEvents, sigma, nodeMap, onHover, onSelect]);
+  }, [registerEvents, sigma, nodeMap, onHover, onSelect, touchHitRadius]);
 
   return null;
 }
@@ -776,6 +869,10 @@ interface GraphCanvasInnerProps {
   /** P4-08: expose FA2 worker ref for static/dynamic mode toggle */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onFa2WorkerReady?: (worker: any) => void;
+  /** P5-04: pass through to GraphEvents for enlarged touch hit radius. */
+  touchHitRadius?: boolean;
+  /** P5-07: pass through to GraphEvents for reduced-motion camera fallback. */
+  prefersReducedMotion?: boolean;
 }
 
 function GraphCanvasInner({
@@ -790,6 +887,8 @@ function GraphCanvasInner({
   groupingMode,
   onExpandCluster,
   onFa2WorkerReady,
+  touchHitRadius,
+  prefersReducedMotion,
 }: GraphCanvasInnerProps) {
   const sigma = useSigma();
   useEffect(() => { onSigmaReady(sigma); }, [sigma, onSigmaReady]);
@@ -860,6 +959,8 @@ function GraphCanvasInner({
       focusedNodeId={focusedNodeId}
       onExpandCluster={onExpandCluster}
       onFa2WorkerReady={onFa2WorkerReady}
+      touchHitRadius={touchHitRadius}
+      prefersReducedMotion={prefersReducedMotion}
     />
   );
 }
@@ -1030,89 +1131,65 @@ function GraphError({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Mobile filter drawer
+// P5-03: Opt-in graph warning banner (interaction spec §14)
+// Shown when auto-degrade matrix returns `opt-in-warning`.
 // ---------------------------------------------------------------------------
 
-interface MobileFilterDrawerProps {
-  isOpen: boolean;
-  onClose: () => void;
-  nodeTypes: import("@/types/graph").GraphNodeType[];
-  edgeTypes: import("@/types/graph").GraphEdgeType[];
-  onNodeTypesChange: (types: import("@/types/graph").GraphNodeType[]) => void;
-  onEdgeTypesChange: (types: import("@/types/graph").GraphEdgeType[]) => void;
-  onClearAll: () => void;
+interface OptInWarningBannerProps {
+  nodeCount: number;
+  onShowList: () => void;
+  onTryGraph: () => void;
 }
 
-function MobileFilterDrawer({
-  isOpen,
-  onClose,
-  nodeTypes,
-  edgeTypes,
-  onNodeTypesChange,
-  onEdgeTypesChange,
-  onClearAll,
-}: MobileFilterDrawerProps) {
-  if (!isOpen) return null;
+function OptInWarningBanner({ nodeCount, onShowList, onTryGraph }: OptInWarningBannerProps) {
+  const copy = buildOptInWarningCopy(nodeCount);
   return (
-    <>
-      <div
-        aria-hidden="true"
-        className="fixed inset-0 z-30 bg-foreground/20 backdrop-blur-sm md:hidden"
-        onClick={onClose}
-      />
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label="Graph filters"
-        className="fixed inset-y-0 left-0 z-40 flex w-[280px] max-w-[85vw] flex-col border-r bg-card md:hidden"
-      >
-        <div className="flex h-14 shrink-0 items-center justify-between border-b px-3">
-          <div className="flex items-center gap-2">
-            <SlidersHorizontal aria-hidden="true" className="size-3.5 text-muted-foreground" />
-            <span className="text-sm font-semibold">Filters</span>
-          </div>
-          <button
-            type="button"
-            aria-label="Close filters"
-            onClick={onClose}
-            className={cn(
-              "inline-flex size-9 items-center justify-center rounded-md",
-              "text-muted-foreground transition-colors hover:bg-accent",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            )}
-          >
-            <X aria-hidden="true" className="size-4" />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          <FilterSidebar
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            onNodeTypesChange={onNodeTypesChange}
-            onEdgeTypesChange={onEdgeTypesChange}
-            onClearAll={onClearAll}
-            alwaysVisible
-          />
-        </div>
-        <div className="shrink-0 border-t p-3">
-          <button
-            type="button"
-            onClick={onClose}
-            className={cn(
-              "w-full inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium",
-              "transition-colors hover:bg-accent",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            )}
-          >
-            Apply & close
-          </button>
-        </div>
-      </aside>
-    </>
+    <div
+      role="note"
+      aria-label="Graph performance warning"
+      className="flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm dark:border-amber-800 dark:bg-amber-950/30 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="flex items-start gap-2">
+        <AlertTriangle
+          aria-hidden="true"
+          className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+        />
+        <span className="text-amber-800 dark:text-amber-200">
+          {copy.message}
+        </span>
+      </div>
+      <div className="flex shrink-0 gap-2">
+        <button
+          type="button"
+          onClick={onShowList}
+          className={cn(
+            "inline-flex items-center rounded-md border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-medium text-amber-800",
+            "transition-colors hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900/40 dark:text-amber-200 dark:hover:bg-amber-900/70",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          {copy.ctaList}
+        </button>
+        <button
+          type="button"
+          onClick={onTryGraph}
+          className={cn(
+            "inline-flex items-center rounded-md border px-3 py-1.5 text-xs font-medium text-muted-foreground",
+            "transition-colors hover:bg-accent hover:text-foreground",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          {copy.ctaGraph}
+        </button>
+      </div>
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
+// MobileFilterDrawer replaced by GraphFilterSheet (P5-02).
+// See components/graph/GraphFilterSheet.tsx.
+
 // Screen-reader fallback list (P3-11)
 // P4-03: each "View neighborhood" button now carries an aria-label that
 //        includes the node title so screen reader users know which node
@@ -1189,6 +1266,22 @@ export function VaultGraphPageClient() {
   } = useGraphFilterState();
 
   // -------------------------------------------------------------------------
+  // P5-08: Color-blind palette — reads PaletteProvider context (set up in
+  // page.tsx). paletteRef lets sigma setSetting reducer callbacks read the
+  // current palette without closing over a stale value.
+  // -------------------------------------------------------------------------
+  const palette = usePalette();
+  const paletteRef = useRef(palette);
+  useEffect(() => {
+    paletteRef.current = palette;
+  }, [palette]);
+
+  // -------------------------------------------------------------------------
+  // P5-06: ARIA live-region announcer (GraphAriaLive provider mounted in page.tsx)
+  // -------------------------------------------------------------------------
+  const { announce } = useAriaAnnouncer();
+
+  // -------------------------------------------------------------------------
   // P3-05: server FTS5 search query state.
   // useGraphSearch calls onServerSearchNeeded when a server fallback is
   // required; we store the query here and pass it to useVaultGraph so a
@@ -1217,7 +1310,6 @@ export function VaultGraphPageClient() {
     edgeTypes,
     setNodeTypes,
     setEdgeTypes,
-    clearFilters,
   } = useVaultGraph({
     ws:           graphFilterValues.ws,
     types:        graphFilterValues.types,
@@ -1313,14 +1405,16 @@ export function VaultGraphPageClient() {
       const node = nodes.find((n) => n.id === nodeId);
       setFocusedArtifactId(nodeId);
       setFocusedArtifactTitle(node?.title ?? null);
+      announce(`Focus mode entered from ${node?.title ?? nodeId}. K-hop neighborhood highlighted.`);
     },
-    [nodes],
+    [nodes, announce],
   );
 
   const handleBackToVault = useCallback(() => {
     setFocusedArtifactId(null);
     setFocusedArtifactTitle(null);
-  }, []);
+    announce(`Focus mode off. Showing ${displayNodes.length} nodes.`);
+  }, [announce, displayNodes.length]);
 
   // -------------------------------------------------------------------------
   // Visual encoding mode state (P2-09)
@@ -1360,6 +1454,14 @@ export function VaultGraphPageClient() {
   // -------------------------------------------------------------------------
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [popover, setPopover] = useState<PopoverData | null>(null);
+
+  // P5-06: announce node selection via ARIA live region.
+  const handleSelectPopover = useCallback((p: PopoverData | null) => {
+    setPopover(p);
+    if (p) {
+      announce(`${p.title ?? p.nodeId} selected. ${p.artifactType}, ${p.workspace}.`);
+    }
+  }, [announce]);
 
   // -------------------------------------------------------------------------
   // P2-08: Renderer selection — sigma vs cosmos.gl
@@ -1465,6 +1567,27 @@ export function VaultGraphPageClient() {
   const nodeList = displayNodes;
 
   // -------------------------------------------------------------------------
+  // P5-05: WCAG keyboard-focused node state.
+  // Separate from focusedNodeId (P3-10 camera-pan) — this tracks which node
+  // has keyboard focus for Tab/Arrow navigation per interaction spec §9.
+  // -------------------------------------------------------------------------
+  const [keyboardFocusedNodeId, setKeyboardFocusedNodeId] = useState<string | null>(null);
+  // Ref keeps nodeReducer callbacks in sync without stale closure issues.
+  const keyboardFocusedRef = useRef<string | null>(null);
+  useEffect(() => {
+    keyboardFocusedRef.current = keyboardFocusedNodeId;
+  }, [keyboardFocusedNodeId]);
+
+  // -------------------------------------------------------------------------
+  // P5-04: Touch device flag — used in both buildVaultGraph (hitRadius attr)
+  // and GraphCanvasInner (enlarged clickStage hit-test).
+  // navigator is always available here (this component is dynamically imported
+  // with ssr:false, so it never executes on the server).
+  // -------------------------------------------------------------------------
+  const isTouchDevice =
+    typeof navigator !== "undefined" && navigator.maxTouchPoints > 0;
+
+  // -------------------------------------------------------------------------
   // Build graphology graph (memoized — P3-08)
   // P2-09: encoding options included in memo deps so graph rebuilds when
   //        color/size mode or lens selection changes.
@@ -1476,8 +1599,23 @@ export function VaultGraphPageClient() {
       colorMode,
       sizeMode,
       selectedLens,
+      touchHitRadius: isTouchDevice,
+      palette,
     });
-  }, [displayNodes, displayEdges, focusedArtifactId, colorMode, sizeMode, selectedLens]);
+  }, [displayNodes, displayEdges, focusedArtifactId, colorMode, sizeMode, selectedLens, isTouchDevice, palette]);
+
+  // P5-05: tabOrder — displayNodes sorted by graph degree descending for Tab cycling.
+  // Falls back to empty array until graph is available.
+  const tabOrder = useMemo<string[]>(() => {
+    if (!graph || displayNodes.length === 0) return [];
+    return [...displayNodes]
+      .sort((a, b) => {
+        const degA = graph.hasNode(a.id) ? graph.degree(a.id) : 0;
+        const degB = graph.hasNode(b.id) ? graph.degree(b.id) : 0;
+        return degB - degA;
+      })
+      .map((n) => n.id);
+  }, [graph, displayNodes]);
 
   // -------------------------------------------------------------------------
   // P3-11: Cluster expand/collapse state machine.
@@ -1503,6 +1641,65 @@ export function VaultGraphPageClient() {
   }, [graph, groupingMode, syncClusters]);
 
   // -------------------------------------------------------------------------
+  // P5-05: Sync keyboard focus amber ring → sigma nodeReducer.
+  //
+  // Runs whenever keyboardFocusedNodeId changes. If a node is focused we
+  // install a nodeReducer that adds an amber-500 (#d97706) border; when no
+  // node is focused we clear it. We leave other imperative nodeReducer
+  // overrides (search result, lasso selection) to run as before — they
+  // overwrite this one until the next keyboardFocusedNodeId change, which is
+  // acceptable given these interactions are mutually exclusive in practice.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    const sigma = sigmaRef.current;
+    if (!sigma) return;
+    if (keyboardFocusedNodeId === null) {
+      sigma.setSetting("nodeReducer", null);
+    } else {
+      const focusedId = keyboardFocusedNodeId;
+      sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
+        if (nodeId === focusedId) {
+          return { ...data, borderColor: "#d97706", borderSize: 3 };
+        }
+        return data;
+      });
+    }
+    sigma.refresh();
+  }, [keyboardFocusedNodeId]);
+
+  // -------------------------------------------------------------------------
+  // P5-07: prefers-reduced-motion — subscribed state (not one-shot read).
+  //
+  // Declared here (before keyboard handler and zoom callbacks) so all of the
+  // camera motion guards below can read the current value without a
+  // "used before declaration" error. The graphMode-related effect and the
+  // graphMode state itself follow further down in the file; both read this
+  // value after it has been declared.
+  // -------------------------------------------------------------------------
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState<boolean>(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      : false,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const handler = (e: MediaQueryListEvent) => setPrefersReducedMotion(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, []);
+
+  // P5-09: performance-guard hook — RAF rolling-window median > 33ms → slowFrame
+  const { slowFrame } = useAnimationBudget();
+
+  // P5-11: onboarding overlay — localStorage gate + controlled open state
+  const {
+    open: onboardingOpen,
+    openOverlay,
+    dismissOverlay,
+  } = useOnboardingState();
+
+  // -------------------------------------------------------------------------
   // Keyboard handler (P3-10)
   // P4-04: Tab key intercepts focus within the graph region to cycle nodes.
   //        Normal Tab order (outside the canvas div) is unaffected.
@@ -1523,28 +1720,52 @@ export function VaultGraphPageClient() {
         }
         case "ArrowUp":
           e.preventDefault();
-          camera.animate({ y: camera.getState().y - 0.05 }, { duration: 100 });
+          if (prefersReducedMotion) {
+            camera.setState({ y: camera.getState().y - 0.05 });
+          } else {
+            camera.animate({ y: camera.getState().y - 0.05 }, { duration: 100 });
+          }
           break;
         case "ArrowDown":
           e.preventDefault();
-          camera.animate({ y: camera.getState().y + 0.05 }, { duration: 100 });
+          if (prefersReducedMotion) {
+            camera.setState({ y: camera.getState().y + 0.05 });
+          } else {
+            camera.animate({ y: camera.getState().y + 0.05 }, { duration: 100 });
+          }
           break;
         case "ArrowLeft":
           e.preventDefault();
-          camera.animate({ x: camera.getState().x - 0.05 }, { duration: 100 });
+          if (prefersReducedMotion) {
+            camera.setState({ x: camera.getState().x - 0.05 });
+          } else {
+            camera.animate({ x: camera.getState().x - 0.05 }, { duration: 100 });
+          }
           break;
         case "ArrowRight":
           e.preventDefault();
-          camera.animate({ x: camera.getState().x + 0.05 }, { duration: 100 });
+          if (prefersReducedMotion) {
+            camera.setState({ x: camera.getState().x + 0.05 });
+          } else {
+            camera.animate({ x: camera.getState().x + 0.05 }, { duration: 100 });
+          }
           break;
         case "+":
         case "=":
           e.preventDefault();
-          camera.animate({ ratio: camera.getState().ratio / 1.5 }, { duration: 150 });
+          if (prefersReducedMotion) {
+            camera.setState({ ratio: camera.getState().ratio / 1.5 });
+          } else {
+            camera.animate({ ratio: camera.getState().ratio / 1.5 }, { duration: 150 });
+          }
           break;
         case "-":
           e.preventDefault();
-          camera.animate({ ratio: camera.getState().ratio * 1.5 }, { duration: 150 });
+          if (prefersReducedMotion) {
+            camera.setState({ ratio: camera.getState().ratio * 1.5 });
+          } else {
+            camera.animate({ ratio: camera.getState().ratio * 1.5 }, { duration: 150 });
+          }
           break;
         case "Enter":
           if (focusedNodeId) {
@@ -1556,7 +1777,7 @@ export function VaultGraphPageClient() {
           break;
       }
     },
-    [focusedNodeIndex, focusedNodeId, nodeList],
+    [focusedNodeIndex, focusedNodeId, nodeList, prefersReducedMotion],
   );
 
   // -------------------------------------------------------------------------
@@ -1565,19 +1786,31 @@ export function VaultGraphPageClient() {
   const handleZoomIn = useCallback(() => {
     const camera = sigmaRef.current?.getCamera();
     if (!camera) return;
-    camera.animate({ ratio: camera.getState().ratio / 1.5 }, { duration: 200 });
-  }, []);
+    if (prefersReducedMotion) {
+      camera.setState({ ratio: camera.getState().ratio / 1.5 });
+    } else {
+      camera.animate({ ratio: camera.getState().ratio / 1.5 }, { duration: 200 });
+    }
+  }, [prefersReducedMotion]);
 
   const handleZoomOut = useCallback(() => {
     const camera = sigmaRef.current?.getCamera();
     if (!camera) return;
-    camera.animate({ ratio: camera.getState().ratio * 1.5 }, { duration: 200 });
-  }, []);
+    if (prefersReducedMotion) {
+      camera.setState({ ratio: camera.getState().ratio * 1.5 });
+    } else {
+      camera.animate({ ratio: camera.getState().ratio * 1.5 }, { duration: 200 });
+    }
+  }, [prefersReducedMotion]);
 
   const handleFitView = useCallback(() => {
-    sigmaRef.current?.getCamera().animate({ x: 0, y: 0, ratio: 1, angle: 0 }, { duration: 300 });
+    if (prefersReducedMotion) {
+      sigmaRef.current?.getCamera().setState({ x: 0, y: 0, ratio: 1, angle: 0 });
+    } else {
+      sigmaRef.current?.getCamera().animate({ x: 0, y: 0, ratio: 1, angle: 0 }, { duration: 300 });
+    }
     sigmaRef.current?.refresh();
-  }, []);
+  }, [prefersReducedMotion]);
 
   // -------------------------------------------------------------------------
   // Saved views — apply view handler (P3-06)
@@ -1597,16 +1830,25 @@ export function VaultGraphPageClient() {
         // the intended preset — full preset dispatch can be wired when P3-09 ships
         // and both graph + sigma refs are exposed at this level.
         if (view.cameraPreset === "default") {
-          sigmaRef.current.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: 400 });
+          if (prefersReducedMotion || slowFrame) {
+            sigmaRef.current.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1 });
+          } else {
+            sigmaRef.current.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: ANIMATION_TIMINGS.cameraJump.durationMs });
+          }
         } else {
           // For non-default named presets, reset to default and log.
           // Full preset dispatch requires graph ref; deferred until P3-09 refactor.
-          sigmaRef.current.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: 400 });
+          if (prefersReducedMotion || slowFrame) {
+            sigmaRef.current.getCamera().setState({ x: 0.5, y: 0.5, ratio: 1 });
+          } else {
+            sigmaRef.current.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: ANIMATION_TIMINGS.cameraJump.durationMs });
+          }
           console.info(
             `[SavedViews] Camera preset "${view.cameraPreset}" requested — full preset dispatch deferred to P3-09.`,
           );
         }
         setActiveCameraPreset(view.cameraPreset);
+        announce(`View changed to: ${view.cameraPreset}.`);
       }
 
       // P3-09: apply grouping mode from saved view
@@ -1618,7 +1860,7 @@ export function VaultGraphPageClient() {
         setGroupingMode("none");
       }
     },
-    [setGraphFilter, setGroupingMode],
+    [setGraphFilter, setGroupingMode, prefersReducedMotion],
   );
 
   // -------------------------------------------------------------------------
@@ -1667,10 +1909,26 @@ export function VaultGraphPageClient() {
   // -------------------------------------------------------------------------
   const hasActiveFilters = activeFilterCount > 0;
 
+  // P5-06: announce when a filter is applied (count > 0 only; cleared handled separately).
+  useEffect(() => {
+    if (activeFilterCount > 0) {
+      announce(
+        `Showing ${displayNodes.length} nodes, ${displayEdges.length} edges. Filtered to ${activeFilterCount} criteria.`,
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFilterCount]);
+
   // -------------------------------------------------------------------------
   // P3-08: onClearAll — resets all filter state to GRAPH_FILTERS_DEFAULT.
+  // P5-06: also announces the clear event via ARIA live region.
   // -------------------------------------------------------------------------
-  const handleOverlayClearAll = resetAllFilters;
+  const handleOverlayClearAll = useCallback(() => {
+    resetAllFilters();
+    announce(
+      `All filters cleared. Showing ${displayNodes.length} nodes, ${displayEdges.length} edges.`,
+    );
+  }, [resetAllFilters, announce, displayNodes.length, displayEdges.length]);
 
   // -------------------------------------------------------------------------
   // P3-07: onClearDim — resets one filter dimension to its default value.
@@ -1708,16 +1966,57 @@ export function VaultGraphPageClient() {
   const pathname = usePathname();
 
   // -------------------------------------------------------------------------
+  // P5-03: Auto-degrade matrix — device speed detection + render-mode gate.
+  //
+  // Fires once on mount via a RAF timing pass (measureDeviceSpeed()) and
+  // caches the result per session. The matrix (chooseGraphMode) is then
+  // applied with the server-reported totalNodeCount to determine whether the
+  // graph is: full, static-forced, opt-in-warning, or list-only.
+  //
+  // `null` = detection not yet complete (show normal loading path).
+  // -------------------------------------------------------------------------
+  const [degradeConfig, setDegradeConfig] = useState<DegradeConfig | null>(null);
+
+  // When user chooses "Try graph view anyway" from the opt-in-warning banner,
+  // we promote the mode to `full` for this session.
+  const [optInOverride, setOptInOverride] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    measureDeviceSpeed().then((rafMs) => {
+      if (cancelled) return;
+      const touch = navigator.maxTouchPoints > 0;
+      const config = chooseGraphMode({ nodeCount: totalNodeCount, touch, rafMs });
+      setDegradeConfig(config);
+
+      // If matrix says list-only, auto-switch the degraded fallback to list.
+      if (config.mode === "list-only") {
+        setFallbackView("list");
+      }
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totalNodeCount]); // re-evaluate when totalNodeCount resolves from server
+
+  // Effective render mode accounting for user opt-in override.
+  const effectiveDegradeConfig: DegradeConfig | null = degradeConfig
+    ? (optInOverride && degradeConfig.mode === "opt-in-warning"
+        ? { ...degradeConfig, mode: "static-forced" as const }
+        : degradeConfig)
+    : null;
+
+  // True when the degrade matrix mandates skipping the canvas entirely.
+  const isDegradeListOnly =
+    effectiveDegradeConfig !== null &&
+    effectiveDegradeConfig.mode === "list-only";
+
+  // -------------------------------------------------------------------------
   // P4-08: Static / dynamic mode
   //
   // Default: static (respects prefers-reduced-motion: reduce).
   // URL param: mode=static|dynamic
+  // (prefersReducedMotion state is declared earlier, before the keyboard handler.)
   // -------------------------------------------------------------------------
-  const prefersReducedMotion =
-    typeof window !== "undefined"
-      ? window.matchMedia("(prefers-reduced-motion: reduce)").matches
-      : true;
-
   const [graphMode, setGraphMode] = useState<GraphMode>(() => {
     // Hydrate from URL on first mount
     if (typeof window === "undefined") return "static";
@@ -1725,6 +2024,14 @@ export function VaultGraphPageClient() {
     if (state.mode === "dynamic" && !prefersReducedMotion) return "dynamic";
     return "static";
   });
+
+  // P5-07: If the user enables reduced-motion mid-session, immediately force
+  // the graph back to static mode (complements the init-time gate above).
+  useEffect(() => {
+    if (prefersReducedMotion && graphMode === "dynamic") {
+      setGraphMode("static");
+    }
+  }, [prefersReducedMotion, graphMode]);
 
   // Auto-snapshot: capture layout to layoutCache after 5s idle in dynamic→static
   const idleSnapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1750,6 +2057,7 @@ export function VaultGraphPageClient() {
       } else {
         // Stop FA2 + schedule idle snapshot in 5s
         fa2WorkerRef.current?.stop();
+        announce(`Graph layout complete. ${displayNodes.length} nodes positioned.`);
         idleSnapshotTimerRef.current = setTimeout(() => {
           // Positions are already in sigma/graphology; sigma.refresh() persists them
           sigmaRef.current?.refresh();
@@ -1797,12 +2105,12 @@ export function VaultGraphPageClient() {
     const displayData = sigma.getNodeDisplayData(targetId);
     if (displayData) {
       const reducedMotion = prefersReducedMotion;
-      if (reducedMotion) {
+      if (reducedMotion || slowFrame) {
         sigma.getCamera().setState({ x: displayData.x, y: displayData.y, ratio: 0.5 });
       } else {
         sigma.getCamera().animate(
           { x: displayData.x, y: displayData.y, ratio: 0.5 },
-          { duration: 400 },
+          { duration: ANIMATION_TIMINGS.cameraJump.durationMs },
         );
       }
     }
@@ -1832,6 +2140,16 @@ export function VaultGraphPageClient() {
   // P4-04: Multi-select state + rubber-band lasso
   // -------------------------------------------------------------------------
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+
+  // P5-06: announce multi-select count changes (defer to next tick to batch rapid lasso updates).
+  useEffect(() => {
+    if (selectedNodeIds.size > 0) {
+      const id = setTimeout(() => {
+        announce(`${selectedNodeIds.size} nodes selected.`);
+      }, 0);
+      return () => clearTimeout(id);
+    }
+  }, [selectedNodeIds.size, announce]);
 
   // Lasso state
   const [lasso, setLasso] = useState<{
@@ -1937,11 +2255,11 @@ export function VaultGraphPageClient() {
         return selected;
       });
 
-      // Apply amber ring to selected nodes
+      // Apply selection ring to selected nodes (P5-08: via paletteRef for palette-awareness)
       if (selected.size > 0) {
         sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
           if (selected.has(nodeId)) {
-            return { ...data, borderColor: "#d97706", borderSize: 3 };
+            return { ...data, borderColor: paletteRef.current.selection_ring, borderSize: 3 };
           }
           return data;
         });
@@ -1954,7 +2272,8 @@ export function VaultGraphPageClient() {
   );
 
   // -------------------------------------------------------------------------
-  // P4-05: Context menu state
+  // P4-05 / P5-01: Context menu state — declared here (before P5-01 gesture
+  // handlers) because handleGesturePointerDown fires setContextMenu on long-press.
   // -------------------------------------------------------------------------
   const [contextMenu, setContextMenu] = useState<{
     x: number;
@@ -1962,12 +2281,307 @@ export function VaultGraphPageClient() {
     nodeId: string;
   } | null>(null);
 
-  const handleContextMenuAction = {
-    onFocusMode: useCallback((mode: UrlFocusMode, nodeId: string) => {
+  // -------------------------------------------------------------------------
+  // P5-01: Touch gesture state — two-finger pan, pinch-zoom, double-tap,
+  //        long-press → context menu, long-press + drag → lasso start.
+  //
+  // One handler set using PointerEvent API (covers both mouse and touch).
+  // Touch-specific branches are gated on navigator.maxTouchPoints > 0 or
+  // pointer.pointerType === "touch" where the spec requires touch-only behavior.
+  //
+  // Gesture map (interaction spec §10):
+  //   Two-finger pan   → simultaneously move 2 touch points → camera pan
+  //   Pinch/spread     → 2-finger pinch → camera zoom in/out
+  //   Single tap node  → select + popover (handled by sigma clickNode)
+  //   Single tap empty → deselect (handled by sigma clickStage + P5-04)
+  //   Double tap node  → k-hop focus k=2 (2 taps within 300ms)
+  //   Double tap label → expand cluster (2 taps within 300ms on label)
+  //   Long press 200ms → context menu (no >4px move)
+  //   Long press+drag  → rubber-band selection (lasso; reuses P4-04 lasso)
+  // -------------------------------------------------------------------------
+
+  // Active pointers for multi-touch tracking.
+  const activePointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+
+  // Two-finger gesture state (pan + pinch).
+  const twoFingerStateRef = useRef<{
+    prevMidX: number;
+    prevMidY: number;
+    prevDist: number;
+  } | null>(null);
+
+  // Double-tap state: track last tap time + node for each touch point.
+  const lastTapRef = useRef<{
+    time: number;
+    nodeId: string | null;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  // Long press timer handle.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Whether a long press has already fired (to avoid retriggering on move).
+  const longPressFiredRef = useRef(false);
+
+  // The node under the pointer at long-press-start.
+  const longPressNodeRef = useRef<string | null>(null);
+
+  // Whether the pointer has moved more than 4px since down (cancels long press).
+  const longPressMoveRef = useRef<{ startX: number; startY: number }>({ startX: 0, startY: 0 });
+
+  /**
+   * Find the closest graphology node to a viewport coordinate using hitRadius.
+   * Returns the node ID or null if no node is within its hitRadius.
+   */
+  const findNodeAtViewport = useCallback(
+    (vx: number, vy: number): string | null => {
+      if (!sigmaRef.current) return null;
+      const sigma = sigmaRef.current;
+      const graph = sigma.getGraph?.();
+      if (!graph) return null;
+
+      const graphCoord = sigma.viewportToGraph({ x: vx, y: vy });
+      let hitNode: string | null = null;
+      let minDist = Infinity;
+
+      graph.forEachNode((nodeId: string, attrs: Record<string, unknown>) => {
+        if (attrs.hidden) return;
+        const displayData = sigma.getNodeDisplayData(nodeId);
+        if (!displayData) return;
+        const dx = displayData.x - graphCoord.x;
+        const dy = displayData.y - graphCoord.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const radius =
+          isTouchDevice && typeof attrs.hitRadius === "number"
+            ? attrs.hitRadius
+            : (attrs.size as number ?? 5);
+        if (dist <= radius && dist < minDist) {
+          minDist = dist;
+          hitNode = nodeId;
+        }
+      });
+      return hitNode;
+    },
+    [isTouchDevice],
+  );
+
+  /**
+   * Trigger the k-hop focus (k=2) on a given node — equivalent to the
+   * "double tap on node" gesture from §10.
+   */
+  const triggerKHopFocus = useCallback(
+    (nodeId: string) => {
       setFocusedArtifactId(nodeId);
       const node = displayNodes.find((n) => n.id === nodeId);
       setFocusedArtifactTitle(node?.title ?? null);
-    }, [displayNodes, setFocusedArtifactId, setFocusedArtifactTitle]),
+      announce(`Focus mode entered from ${node?.title ?? nodeId}. K-hop neighborhood highlighted.`);
+    },
+    [displayNodes, setFocusedArtifactId, setFocusedArtifactTitle, announce],
+  );
+
+  // Touch-gesture pointer down handler (extends the existing lasso pointerDown).
+  const handleGesturePointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      // Track all active pointers.
+      activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+      const pointerCount = activePointersRef.current.size;
+
+      // ── Two-finger gesture start ─────────────────────────────────────────
+      if (pointerCount === 2) {
+        // Cancel any pending long press when a second finger lands.
+        if (longPressTimerRef.current) {
+          clearTimeout(longPressTimerRef.current);
+          longPressTimerRef.current = null;
+        }
+        // Cancel lasso — two-finger gesture takes priority.
+        setLasso(null);
+
+        const pts = Array.from(activePointersRef.current.values());
+        const [a, b] = pts;
+        twoFingerStateRef.current = {
+          prevMidX: (a.x + b.x) / 2,
+          prevMidY: (a.y + b.y) / 2,
+          prevDist: Math.hypot(b.x - a.x, b.y - a.y),
+        };
+        return;
+      }
+
+      // ── Single pointer down ──────────────────────────────────────────────
+      if (pointerCount === 1) {
+        longPressFiredRef.current = false;
+        longPressMoveRef.current = { startX: e.clientX, startY: e.clientY };
+
+        // Find node under pointer for long press / double tap use.
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        const vx = rect ? e.clientX - rect.left : e.clientX;
+        const vy = rect ? e.clientY - rect.top : e.clientY;
+        const nodeAtPointer = findNodeAtViewport(vx, vy);
+        longPressNodeRef.current = nodeAtPointer;
+
+        // Start long press timer (200ms).
+        longPressTimerRef.current = setTimeout(() => {
+          if (longPressFiredRef.current) return;
+          longPressFiredRef.current = true;
+
+          const nodeId = longPressNodeRef.current;
+          if (nodeId) {
+            // Long press on node → open context menu (§10).
+            setContextMenu({ x: e.clientX, y: e.clientY, nodeId });
+          }
+          // Long press + drag: start lasso (user must then drag).
+          // The lasso itself is started by the existing pointerDown lasso logic
+          // when the pointer moves. We just set the flag; actual lasso activation
+          // happens in handleCanvasPointerMove once movement > 5px threshold.
+        }, 200);
+      }
+    },
+    [findNodeAtViewport],
+  );
+
+  const handleGesturePointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      // Update tracked position.
+      if (activePointersRef.current.has(e.pointerId)) {
+        activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      }
+
+      const pointerCount = activePointersRef.current.size;
+
+      // ── Two-finger pan + pinch ───────────────────────────────────────────
+      if (pointerCount === 2 && twoFingerStateRef.current && sigmaRef.current) {
+        const pts = Array.from(activePointersRef.current.values());
+        const [a, b] = pts;
+
+        const midX = (a.x + b.x) / 2;
+        const midY = (a.y + b.y) / 2;
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+
+        const { prevMidX, prevMidY, prevDist } = twoFingerStateRef.current;
+
+        const camera = sigmaRef.current.getCamera();
+        const state = camera.getState();
+
+        // Pan: translate camera by the midpoint delta (in graph coordinates).
+        // sigma's camera ratio maps viewport px to graph units:
+        // graphDelta = viewportDelta * ratio (approximate, ignores angle).
+        const dxViewport = midX - prevMidX;
+        const dyViewport = midY - prevMidY;
+        const graphDxRaw = dxViewport * state.ratio;
+        const graphDyRaw = dyViewport * state.ratio;
+
+        // Pinch: adjust ratio proportionally to distance change.
+        const pinchScale = prevDist > 0 ? prevDist / dist : 1;
+        const newRatio = Math.max(
+          camera.getBoundaries?.()?.minCameraRatio ?? 0.05,
+          Math.min(camera.getBoundaries?.()?.maxCameraRatio ?? 20, state.ratio * pinchScale),
+        );
+
+        camera.setState({
+          x: state.x - graphDxRaw,
+          y: state.y - graphDyRaw,
+          ratio: newRatio,
+        });
+
+        twoFingerStateRef.current = { prevMidX: midX, prevMidY: midY, prevDist: dist };
+        return;
+      }
+
+      // ── Single pointer — cancel long press if moved >4px ─────────────────
+      if (pointerCount === 1 && !longPressFiredRef.current) {
+        const { startX, startY } = longPressMoveRef.current;
+        const dx = Math.abs(e.clientX - startX);
+        const dy = Math.abs(e.clientY - startY);
+        if (dx > 4 || dy > 4) {
+          if (longPressTimerRef.current) {
+            clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
+          }
+        }
+      }
+    },
+    [],
+  );
+
+  const handleGesturePointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      activePointersRef.current.delete(e.pointerId);
+      const remaining = activePointersRef.current.size;
+
+      // Clear long press timer on pointer up.
+      if (longPressTimerRef.current) {
+        clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+      }
+
+      // Reset two-finger state when a finger lifts.
+      if (remaining < 2) {
+        twoFingerStateRef.current = null;
+      }
+
+      // Long press fired: don't interpret as tap or double tap.
+      if (longPressFiredRef.current) {
+        longPressFiredRef.current = false;
+        return;
+      }
+
+      // ── Double-tap detection (300ms window) ──────────────────────────────
+      if (e.pointerType === "touch") {
+        const rect = canvasContainerRef.current?.getBoundingClientRect();
+        const vx = rect ? e.clientX - rect.left : e.clientX;
+        const vy = rect ? e.clientY - rect.top : e.clientY;
+        const nodeAtPointer = findNodeAtViewport(vx, vy);
+
+        const now = Date.now();
+        const last = lastTapRef.current;
+
+        if (last && now - last.time <= 300) {
+          // Double tap detected.
+          if (nodeAtPointer && nodeAtPointer === last.nodeId) {
+            // Double tap on node → k-hop focus k=2.
+            triggerKHopFocus(nodeAtPointer);
+          } else if (!nodeAtPointer) {
+            // Double tap on empty canvas → check if near a cluster label.
+            // Cluster label expand is handled by the existing ClusterHalos
+            // onClick which fires on the HTML overlay div; we don't duplicate
+            // that here. If no label is found, just deselect.
+            setPopover(null);
+          }
+          lastTapRef.current = null; // Reset after double-tap consumed.
+          return;
+        }
+
+        // Record this tap for the next double-tap check.
+        lastTapRef.current = {
+          time: now,
+          nodeId: nodeAtPointer,
+          x: e.clientX,
+          y: e.clientY,
+        };
+
+        // Clear the stale tap record after the 300ms window expires.
+        setTimeout(() => {
+          if (lastTapRef.current?.time === now) {
+            lastTapRef.current = null;
+          }
+        }, 310);
+      }
+    },
+    [findNodeAtViewport, triggerKHopFocus],
+  );
+
+  // -------------------------------------------------------------------------
+  // P4-05: Context menu action handlers
+  // (contextMenu state declared in P4-05/P5-01 section above)
+  // -------------------------------------------------------------------------
+  const handleContextMenuAction = {
+    onFocusMode: useCallback((_mode: UrlFocusMode, nodeId: string) => {
+      setFocusedArtifactId(nodeId);
+      const node = displayNodes.find((n) => n.id === nodeId);
+      setFocusedArtifactTitle(node?.title ?? null);
+      announce(`Focus mode entered from ${node?.title ?? nodeId}. K-hop neighborhood highlighted.`);
+    }, [displayNodes, setFocusedArtifactId, setFocusedArtifactTitle, announce]),
 
     onAddToFocus: useCallback((nodeId: string) => {
       setSelectedNodeIds((prev) => {
@@ -2038,6 +2652,258 @@ export function VaultGraphPageClient() {
     return () => document.removeEventListener("keydown", handler);
   }, [searchOpen]);
 
+  // -------------------------------------------------------------------------
+  // P5-05: Window-level keyboard handler for WCAG a11y navigation (§9).
+  //
+  // Placed after all state declarations (selectedNodeIds, router, etc.) so
+  // there are no forward-reference errors. Runs on window so it intercepts
+  // keys regardless of which element has DOM focus, but immediately returns
+  // if a text field is active or if the canvas/kb-focus conditions aren't met.
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    const GROUPING_ORDER: import("@/lib/graph/groupingModes").GroupingMode[] = [
+      "none",
+      "workspace",
+      "artifact_type",
+      "project",
+      "domain",
+      "lens_cluster",
+      "temporal",
+      "semantic_cluster",
+    ];
+
+    function handler(e: globalThis.KeyboardEvent) {
+      // Never swallow input in text fields.
+      const active = document.activeElement;
+      if (
+        active &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          (active as HTMLElement).isContentEditable)
+      ) {
+        return;
+      }
+
+      const canvasHasFocus =
+        canvasContainerRef.current !== null &&
+        (canvasContainerRef.current === document.activeElement ||
+          canvasContainerRef.current.contains(document.activeElement));
+      const hasKbFocus = keyboardFocusedRef.current !== null;
+
+      switch (e.key) {
+        // ---- Tab / Shift-Tab: cycle through tabOrder ----------------------
+        case "Tab": {
+          if (!canvasHasFocus && !hasKbFocus) return;
+          if (tabOrder.length === 0) return;
+          e.preventDefault();
+          const cur = tabOrder.indexOf(keyboardFocusedRef.current ?? "");
+          const dir = e.shiftKey ? -1 : 1;
+          const next = (cur + dir + tabOrder.length) % tabOrder.length;
+          setKeyboardFocusedNodeId(tabOrder[next] ?? null);
+          break;
+        }
+
+        // ---- Arrow keys: neighbor traversal when a node has KB focus ------
+        case "ArrowUp":
+        case "ArrowDown":
+        case "ArrowLeft":
+        case "ArrowRight": {
+          if (!hasKbFocus) return; // fall through to existing camera-pan handler
+          const sigma = sigmaRef.current;
+          if (!sigma) return;
+          const graphInstance = sigma.getGraph?.();
+          if (!graphInstance) return;
+          const cur = keyboardFocusedRef.current!;
+          if (!graphInstance.hasNode(cur)) return;
+          const neighbors: string[] = graphInstance.neighbors(cur);
+          if (neighbors.length === 0) { e.preventDefault(); break; }
+          const curDisplay = sigma.getNodeDisplayData(cur);
+          if (!curDisplay) { e.preventDefault(); break; }
+          let best: string | null = null;
+          let bestScore = -Infinity;
+          for (const nbId of neighbors) {
+            const nd = sigma.getNodeDisplayData(nbId);
+            if (!nd) continue;
+            const dx = nd.x - curDisplay.x;
+            const dy = nd.y - curDisplay.y;
+            let score: number;
+            if (e.key === "ArrowRight") score = dx;
+            else if (e.key === "ArrowLeft") score = -dx;
+            else if (e.key === "ArrowUp") score = -dy;
+            else score = dy; // ArrowDown
+            if (score > bestScore) { bestScore = score; best = nbId; }
+          }
+          if (best !== null) setKeyboardFocusedNodeId(best);
+          e.preventDefault();
+          break;
+        }
+
+        // ---- Space: toggle popover for KB-focused node --------------------
+        case " ": {
+          if (!hasKbFocus) return;
+          e.preventDefault();
+          const kbNodeId = keyboardFocusedRef.current!;
+          const sigma2 = sigmaRef.current;
+          if (sigma2) {
+            const dd = sigma2.getNodeDisplayData(kbNodeId);
+            const kbNode = displayNodes.find((n) => n.id === kbNodeId);
+            if (dd && kbNode) {
+              if (popover?.nodeId === kbNodeId) {
+                setPopover(null);
+              } else {
+                setPopover({
+                  nodeId: kbNodeId,
+                  x: dd.x,
+                  y: dd.y,
+                  title: kbNode.title,
+                  artifactType: kbNode.artifact_type,
+                  workspace: kbNode.workspace,
+                  updatedAt: kbNode.updated_at ?? null,
+                });
+              }
+            }
+          }
+          break;
+        }
+
+        // ---- Enter: navigate to artifact detail ---------------------------
+        case "Enter": {
+          if (!hasKbFocus) return;
+          e.preventDefault();
+          router.push(`/artifacts/${keyboardFocusedRef.current}`);
+          break;
+        }
+
+        // ---- Escape: priority chain ---------------------------------------
+        case "Escape": {
+          if (popover !== null) {
+            e.preventDefault();
+            setPopover(null);
+          } else if (focusedArtifactId !== null) {
+            e.preventDefault();
+            setFocusedArtifactId(null);
+            setFocusedArtifactTitle(null);
+          } else if (selectedNodeIds.size > 0) {
+            e.preventDefault();
+            setSelectedNodeIds(new Set());
+          } else if (hasKbFocus) {
+            e.preventDefault();
+            setKeyboardFocusedNodeId(null);
+          }
+          break;
+        }
+
+        // ---- f/F: toggle neighborhood focus for KB-focused node ----------
+        case "f":
+        case "F": {
+          if (!hasKbFocus) return;
+          e.preventDefault();
+          const kbNodeId2 = keyboardFocusedRef.current!;
+          if (focusedArtifactId === kbNodeId2) {
+            setFocusedArtifactId(null);
+            setFocusedArtifactTitle(null);
+          } else {
+            const kbNode2 = displayNodes.find((n) => n.id === kbNodeId2);
+            setFocusedArtifactId(kbNodeId2);
+            setFocusedArtifactTitle(kbNode2?.title ?? null);
+          }
+          break;
+        }
+
+        // ---- Cmd-A / Ctrl-A: select all ----------------------------------
+        case "a":
+        case "A": {
+          if (!(e.metaKey || e.ctrlKey)) return;
+          if (!canvasHasFocus && !hasKbFocus) return;
+          e.preventDefault();
+          setSelectedNodeIds(new Set(displayNodes.map((n) => n.id)));
+          break;
+        }
+
+        // ---- Zoom: +/= in; -/_ out; 0 fit view --------------------------
+        case "+":
+        case "=": {
+          if (!canvasHasFocus && !hasKbFocus) return;
+          e.preventDefault();
+          const cam = sigmaRef.current?.getCamera();
+          if (cam) {
+            if (prefersReducedMotion) {
+              cam.setState({ ratio: cam.getState().ratio / 1.5 });
+            } else {
+              cam.animate({ ratio: cam.getState().ratio / 1.5 }, { duration: 150 });
+            }
+          }
+          break;
+        }
+        case "-":
+        case "_": {
+          if (!canvasHasFocus && !hasKbFocus) return;
+          e.preventDefault();
+          const cam2 = sigmaRef.current?.getCamera();
+          if (cam2) {
+            if (prefersReducedMotion) {
+              cam2.setState({ ratio: cam2.getState().ratio * 1.5 });
+            } else {
+              cam2.animate({ ratio: cam2.getState().ratio * 1.5 }, { duration: 150 });
+            }
+          }
+          break;
+        }
+        case "0": {
+          if (!canvasHasFocus && !hasKbFocus) return;
+          e.preventDefault();
+          if (prefersReducedMotion) {
+            sigmaRef.current?.getCamera().setState({ x: 0, y: 0, ratio: 1, angle: 0 });
+          } else {
+            sigmaRef.current?.getCamera().animate({ x: 0, y: 0, ratio: 1, angle: 0 }, { duration: 300 });
+          }
+          sigmaRef.current?.refresh();
+          break;
+        }
+
+        // ---- p/P: open saved views (best-effort via trigger click) -------
+        case "p":
+        case "P": {
+          if (!canvasHasFocus && !hasKbFocus) return;
+          e.preventDefault();
+          // SavedViewsMenu is an uncontrolled Radix DropdownMenu; opening
+          // programmatically is not supported. Best-effort: click its trigger
+          // button via data-testid (requires SavedViewsMenu to expose that attr).
+          (document.querySelector("[data-testid='saved-views-trigger']") as HTMLElement | null)?.click();
+          break;
+        }
+
+        // ---- g/G: cycle grouping mode ------------------------------------
+        case "g":
+        case "G": {
+          if (!canvasHasFocus && !hasKbFocus) return;
+          e.preventDefault();
+          const curGIdx = GROUPING_ORDER.indexOf(groupingMode);
+          const nextGMode = GROUPING_ORDER[(curGIdx + 1) % GROUPING_ORDER.length] ?? "none";
+          setGroupingMode(nextGMode);
+          break;
+        }
+
+        default:
+          break;
+      }
+    }
+
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [
+    tabOrder,
+    displayNodes,
+    popover,
+    focusedArtifactId,
+    selectedNodeIds,
+    groupingMode,
+    setGroupingMode,
+    router,
+    setFocusedArtifactTitle,
+    prefersReducedMotion,
+  ]);
+
   // P4-03: Handle search result selection
   const handleSearchResultSelect = useCallback(
     (result: GraphSearchResult) => {
@@ -2056,19 +2922,19 @@ export function VaultGraphPageClient() {
         const sigma = sigmaRef.current;
         const displayData = sigma.getNodeDisplayData(result.id);
         if (displayData) {
-          if (prefersReducedMotion) {
+          if (prefersReducedMotion || slowFrame) {
             sigma.getCamera().setState({ x: displayData.x, y: displayData.y, ratio: 0.5 });
           } else {
             sigma.getCamera().animate(
               { x: displayData.x, y: displayData.y, ratio: 0.5 },
-              { duration: 400 },
+              { duration: ANIMATION_TIMINGS.cameraJump.durationMs },
             );
           }
         }
-        // Apply amber ring to matched node
+        // Apply selection ring to matched node (P5-08: via paletteRef for palette-awareness)
         sigma.setSetting("nodeReducer", (nodeId: string, data: Record<string, unknown>) => {
           if (nodeId === result.id) {
-            return { ...data, borderColor: "#d97706", borderSize: 3 };
+            return { ...data, borderColor: paletteRef.current.selection_ring, borderSize: 3 };
           }
           return data;
         });
@@ -2110,6 +2976,9 @@ export function VaultGraphPageClient() {
 
   function handleResetView() {
     resetAllFilters();
+    announce(
+      `All filters cleared. Showing ${displayNodes.length} nodes, ${displayEdges.length} edges.`,
+    );
     setGraphMode("static");
     setFocusedArtifactId(null);
     setFocusedArtifactTitle(null);
@@ -2202,9 +3071,11 @@ export function VaultGraphPageClient() {
 
   // -------------------------------------------------------------------------
   // Currently focused node label (for screen-reader live region)
+  // P5-05: prefer keyboardFocusedNodeId (degree-sorted Tab nav) over the
+  // legacy focusedNodeId (P3-10 camera-pan tab).
   // -------------------------------------------------------------------------
-  const currentFocusedNode = focusedNodeId
-    ? nodeList.find((n) => n.id === focusedNodeId)
+  const currentFocusedNode = (keyboardFocusedNodeId ?? focusedNodeId)
+    ? nodeList.find((n) => n.id === (keyboardFocusedNodeId ?? focusedNodeId))
     : null;
 
   // -------------------------------------------------------------------------
@@ -2277,6 +3148,12 @@ export function VaultGraphPageClient() {
         viewDescription={`${graphMode} mode · ${activeFilterCount > 0 ? `${activeFilterCount} filter${activeFilterCount !== 1 ? "s" : ""} active` : "no filters"}`}
       />
 
+      {/* P5-11: Onboarding overlay — first-visit hint dialog (§15) */}
+      <GraphOnboardingOverlay
+        open={onboardingOpen}
+        onOpenChange={(o) => (o ? openOverlay() : dismissOverlay())}
+      />
+
       {/* P4-04: Lasso selection rectangle overlay (fixed, pointer-events:none) */}
       {lassoRect && (
         <div
@@ -2295,16 +3172,27 @@ export function VaultGraphPageClient() {
         />
       )}
 
-      {/* Mobile filter drawer */}
-      <MobileFilterDrawer
-        isOpen={mobileFiltersOpen}
-        onClose={() => setMobileFiltersOpen(false)}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodeTypesChange={setNodeTypes}
-        onEdgeTypesChange={setEdgeTypes}
-        onClearAll={clearFilters}
-      />
+      {/* P5-02: Mobile bottom-sheet filter panel (<768px) */}
+      <GraphFilterSheet
+        open={mobileFiltersOpen}
+        onOpenChangeAction={setMobileFiltersOpen}
+        activeFilterCount={activeFilterCount}
+      >
+        <FilterPanelContent
+          searchValue={graphFilterValues.q}
+          onSearchChange={(q) => setGraphFilter({ q })}
+          activeFilterCount={activeFilterCount}
+          onClearAll={handleOverlayClearAll}
+          isFilterPending={isFilterPending}
+          onApplyPreset={(partial) => setGraphFilter(partial)}
+        >
+          <GraphFilters
+            values={graphFilterValues}
+            onChange={(next) => setGraphFilter(next)}
+            options={filterOptions}
+          />
+        </FilterPanelContent>
+      </GraphFilterSheet>
 
       {/* ------------------------------------------------------------------ */}
       {/* Breadcrumb + page header (P3-01)                                    */}
@@ -2440,7 +3328,8 @@ export function VaultGraphPageClient() {
             onOpenChange={setSidebarOpen}
             searchValue={graphFilterValues.q}
             onSearchChange={(q) => setGraphFilter({ q })}
-            onClearAll={resetAllFilters}
+            onClearAll={handleOverlayClearAll}
+            onApplyPreset={(partial) => setGraphFilter(partial)}
             // v2.1 legacy props — retained for FilterSidebar compat; the actual
             // filtering is now driven by useGraphFilterState server dims.
             nodeTypes={nodeTypes}
@@ -2497,6 +3386,21 @@ export function VaultGraphPageClient() {
                 onColorModeChange={setColorMode}
                 onSizeModeChange={setSizeMode}
               />
+              {/* P5-08: Graph settings (palette toggle) */}
+              <GraphSettingsMenu />
+              {/* P5-11: Onboarding tips re-open button */}
+              <button
+                type="button"
+                aria-label="Show graph onboarding tips"
+                onClick={openOverlay}
+                className={cn(
+                  "flex items-center justify-center rounded-md border px-2 py-1 text-xs font-medium",
+                  "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                <HelpCircle aria-hidden="true" className="size-3.5" />
+              </button>
               {/* P3-09: Grouping selector */}
               <GraphGroupingSelector
                 mode={groupingMode}
@@ -2650,8 +3554,21 @@ export function VaultGraphPageClient() {
             />
           )}
 
-          {/* Graph canvas — shown when view is "graph" or neighborhood mode */}
-          {(!degraded || isNeighborhoodMode || fallbackView === "graph") && (
+          {/* P5-03: Opt-in warning banner — shown before canvas when matrix = opt-in-warning */}
+          {effectiveDegradeConfig?.mode === "opt-in-warning" && !optInOverride && !isNeighborhoodMode && (
+            <OptInWarningBanner
+              nodeCount={totalNodeCount}
+              onShowList={() => setFallbackView("list")}
+              onTryGraph={() => setOptInOverride(true)}
+            />
+          )}
+
+          {/* Graph canvas — shown when view is "graph" or neighborhood mode,
+              AND not blocked by the auto-degrade list-only matrix result,
+              AND not waiting for opt-in confirmation on a slow device */}
+          {(!degraded || isNeighborhoodMode || fallbackView === "graph") &&
+            !isDegradeListOnly &&
+            (effectiveDegradeConfig?.mode !== "opt-in-warning" || optInOverride) && (
             <>
               {/* Error state (fetch error or WebGL context loss on sigma) */}
               {(isError && error) || sigmaContextLost ? (
@@ -2699,7 +3616,11 @@ export function VaultGraphPageClient() {
                     // place @cosmos.gl/graph in a separate split chunk.
                     // ----------------------------------------------------------------
                     <div
-                      className="relative flex-1 min-h-[400px] rounded-lg border bg-slate-900 overflow-hidden"
+                      className={cn(
+                        "relative flex-1 min-h-[400px] rounded-lg border bg-slate-900 overflow-hidden",
+                        // P5-02: dim canvas while mobile filter sheet is open
+                        mobileFiltersOpen && "opacity-50 pointer-events-none",
+                      )}
                       aria-label={`GPU-accelerated knowledge graph with ${displayNodes.length.toLocaleString()} nodes. Extreme-scale renderer active (>${EXTREME_SCALE_THRESHOLD.toLocaleString()} nodes).`}
                       role="img"
                     >
@@ -2740,22 +3661,43 @@ export function VaultGraphPageClient() {
                         </div>
 
                         {/*
-                         * P4-04: The graph canvas uses role="img" with a descriptive aria-label
-                         * and is focusable (tabIndex=0). When focused, Tab cycles through nodes
-                         * (handled in handleKeyDown), arrow keys pan, +/- zoom, Enter opens,
-                         * Escape closes the popover. Focus ring is provided by focus-visible:ring-2.
+                         * P4-04: The graph canvas uses role="application" (P5-05 upgrade from
+                         * role="img") with a descriptive aria-label and is focusable (tabIndex=0).
+                         * When focused, Tab cycles through nodes by degree (handled in window
+                         * keydown handler), arrow keys traverse neighbors, Space toggles popover,
+                         * Enter navigates to artifact detail, Escape handles priority chain.
+                         * Focus ring is provided by focus-visible:ring-2.
                          * Interactive controls outside this div (zoom buttons, filters, pagination)
                          * remain in the normal Tab order and are NOT intercepted.
                          */}
                         <div
                           ref={canvasContainerRef}
-                          role="img"
-                          aria-label={`Knowledge graph with ${displayNodes.length} nodes and ${displayEdges.length} edges. Use Tab to cycle nodes, arrow keys to pan, plus/minus to zoom, Enter to open detail.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
+                          role="application"
+                          aria-label={`Knowledge graph — ${displayNodes.length} nodes visible. Tab to cycle nodes by degree, arrow keys to traverse neighbors, Space to open popover, Enter for detail, Escape to dismiss.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
                           tabIndex={0}
                           onKeyDown={handleKeyDown}
-                          onPointerDown={handleCanvasPointerDown}
-                          onPointerMove={handleCanvasPointerMove}
-                          onPointerUp={handleCanvasPointerUp}
+                          onPointerDown={(e) => {
+                            // P5-01: gesture handler runs first (tracks pointers, starts long-press timer).
+                            handleGesturePointerDown(e);
+                            // P4-04: lasso handler runs for single-pointer drags.
+                            if (activePointersRef.current.size <= 1) {
+                              handleCanvasPointerDown(e);
+                            }
+                          }}
+                          onPointerMove={(e) => {
+                            // P5-01: gesture handler (two-finger pan/pinch, long-press cancel).
+                            handleGesturePointerMove(e);
+                            // P4-04: lasso tracking (single pointer only).
+                            if (activePointersRef.current.size <= 1) {
+                              handleCanvasPointerMove(e);
+                            }
+                          }}
+                          onPointerUp={(e) => {
+                            // P5-01: gesture handler (double-tap, long-press cleanup).
+                            handleGesturePointerUp(e);
+                            // P4-04: lasso completion.
+                            handleCanvasPointerUp(e);
+                          }}
                           onContextMenu={(e) => {
                             // P4-05: context menu on right-click
                             e.preventDefault();
@@ -2789,6 +3731,8 @@ export function VaultGraphPageClient() {
                           className={cn(
                             "relative flex-1 min-h-[400px] rounded-lg border bg-muted/10 overflow-hidden",
                             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                            // P5-02: dim canvas to 50% opacity while mobile filter sheet is open
+                            mobileFiltersOpen && "opacity-50 pointer-events-none",
                           )}
                         >
                           <SigmaContainer
@@ -2814,7 +3758,7 @@ export function VaultGraphPageClient() {
                               nodes={displayNodes}
                               focusedNodeId={focusedNodeId}
                               onHover={setTooltip}
-                              onSelect={setPopover}
+                              onSelect={handleSelectPopover}
                               onSigmaReady={handleSigmaReady}
                               filterValues={graphFilterValues}
                               searchQuery={graphFilterValues.q}
@@ -2822,6 +3766,8 @@ export function VaultGraphPageClient() {
                               groupingMode={groupingMode}
                               onExpandCluster={expandCluster}
                               onFa2WorkerReady={handleFa2WorkerReady}
+                              touchHitRadius={isTouchDevice}
+                              prefersReducedMotion={prefersReducedMotion}
                             />
                           </SigmaContainer>
 

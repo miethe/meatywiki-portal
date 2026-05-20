@@ -30,6 +30,8 @@
 
 import { Suspense } from "react";
 import dynamic from "next/dynamic";
+import { PaletteProvider } from "@/lib/graph/palette-context";
+import { GraphAriaLive } from "@/components/graph/GraphAriaLive";
 
 // Dynamic import for the client-only graph inner component
 const VaultGraphPageClient = dynamic(
@@ -72,8 +74,12 @@ const VaultGraphPageClient = dynamic(
 
 export default function VaultGraphPage() {
   return (
-    <Suspense>
-      <VaultGraphPageClient />
-    </Suspense>
+    <PaletteProvider>
+      <GraphAriaLive>
+        <Suspense>
+          <VaultGraphPageClient />
+        </Suspense>
+      </GraphAriaLive>
+    </PaletteProvider>
   );
 }

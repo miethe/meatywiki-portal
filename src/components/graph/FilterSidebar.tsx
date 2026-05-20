@@ -30,9 +30,11 @@
  */
 
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { SlidersHorizontal, ChevronLeft, ChevronRight, X, Search } from "lucide-react";
+import { SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { GraphNodeType, GraphEdgeType } from "@/types/graph";
+import { FilterPanelContent } from "./FilterPanelContent";
+import type { GraphFiltersValues } from "./GraphFilters";
 
 // ---------------------------------------------------------------------------
 // useFilterSidebarDefault — SSR-safe breakpoint hook
@@ -154,6 +156,12 @@ export interface FilterSidebarProps {
   onClearAll?: () => void;
   /** @deprecated v2.1 — has no effect in v2.2; use breakpoint hook instead. */
   alwaysVisible?: boolean;
+  /**
+   * Called when the user clicks a quick-start preset card (P5-11).
+   * Forwarded to FilterPanelContent; preset cards are shown when
+   * activeFilterCount === 0.
+   */
+  onApplyPreset?: (partial: Partial<GraphFiltersValues>) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -244,6 +252,7 @@ export function FilterSidebar({
   nodeTypes,
   edgeTypes,
   onClearAll,
+  onApplyPreset,
 }: FilterSidebarProps) {
   const contentId = useId();
   const sidebarRef = useRef<HTMLElement>(null);
@@ -354,45 +363,15 @@ export function FilterSidebar({
             </button>
           </div>
 
-          {/* Free-text search input (dim 16 — always visible per filter contract §10) */}
-          {onSearchChange !== undefined && (
-            <div className="shrink-0 border-b px-3 py-2">
-              <div className="relative flex items-center">
-                <Search
-                  aria-hidden="true"
-                  className="absolute left-2.5 size-3.5 text-muted-foreground/60 pointer-events-none"
-                />
-                <input
-                  type="search"
-                  value={searchValue ?? ""}
-                  onChange={(e) => onSearchChange(e.target.value)}
-                  placeholder="Search nodes…"
-                  aria-label="Search nodes in graph"
-                  className={cn(
-                    "w-full rounded-md border border-input bg-background",
-                    "py-1.5 pl-8 pr-3 text-xs",
-                    "placeholder:text-muted-foreground/60",
-                    "focus:outline-none focus:ring-1 focus:ring-ring",
-                  )}
-                />
-                {searchValue && (
-                  <button
-                    type="button"
-                    aria-label="Clear search"
-                    onClick={() => onSearchChange("")}
-                    className="absolute right-2 text-muted-foreground/60 hover:text-foreground focus:outline-none"
-                  >
-                    <X className="size-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Content area — filled by P3-02 via children prop */}
-          <div
+          {/* Shared filter panel body (search + controls + footer) */}
+          <FilterPanelContent
             id={contentId}
-            className="filter-sidebar__content flex-1 overflow-y-auto"
+            searchValue={searchValue}
+            onSearchChange={onSearchChange}
+            activeFilterCount={activeFilterCount}
+            onClearAll={onClearAll}
+            onApplyPreset={onApplyPreset}
+            className="filter-sidebar__content"
           >
             {children ?? (
               // Stub sections — shape placeholder until P3-02 adds real controls
@@ -417,26 +396,7 @@ export function FilterSidebar({
                 />
               </div>
             )}
-          </div>
-
-          {/* Footer — clear all (shown when active filters exist) */}
-          {activeFilterCount > 0 && onClearAll && (
-            <div className="shrink-0 border-t px-3 py-2">
-              <button
-                type="button"
-                onClick={onClearAll}
-                className={cn(
-                  "flex w-full items-center justify-center gap-1.5",
-                  "text-[11px] font-medium text-muted-foreground",
-                  "rounded-md px-2 py-1.5 hover:bg-accent hover:text-foreground",
-                  "transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                )}
-              >
-                <X aria-hidden="true" className="size-3" />
-                Clear all filters
-              </button>
-            </div>
-          )}
+          </FilterPanelContent>
         </>
       ) : (
         // ── Collapsed (rail) view ──────────────────────────────────────────
