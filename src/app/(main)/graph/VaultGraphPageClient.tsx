@@ -986,7 +986,12 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
         barnesHutOptimize: isLarge,
         barnesHutTheta: isLarge ? 0.8 : 0.5,
         gravity: 0.05,
-        scalingRatio: 8,
+        // scalingRatio raised 8→14 (2026-05-21) for stronger inter-node
+        // repulsion, reducing overlap in dense clusters. Compensates for the
+        // smaller node sizes set in FIDELITY_SIZES / resolveNodeSize, which
+        // also reduce the effective collision radius FA2 reads via
+        // adjustSizes. Net: larger minimum visual gap between nodes.
+        scalingRatio: 14,
         linLogMode: false,
         outboundAttractionDistribution: true,
         adjustSizes: true,

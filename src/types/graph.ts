@@ -323,18 +323,20 @@ export const WORKSPACE_LABELS: Record<string, string> = {
 
 /**
  * Fidelity level → sigma node size (px radius).
- * F0 (raw) → 6, F4 (fully compiled) → 14.
+ * Reduced ~30% from prior values (F0:6→4 .. F4:14→10) to lower visual
+ * overlap in dense clusters. Effective inter-node spacing is preserved by
+ * raising FA2 scalingRatio (see FA2 settings in VaultGraphPageClient.tsx).
  */
 export const FIDELITY_SIZES: Record<FidelityLevel, number> = {
-  F0: 6,
-  F1: 8,
-  F2: 10,
-  F3: 12,
-  F4: 14,
+  F0: 4,
+  F1: 6,
+  F2: 7,
+  F3: 9,
+  F4: 10,
 } as const;
 
 /** Default size when fidelity_level is absent. Maps to F2. */
-export const FIDELITY_SIZE_DEFAULT = 10;
+export const FIDELITY_SIZE_DEFAULT = 7;
 
 // ---------------------------------------------------------------------------
 // P2-09 — Edge type color encoding (full edge_type palette)

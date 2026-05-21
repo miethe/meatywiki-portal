@@ -29,29 +29,29 @@ import {
 
 describe("resolveNodeSize — fidelity mode", () => {
   const cases: [string, number][] = [
-    ["F0", 6],
-    ["F1", 8],
-    ["F2", 10],
-    ["F3", 12],
-    ["F4", 14],
+    ["F0", 4],
+    ["F1", 6],
+    ["F2", 7],
+    ["F3", 9],
+    ["F4", 10],
   ];
 
   test.each(cases)("fidelity %s → size %i", (level, expected) => {
     expect(resolveNodeSize(level as "F0" | "F1" | "F2" | "F3" | "F4", 0, "fidelity")).toBe(expected);
   });
 
-  test("null fidelity_level defaults to F2 size (10)", () => {
-    expect(resolveNodeSize(null, 0, "fidelity")).toBe(10);
+  test("null fidelity_level defaults to F2 size (7)", () => {
+    expect(resolveNodeSize(null, 0, "fidelity")).toBe(7);
   });
 
-  test("undefined fidelity_level defaults to F2 size (10)", () => {
-    expect(resolveNodeSize(undefined, 0, "fidelity")).toBe(10);
+  test("undefined fidelity_level defaults to F2 size (7)", () => {
+    expect(resolveNodeSize(undefined, 0, "fidelity")).toBe(7);
   });
 
   test("highlighted node is 1.5× base size", () => {
-    expect(resolveNodeSize("F2", 0, "fidelity", true)).toBeCloseTo(15, 5);
-    expect(resolveNodeSize("F0", 0, "fidelity", true)).toBeCloseTo(9, 5);
-    expect(resolveNodeSize("F4", 0, "fidelity", true)).toBeCloseTo(21, 5);
+    expect(resolveNodeSize("F2", 0, "fidelity", true)).toBeCloseTo(10.5, 5);
+    expect(resolveNodeSize("F0", 0, "fidelity", true)).toBeCloseTo(6, 5);
+    expect(resolveNodeSize("F4", 0, "fidelity", true)).toBeCloseTo(15, 5);
   });
 });
 
@@ -60,22 +60,22 @@ describe("resolveNodeSize — fidelity mode", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveNodeSize — degree mode", () => {
-  test("degree 0 → floor clamped to 8 (raised from 5, B-fix 2026-05-20)", () => {
-    // log2(1) = 0, 0 * 3.5 = 0, clamp to 8
-    expect(resolveNodeSize(null, 0, "degree")).toBe(8);
+  test("degree 0 → floor clamped to 5 (reduced 2026-05-21 for tighter clusters)", () => {
+    // log2(1) = 0, 0 * 2.5 = 0, clamp to 5
+    expect(resolveNodeSize(null, 0, "degree")).toBe(5);
   });
 
-  test("degree 1 → log2(2) * 3.5 = 3.5, clamped to 8 floor (raised from 5)", () => {
-    expect(resolveNodeSize(null, 1, "degree")).toBe(8);
+  test("degree 1 → log2(2) * 2.5 = 2.5, clamped to 5 floor", () => {
+    expect(resolveNodeSize(null, 1, "degree")).toBe(5);
   });
 
-  test("degree 7 → log2(8) * 3.5 = 10.5", () => {
-    expect(resolveNodeSize(null, 7, "degree")).toBeCloseTo(10.5, 1);
+  test("degree 7 → log2(8) * 2.5 = 7.5", () => {
+    expect(resolveNodeSize(null, 7, "degree")).toBeCloseTo(7.5, 1);
   });
 
-  test("degree 1000 → clamped to 18", () => {
-    // log2(1001) ≈ 9.97, 9.97 * 3.5 ≈ 34.9, clamped to 18
-    expect(resolveNodeSize(null, 1000, "degree")).toBe(18);
+  test("degree 1000 → clamped to 12", () => {
+    // log2(1001) ≈ 9.97, 9.97 * 2.5 ≈ 24.9, clamped to 12
+    expect(resolveNodeSize(null, 1000, "degree")).toBe(12);
   });
 
   test("fidelity_level param ignored in degree mode", () => {
