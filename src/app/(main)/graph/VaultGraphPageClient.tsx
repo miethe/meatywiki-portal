@@ -791,6 +791,102 @@ function computeGraphBounds(graph: Graph): GraphBounds | null {
   return Number.isFinite(minX) ? { minX, maxX, minY, maxY } : null;
 }
 
+// ---------------------------------------------------------------------------
+// Obsidian-style rectangular fill — tuning constants
+// ---------------------------------------------------------------------------
+const SHAPE_PASS_ALPHA = 0.5;           // 0 = no reshape, 1 = full snap to rectangle
+const BOUNDARY_NUDGE_K = 0.02;          // per-frame strength near walls
+const BOUNDARY_NUDGE_THRESHOLD = 0.9;   // fraction of target half-extent where wall force engages
+const ASPECT_GUARD = 0.1;               // skip shape pass when canvas is near-square (|aspect-1| < this)
+
+/**
+ * Axis-anisotropic soft-reshape: pull the graph's bounding box toward an
+ * equal-area rectangle that matches the canvas aspect ratio. Preserves cluster
+ * structure better than uniform x-stretch by scaling each axis with a soft
+ * exponent (SHAPE_PASS_ALPHA) rather than a hard snap. Replaces the prior
+ * `rectangularizeAndRecenter` blanket stretch.
+ *
+ * Why: FA2 produces a roughly circular hull. We can't change the hull from
+ * inside FA2 — its forces are rotationally symmetric. Instead we shape the
+ * settled coordinates externally. Soft anisotropic scaling (alpha<1) coaxes
+ * the disk into a rectangle without uniformly squishing intra-cluster spacing.
+ */
+function shapeGraphToRectangle(graph: Graph, canvasAspect: number): void {
+  const bounds = computeGraphBounds(graph);
+  if (!bounds) return;
+  const hx = (bounds.maxX - bounds.minX) / 2 || 1;
+  const hy = (bounds.maxY - bounds.minY) / 2 || 1;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  const graphAspect = hx / hy;
+  if (canvasAspect <= 0 || Math.abs(canvasAspect / graphAspect - 1) < ASPECT_GUARD) {
+    // Near-square — just recenter.
+    graph.forEachNode((id, attrs) => {
+      const x = typeof attrs.x === "number" ? attrs.x : 0;
+      const y = typeof attrs.y === "number" ? attrs.y : 0;
+      graph.setNodeAttribute(id, "x", x - cx);
+      graph.setNodeAttribute(id, "y", y - cy);
+    });
+    return;
+  }
+  // Target half-extents preserving area (hx*hy) and matching canvas aspect.
+  const targetHx = Math.sqrt(hx * hy * canvasAspect);
+  const targetHy = Math.sqrt((hx * hy) / canvasAspect);
+  const sx = Math.pow(targetHx / hx, SHAPE_PASS_ALPHA);
+  const sy = Math.pow(targetHy / hy, SHAPE_PASS_ALPHA);
+  graph.forEachNode((id, attrs) => {
+    const x = typeof attrs.x === "number" ? attrs.x : 0;
+    const y = typeof attrs.y === "number" ? attrs.y : 0;
+    graph.setNodeAttribute(id, "x", (x - cx) * sx);
+    graph.setNodeAttribute(id, "y", (y - cy) * sy);
+  });
+}
+
+/**
+ * Per-tick soft rectangular boundary nudge. Zero force in the interior;
+ * quadratic restoring near walls. This is the d3-force `forceX`/`forceY` +
+ * soft bounding-box pattern that gives Obsidian-style rectangular fill,
+ * adapted to run on top of FA2's worker via a RAF loop reading worker-written
+ * positions. Apply this each animation frame while in dynamic mode.
+ *
+ * Returns true if any node was moved (caller can decide whether to refresh sigma).
+ */
+function applyBoundaryNudgeTick(graph: Graph, canvasAspect: number): boolean {
+  const bounds = computeGraphBounds(graph);
+  if (!bounds) return false;
+  const hx = (bounds.maxX - bounds.minX) / 2 || 1;
+  const hy = (bounds.maxY - bounds.minY) / 2 || 1;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  const tx = canvasAspect > 0 ? Math.sqrt(hx * hy * canvasAspect) : hx;
+  const ty = canvasAspect > 0 ? Math.sqrt((hx * hy) / canvasAspect) : hy;
+  let moved = false;
+  graph.forEachNode((id, attrs) => {
+    const x = typeof attrs.x === "number" ? attrs.x : 0;
+    const y = typeof attrs.y === "number" ? attrs.y : 0;
+    const dx = x - cx;
+    const dy = y - cy;
+    const nx = dx / tx;
+    const ny = dy / ty;
+    let ox = 0;
+    let oy = 0;
+    if (Math.abs(nx) > BOUNDARY_NUDGE_THRESHOLD) {
+      const over = Math.abs(nx) - BOUNDARY_NUDGE_THRESHOLD;
+      ox = -BOUNDARY_NUDGE_K * Math.sign(dx) * over * over * tx;
+    }
+    if (Math.abs(ny) > BOUNDARY_NUDGE_THRESHOLD) {
+      const over = Math.abs(ny) - BOUNDARY_NUDGE_THRESHOLD;
+      oy = -BOUNDARY_NUDGE_K * Math.sign(dy) * over * over * ty;
+    }
+    if (ox !== 0 || oy !== 0) {
+      graph.setNodeAttribute(id, "x", x + ox);
+      graph.setNodeAttribute(id, "y", y + oy);
+      moved = true;
+    }
+  });
+  return moved;
+}
+
 /**
  * Recenter the layout's centroid to (0, 0) and stretch x so the graph's
  * bounding-box aspect ratio matches `canvasAspect`
@@ -800,6 +896,8 @@ function computeGraphBounds(graph: Graph): GraphBounds | null {
  * Safe to call on the same graphology graph the FA2 worker uses — the
  * worker writes through to that attribute store, so mutating x/y here is
  * visible to FA2 on its next tick.
+ *
+ * @deprecated Superseded by shapeGraphToRectangle (see follow-up).
  */
 function rectangularizeAndRecenter(graph: Graph, canvasAspect: number): void {
   const bounds = computeGraphBounds(graph);
@@ -879,27 +977,21 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
     const isLarge = graph.order > 500;
 
     const fa2 = new FA2Layout(graph, {
+      // Obsidian-style fill — near-zero gravity removes radial pull so nodes
+      // spread into the full canvas rather than compressing onto a disk.
+      // linLog off + outboundAttractionDistribution gives the most uniform
+      // interior fill; shape + per-tick boundary nudges handle hull shaping
+      // externally (shapeGraphToRectangle / applyBoundaryNudgeTick).
       settings: {
         barnesHutOptimize: isLarge,
         barnesHutTheta: isLarge ? 0.8 : 0.5,
-        // FA2 defaults: gravity 1, scalingRatio 10. Earlier tuning rounds
-        // pushed these toward extremes trying to make the graph "fill the
-        // canvas," but sigma re-normalizes node coords on every refresh,
-        // so the absolute equilibrium scale is irrelevant for framing.
-        // What actually frames the layout is the camera fit (see settle
-        // timer below — fitCameraToGraph). With the camera fitted, the
-        // graphology-recommended defaults give the cleanest cluster
-        // separation without distortion.
-        gravity: 1,
-        scalingRatio: 10,
-        // linLogMode: logarithmic attraction so high-degree nodes act as
-        // gravity wells (mass-proportional clustering) while damping
-        // over-pull on dense clusters — produces the hub-orbit pattern.
-        linLogMode: true,
-        slowDown: isLarge ? 20 : 10,
-        // B-fix: respect per-node size during repulsion so leaves don't
-        // collapse onto cluster roots when degree=0 nodes are numerous.
+        gravity: 0.05,
+        scalingRatio: 8,
+        linLogMode: false,
+        outboundAttractionDistribution: true,
         adjustSizes: true,
+        strongGravityMode: false,
+        slowDown: isLarge ? 20 : 10,
       },
     });
     fa2.start();
@@ -920,7 +1012,7 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
         container && container.clientHeight > 0
           ? container.clientWidth / container.clientHeight
           : 1;
-      rectangularizeAndRecenter(graph, aspect);
+      shapeGraphToRectangle(graph, aspect);
       // Fit camera to the (now reshaped) bounds. Without this, sigma frames
       // a fixed fraction of the normalized space and the layout looks tight
       // regardless of FA2 settings. See fitCameraToGraph comment above.
@@ -1074,6 +1166,8 @@ interface GraphCanvasInnerProps {
   touchHitRadius?: boolean;
   /** P5-07: pass through to GraphEvents for reduced-motion camera fallback. */
   prefersReducedMotion?: boolean;
+  /** P4-08 / Obsidian-fill: current graph mode; drives boundary-nudge RAF loop. */
+  graphMode?: GraphMode;
 }
 
 function GraphCanvasInner({
@@ -1090,6 +1184,7 @@ function GraphCanvasInner({
   onFa2WorkerReady,
   touchHitRadius,
   prefersReducedMotion,
+  graphMode,
 }: GraphCanvasInnerProps) {
   const sigma = useSigma();
   useEffect(() => { onSigmaReady(sigma); }, [sigma, onSigmaReady]);
@@ -1154,6 +1249,45 @@ function GraphCanvasInner({
       clearTimeout(stopTimer);
     };
   }, [sigma, groupingMode]);
+
+  // Obsidian-style per-tick soft rectangular boundary nudge.
+  //
+  // Runs ONLY in dynamic mode for non-centroid-force groupings (workspace /
+  // project modes already have their own centroid RAF loop above). Applies
+  // applyBoundaryNudgeTick each frame so FA2's rotationally-symmetric
+  // forces don't collapse the layout back to a disk once it starts running.
+  // Zero force in the interior — only kicks in near the target half-extents.
+  // Stops automatically on mode change or unmount.
+  useEffect(() => {
+    if (graphMode !== "dynamic") return;
+    if (isCentroidForceModeActive(groupingMode)) return; // centroid loop handles those modes
+    if (prefersReducedMotion) return;
+
+    const graph = sigma.getGraph();
+    if (!graph || graph.order === 0) return;
+
+    const container = sigma.getContainer?.() as HTMLElement | undefined;
+    let rafId: number;
+    let running = true;
+
+    const loop = () => {
+      if (!running) return;
+      const aspect =
+        container && container.clientHeight > 0
+          ? container.clientWidth / container.clientHeight
+          : 1;
+      const moved = applyBoundaryNudgeTick(graph, aspect);
+      if (moved) sigma.refresh();
+      rafId = requestAnimationFrame(loop);
+    };
+
+    rafId = requestAnimationFrame(loop);
+
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafId);
+    };
+  }, [sigma, graphMode, groupingMode, prefersReducedMotion]);
 
   return (
     <GraphEvents
@@ -2269,18 +2403,18 @@ export function VaultGraphPageClient() {
     setGraphMode((prev) => {
       const next = prev === "static" ? "dynamic" : "static";
       if (next === "dynamic") {
-        // Recenter centroid to (0, 0) before resuming FA2 so gravity is
-        // balanced — otherwise the layout drifts uniformly toward whatever
-        // direction the previous settle left the centroid offset in.
+        // Shape + recenter before resuming FA2 so the rectangular layout
+        // is preserved and FA2 gravity is balanced (no centroid drift).
         const sigma = sigmaRef.current;
         const graph = sigma?.getGraph?.();
-        if (graph) {
-          recenterGraph(graph);
-          // Re-fit camera so the recenter shift doesn't visibly jump the
-          // viewport. Skip animation for reduced-motion users.
-          if (sigma) {
-            fitCameraToGraph(sigma, 0.9, !prefersReducedMotion);
-          }
+        if (graph && sigma) {
+          const container = sigma.getContainer?.() as HTMLElement | undefined;
+          const aspect =
+            container && container.clientHeight > 0
+              ? container.clientWidth / container.clientHeight
+              : 1;
+          shapeGraphToRectangle(graph, aspect);
+          fitCameraToGraph(sigma, 0.9, !prefersReducedMotion);
         }
         // Start FA2
         fa2WorkerRef.current?.start();
@@ -4019,6 +4153,7 @@ export function VaultGraphPageClient() {
                               onFa2WorkerReady={handleFa2WorkerReady}
                               touchHitRadius={isTouchDevice}
                               prefersReducedMotion={prefersReducedMotion}
+                              graphMode={graphMode}
                             />
                           </SigmaContainer>
 
