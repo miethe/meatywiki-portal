@@ -385,11 +385,14 @@ function buildVaultGraph(
     }
   }
 
-  // Seed initial positions on a wide circle so FA2 has room to spread before
-  // gravity pulls nodes back toward center. Default `scale: 1` packs every
-  // node onto a unit circle and FA2 struggles to escape that starting bubble
-  // at typical canvas sizes, leaving the graph stuck in a tight orbit.
-  circularLayout.assign(graph, { scale: 100 });
+  // Seed initial positions on a unit circle; FA2 expands from there. The
+  // absolute coordinate scale doesn't matter for the rendered output because
+  // sigma re-normalizes coords on every refresh and the camera is then
+  // fitted to those normalized bounds via fitCameraToGraph (see settle
+  // timer below). Previous tuning chased seed scale + scalingRatio trying
+  // to make the graph "fill the canvas," but that was the wrong knob —
+  // sigma re-normalizes coords, so what mattered was the camera fit.
+  circularLayout.assign(graph);
   return graph;
 }
 
@@ -710,6 +713,128 @@ function GraphCanvasSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
+// Camera fit-to-bounds helper
+//
+// Sigma v3 normalizes node x/y attributes into a unit graph on every refresh,
+// so absolute FA2 coordinate magnitude doesn't change the rendered fraction
+// of the layout — only the camera state does. Prior FA2 spread tuning (seed
+// scale, scalingRatio, gravity) was chasing the wrong knob: each round just
+// changed how big the coords were before sigma re-normalized them.
+//
+// This helper sets the camera to the center of the normalized space at a
+// ratio that shows the full bounds with a small margin (padding=0.9 ⇒ 10%
+// margin). It must be called AFTER `sigma.refresh()` so the normalization
+// step has consumed the latest node positions.
+// ---------------------------------------------------------------------------
+
+function fitCameraToGraph(
+  sigma: { refresh: () => void; getCamera: () => { animate: (state: Record<string, number>, opts: { duration: number }) => void; setState: (state: Record<string, number>) => void } },
+  padding = 0.9,
+  animate = true,
+): void {
+  sigma.refresh();
+  const target = { x: 0.5, y: 0.5, ratio: 1 / padding, angle: 0 };
+  if (animate) {
+    sigma.getCamera().animate(target, { duration: 400 });
+  } else {
+    sigma.getCamera().setState(target);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Graph-coordinate utilities: bounds, centroid, aspect stretch + recenter
+//
+// Two related symptoms surfaced after the camera fit landed:
+//
+//   1. FA2 with gravity > 0 is a radial equilibrium — repulsion pushes
+//      nodes outward, gravity pulls them toward (0, 0). The stable shape
+//      is a disk. Sigma's normalization preserves aspect ratio, so on a
+//      16:9 canvas the disk is centered with empty bands on the long
+//      axis. To actually USE the rectangular canvas, we stretch x-coords
+//      so the graph's bounding-box aspect ratio matches the canvas.
+//
+//   2. FA2 worker mutates node x/y in place. After settle, the centroid
+//      is wherever FA2 left it — not (0, 0) — because Barnes-Hut + edge
+//      distribution are not perfectly symmetric. In dynamic mode, gravity
+//      keeps pulling each node toward (0, 0); with centroid at (cx, cy),
+//      every node feels a net (-cx, -cy) force, producing uniform "drift"
+//      of the whole layout toward one canvas edge. Recentering to (0, 0)
+//      at settle balances gravity and stops the drift.
+//
+// Both transforms are applied together in one pass at FA2 settle time,
+// BEFORE fitCameraToGraph. The aspect stretch is guarded — skipped when
+// the canvas is roughly square (|ratio-1| < 0.15) — to avoid distorting
+// clusters into ellipses on portrait layouts.
+// ---------------------------------------------------------------------------
+
+interface GraphBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+function computeGraphBounds(graph: Graph): GraphBounds | null {
+  if (graph.order === 0) return null;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  graph.forEachNode((_id, attrs) => {
+    const x = typeof attrs.x === "number" ? attrs.x : 0;
+    const y = typeof attrs.y === "number" ? attrs.y : 0;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  });
+  return Number.isFinite(minX) ? { minX, maxX, minY, maxY } : null;
+}
+
+/**
+ * Recenter the layout's centroid to (0, 0) and stretch x so the graph's
+ * bounding-box aspect ratio matches `canvasAspect`
+ * (= clientWidth / clientHeight). Stretch is skipped when within ±15 %
+ * of 1.0 to avoid distorting clusters on portrait viewports.
+ *
+ * Safe to call on the same graphology graph the FA2 worker uses — the
+ * worker writes through to that attribute store, so mutating x/y here is
+ * visible to FA2 on its next tick.
+ */
+function rectangularizeAndRecenter(graph: Graph, canvasAspect: number): void {
+  const bounds = computeGraphBounds(graph);
+  if (!bounds) return;
+  const graphW = bounds.maxX - bounds.minX || 1;
+  const graphH = bounds.maxY - bounds.minY || 1;
+  const graphAspect = graphW / graphH;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  const rawStretch = canvasAspect > 0 ? canvasAspect / graphAspect : 1;
+  const xStretch = Math.abs(rawStretch - 1) < 0.15 ? 1 : rawStretch;
+  graph.forEachNode((id, attrs) => {
+    const x = typeof attrs.x === "number" ? attrs.x : 0;
+    const y = typeof attrs.y === "number" ? attrs.y : 0;
+    graph.setNodeAttribute(id, "x", (x - cx) * xStretch);
+    graph.setNodeAttribute(id, "y", y - cy);
+  });
+}
+
+/** Recenter centroid to (0, 0). No stretch. Used on dynamic-toggle. */
+function recenterGraph(graph: Graph): void {
+  const bounds = computeGraphBounds(graph);
+  if (!bounds) return;
+  const cx = (bounds.minX + bounds.maxX) / 2;
+  const cy = (bounds.minY + bounds.maxY) / 2;
+  if (Math.abs(cx) < 1e-6 && Math.abs(cy) < 1e-6) return;
+  graph.forEachNode((id, attrs) => {
+    const x = typeof attrs.x === "number" ? attrs.x : 0;
+    const y = typeof attrs.y === "number" ? attrs.y : 0;
+    graph.setNodeAttribute(id, "x", x - cx);
+    graph.setNodeAttribute(id, "y", y - cy);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Sigma inner component — FA2 layout + event registration
 // ---------------------------------------------------------------------------
 
@@ -757,19 +882,19 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
       settings: {
         barnesHutOptimize: isLarge,
         barnesHutTheta: isLarge ? 0.8 : 0.5,
-        // Lowered from 1 → 0.2 so the central pull doesn't compress the graph
-        // back into a tight orbit. Combined with the wider initial circular
-        // seed (scale=100) and bumped scalingRatio, this lets the layout
-        // breathe out to the canvas edges instead of clustering near center.
-        gravity: 0.2,
-        // Raised from 8 → 16: dominant spacing lever — longer equilibrium
-        // edges give leaves more breathing room and naturally orbit high-mass
-        // anchors. With reduced gravity, repulsion now wins out to the
-        // canvas edges rather than being capped by a tight gravity well.
-        scalingRatio: isLarge ? 16 : 16,
-        // linLogMode: logarithmic attraction so high-degree nodes act as gravity
-        // wells (mass-proportional clustering) while damping over-pull on dense
-        // clusters — produces the natural orbit pattern around hub nodes.
+        // FA2 defaults: gravity 1, scalingRatio 10. Earlier tuning rounds
+        // pushed these toward extremes trying to make the graph "fill the
+        // canvas," but sigma re-normalizes node coords on every refresh,
+        // so the absolute equilibrium scale is irrelevant for framing.
+        // What actually frames the layout is the camera fit (see settle
+        // timer below — fitCameraToGraph). With the camera fitted, the
+        // graphology-recommended defaults give the cleanest cluster
+        // separation without distortion.
+        gravity: 1,
+        scalingRatio: 10,
+        // linLogMode: logarithmic attraction so high-degree nodes act as
+        // gravity wells (mass-proportional clustering) while damping
+        // over-pull on dense clusters — produces the hub-orbit pattern.
         linLogMode: true,
         slowDown: isLarge ? 20 : 10,
         // B-fix: respect per-node size during repulsion so leaves don't
@@ -786,7 +911,20 @@ function GraphEvents({ nodes, onHover, onSelect, focusedNodeId, onExpandCluster,
     const settleMs = isLarge ? 1500 : 2500;
     const timer = setTimeout(() => {
       fa2.stop();
-      sigma.refresh();
+      // Recenter centroid to (0, 0) so FA2's radial gravity is balanced
+      // (prevents dynamic-mode drift) and stretch x so the bounding box
+      // matches the canvas aspect ratio (so a circular FA2 disk fills a
+      // rectangular canvas instead of leaving empty side bands).
+      const container = sigma.getContainer?.() as HTMLElement | undefined;
+      const aspect =
+        container && container.clientHeight > 0
+          ? container.clientWidth / container.clientHeight
+          : 1;
+      rectangularizeAndRecenter(graph, aspect);
+      // Fit camera to the (now reshaped) bounds. Without this, sigma frames
+      // a fixed fraction of the normalized space and the layout looks tight
+      // regardless of FA2 settings. See fitCameraToGraph comment above.
+      fitCameraToGraph(sigma, 0.9, !prefersReducedMotion);
     }, settleMs);
 
     return () => {
@@ -1877,12 +2015,13 @@ export function VaultGraphPageClient() {
   }, [prefersReducedMotion]);
 
   const handleFitView = useCallback(() => {
-    if (prefersReducedMotion) {
-      sigmaRef.current?.getCamera().setState({ x: 0, y: 0, ratio: 1, angle: 0 });
-    } else {
-      sigmaRef.current?.getCamera().animate({ x: 0, y: 0, ratio: 1, angle: 0 }, { duration: 300 });
-    }
-    sigmaRef.current?.refresh();
+    // Previously hardcoded `{x:0, y:0, ratio:1}` — that's not a real
+    // fit-to-bounds; it just parked the camera at the normalized graph
+    // origin. Route through fitCameraToGraph so this matches the
+    // post-settle framing.
+    const sigma = sigmaRef.current;
+    if (!sigma) return;
+    fitCameraToGraph(sigma, 0.9, !prefersReducedMotion);
   }, [prefersReducedMotion]);
 
   const handleToggleFullscreen = useCallback(() => {
@@ -2130,6 +2269,19 @@ export function VaultGraphPageClient() {
     setGraphMode((prev) => {
       const next = prev === "static" ? "dynamic" : "static";
       if (next === "dynamic") {
+        // Recenter centroid to (0, 0) before resuming FA2 so gravity is
+        // balanced — otherwise the layout drifts uniformly toward whatever
+        // direction the previous settle left the centroid offset in.
+        const sigma = sigmaRef.current;
+        const graph = sigma?.getGraph?.();
+        if (graph) {
+          recenterGraph(graph);
+          // Re-fit camera so the recenter shift doesn't visibly jump the
+          // viewport. Skip animation for reduced-motion users.
+          if (sigma) {
+            fitCameraToGraph(sigma, 0.9, !prefersReducedMotion);
+          }
+        }
         // Start FA2
         fa2WorkerRef.current?.start();
         // Clear any pending idle snapshot
