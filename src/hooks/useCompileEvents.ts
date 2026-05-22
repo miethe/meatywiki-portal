@@ -85,7 +85,7 @@ export function useCompileEvents({
 }: UseCompileEventsOptions): UseCompileEventsResult {
   const apiBase = getApiBase();
   const url = enabled
-    ? `${apiBase}/api/artifacts/${artifactId}/compile/events`
+    ? `${apiBase}/artifacts/${artifactId}/compile/events`
     : undefined;
 
   // Delegate SSE lifecycle to the existing hook (no extra reconnect logic needed
