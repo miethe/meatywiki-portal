@@ -24,7 +24,7 @@
  */
 
 import Link from "next/link";
-import { BookOpen } from "lucide-react";
+import { BookOpen, GraduationCap } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { getDocsUrl } from "@/lib/docs-url";
@@ -150,6 +150,12 @@ function getNavSections(): NavSection[] {
       title: "Admin",
       items: [
         { label: "Settings", href: "/settings", icon: <SettingsIcon /> },
+        {
+          label: "Tutorial",
+          href: "/tutorial",
+          ariaLabel: "Interactive tutorials and walkthroughs",
+          icon: <GraduationCap aria-hidden="true" className="size-4" strokeWidth={1.5} />,
+        },
         {
           label: "Docs",
           href: getDocsUrl(),

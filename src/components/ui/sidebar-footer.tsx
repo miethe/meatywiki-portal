@@ -77,8 +77,8 @@ const DEFAULT_LINKS: SidebarFooterLink[] = [
   },
   {
     icon: <HelpCircle aria-hidden="true" className="size-4 shrink-0" />,
-    label: "Help & Support",
-    href: "/support",
+    label: "Help & Tutorial",
+    href: "/tutorial",
   },
 ];
 
