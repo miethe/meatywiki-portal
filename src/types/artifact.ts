@@ -172,6 +172,29 @@ export interface ArtifactCard {
   /** Active workflow run for this artifact, if any */
   workflow_status?: WorkflowRunStatus | null;
   /**
+   * Inbox routing group assigned by the backend classifier.
+   *
+   * "needs_destination" signals that the artifact has a suggested routing
+   * workspace but has not yet been moved out of inbox. The auto-route CTA
+   * renders when this equals "needs_destination" AND routing_workspace is set
+   * and differs from the current workspace.
+   *
+   * Backend: artifacts.inbox_group column (nullable TEXT). Populated by the
+   * routing classifier during ingest. Not present on non-inbox artifacts.
+   */
+  inbox_group?: string | null;
+  /**
+   * Suggested destination workspace from the routing classifier.
+   *
+   * Companion to inbox_group: when inbox_group === "needs_destination", this
+   * field holds the classifier's recommended workspace (e.g. "projects",
+   * "research"). The auto-route CTA uses this value for the PATCH payload.
+   *
+   * Backend: artifacts.routing_workspace column (nullable TEXT). Not present
+   * on non-inbox artifacts.
+   */
+  routing_workspace?: ArtifactWorkspace | null;
+  /**
    * Whether this artifact was produced by or flagged for the Portal Research
    * workflow. Maps to artifacts.research_origin (BOOLEAN NOT NULL DEFAULT false)
    * in the Postgres overlay — migration 007_taxonomy_redesign.
@@ -229,6 +252,23 @@ export interface ArtifactCard {
     current_stage?: number | null;
     template_id?: string | null;
   } | null;
+  /**
+   * Agent-authored artifact hint fields (P7-03, agent-authored-artifacts feature).
+   * Populated by automated workflows / agent pipelines; absent on human-authored
+   * artifacts. Both fields are optional — render only when present.
+   *
+   * - automation_source: the workflow template or pipeline that produced this
+   *   artifact (e.g. "prd-synthesis-workflow")
+   * - agent_origin: the agent or model that authored the artifact
+   *   (e.g. "claude-code")
+   *
+   * Note: routing_workspace is already declared above (inbox routing classifier
+   * field, line ~196). The Agent Metadata section re-uses that existing field.
+   *
+   * These are display-only hints; they do not affect artifact lifecycle.
+   */
+  automation_source?: string | null;
+  agent_origin?: string | null;
 }
 
 // ---------------------------------------------------------------------------

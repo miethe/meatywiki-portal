@@ -55,10 +55,12 @@
  */
 
 import type React from "react";
+import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import { MoreVertical, Archive, Trash2, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ArtifactCard as ArtifactCardType, WorkflowRunStatus } from "@/types/artifact";
+import { RouteModal } from "@/components/inbox/RouteModal";
 import { TypeBadge } from "./type-badge";
 import { FacetBadge } from "./facet-badge";
 import { WorkflowStatusBadge } from "./workflow-status-badge";
@@ -272,7 +274,29 @@ export function ArtifactCard({
     research_origin,
     derivative_count,
     workflow_id,
+    automation_source,
+    agent_origin,
+    routing_workspace,
   } = artifact;
+
+  // Agent Metadata section: only render when at least one hint field is present.
+  // All three fields are optional — missing fields are simply omitted (no nulls shown).
+  const agentHints: { label: string; value: string }[] = [
+    ...(automation_source ? [{ label: "Automation Source", value: automation_source }] : []),
+    ...(agent_origin ? [{ label: "Agent Origin", value: agent_origin }] : []),
+    ...(routing_workspace ? [{ label: "Routing Workspace", value: routing_workspace }] : []),
+  ];
+  const hasAgentHints = agentHints.length > 0;
+
+  // RouteModal state — only active in inbox needs_destination mode.
+  // Hooks must be called unconditionally; they are benign in non-inbox paths.
+  const [routeModalOpen, setRouteModalOpen] = useState(false);
+  const routeTriggerRef = useRef<HTMLButtonElement>(null);
+  const handleOpenRoute = useCallback((e: React.MouseEvent | React.KeyboardEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setRouteModalOpen(true);
+  }, []);
 
   // Stage Tracker contract (DP3-03): render compact tracker only for active runs.
   // Terminal statuses (complete, failed, abandoned, paused) collapse to null.
@@ -353,6 +377,7 @@ export function ArtifactCard({
     };
 
     return (
+      <>
       <article
         role="button"
         tabIndex={0}
@@ -435,22 +460,42 @@ export function ArtifactCard({
             />
           )}
           {ctaSlot ?? (
-            <button
-              type="button"
-              aria-label={`${ctaLabel} — ${title}`}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-              }}
-              className={cn(
-                "inline-flex h-7 items-center rounded-md border px-2.5",
-                "text-xs font-medium text-foreground",
-                "transition-colors hover:bg-accent hover:text-accent-foreground",
-                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-              )}
-            >
-              {ctaLabel}
-            </button>
+            inboxGroup === "needs_destination" ? (
+              /* Route CTA — opens RouteModal for workspace selection */
+              <button
+                ref={routeTriggerRef}
+                type="button"
+                aria-label={`Route ${title} to a workspace`}
+                aria-haspopup="dialog"
+                aria-expanded={routeModalOpen}
+                onClick={handleOpenRoute}
+                className={cn(
+                  "inline-flex h-7 items-center rounded-md border px-2.5",
+                  "text-xs font-medium text-foreground",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                {ctaLabel}
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label={`${ctaLabel} — ${title}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+                className={cn(
+                  "inline-flex h-7 items-center rounded-md border px-2.5",
+                  "text-xs font-medium text-foreground",
+                  "transition-colors hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                )}
+              >
+                {ctaLabel}
+              </button>
+            )
           )}
           {/* Dedicated navigation affordance — does not trigger selection.
               P2-03 / F-07: always visible at reduced opacity so the user can
@@ -493,6 +538,20 @@ export function ArtifactCard({
           </Link>
         </div>
       </article>
+
+      {/* RouteModal — mounted alongside the card so focus returns to routeTriggerRef.
+          Only rendered for needs_destination cards; no-op for other inboxGroups. */}
+      {inboxGroup === "needs_destination" && (
+        <RouteModal
+          artifactId={id}
+          artifactTitle={title}
+          currentWorkspace={workspace}
+          open={routeModalOpen}
+          onOpenChange={setRouteModalOpen}
+          triggerRef={routeTriggerRef}
+        />
+      )}
+    </>
     );
   }
 
@@ -713,6 +772,31 @@ export function ArtifactCard({
           >
             {preview || "No preview available yet."}
           </p>
+        )}
+
+        {/*
+         * Agent Metadata section (P7-03, agent-authored-artifacts feature).
+         * Renders only when at least one hint field (automation_source, agent_origin,
+         * routing_workspace) is present. Each field appears as a label+value row,
+         * styled to match the existing Properties panel conventions.
+         * Not shown in compact variant (insufficient space) or inbox mode (separate path).
+         */}
+        {hasAgentHints && !isCompact && (
+          <div className="rounded-md border border-dashed border-muted-foreground/20 bg-muted/20 px-2.5 py-2">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Agent Metadata
+            </p>
+            <dl className="flex flex-col gap-1">
+              {agentHints.map(({ label, value }) => (
+                <div key={label} className="flex items-baseline gap-1.5">
+                  <dt className="shrink-0 text-[10px] text-muted-foreground">{label}:</dt>
+                  <dd className="min-w-0 truncate font-mono text-[10px] font-medium text-foreground/80">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
         )}
 
         {isWorkbench && (linkedPreviewItems.length > 0 || derivativePreviewItems.length > 0) && (

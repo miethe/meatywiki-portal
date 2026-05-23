@@ -856,6 +856,34 @@ export async function patchArtifactLens(
 }
 
 // ---------------------------------------------------------------------------
+// Workspace PATCH — auto-route CTA (P7-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Patch only the workspace field of an artifact.
+ *
+ * Used by the auto-route CTA in InboxContextRail (P7-02). Fires
+ * PATCH /api/artifacts/{id}/workspace with { workspace: <target> }.
+ *
+ * Returns the updated ArtifactCard so callers can refresh derived state.
+ * Throws ApiError on non-2xx responses.
+ *
+ * Note: This endpoint does NOT require an ETag because workspace routing is
+ * a non-content mutation — the backend treats it as a cheap state transition
+ * rather than a content edit. Omitting ETag avoids an extra GET round-trip
+ * in the auto-route flow.
+ */
+export async function patchArtifactWorkspace(
+  id: string,
+  workspace: ArtifactWorkspace,
+): Promise<ArtifactCard> {
+  return apiFetch<ArtifactCard>(
+    `/artifacts/${encodeURIComponent(id)}/workspace`,
+    { method: "PATCH", body: JSON.stringify({ workspace }) },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Activity endpoint (P4-01 — Library card status badge)
 // ---------------------------------------------------------------------------
 

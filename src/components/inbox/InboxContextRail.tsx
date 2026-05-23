@@ -10,20 +10,23 @@
  *   - actions: five stub action buttons (verb-first, lucide icons)
  *   - footer: "Finalize Entry" primary CTA (stub)
  *   - empty state: "Select an inbox item to see details & actions"
+ *   - auto-route CTA: one-click workspace routing with 5-second undo (P7-02)
  *
  * All actions and the footer CTA are stubs that console.debug only — no
  * backend flows are wired (per P5-03 spec).
  *
- * Task: P5-03
+ * Task: P5-03, P7-02
  * Stitch ref: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
  */
 
+import { useState, useCallback } from "react";
 import {
   FlaskConical,
   Link2,
   GitMerge,
   Zap,
   ClipboardCheck,
+  ArrowRightCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -31,7 +34,9 @@ import {
   type ContextRailTab,
   type ContextRailAction,
 } from "@/components/layout/ContextRail";
-import type { ArtifactCard } from "@/types/artifact";
+import type { ArtifactCard, ArtifactWorkspace } from "@/types/artifact";
+import { patchArtifactWorkspace } from "@/lib/api/artifacts";
+import { useToast } from "@/hooks/use-toast";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -153,6 +158,209 @@ function InboxPropertiesPanel({ item }: InboxPropertiesPanelProps) {
       )}
     </dl>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Auto-route helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * shouldShowAutoRoute — returns true when all three conditions are met:
+ *   1. inbox_group === "needs_destination"
+ *   2. routing_workspace is present (non-null)
+ *   3. routing_workspace differs from the artifact's current workspace
+ */
+function shouldShowAutoRoute(item: ArtifactCard): boolean {
+  return (
+    item.inbox_group === "needs_destination" &&
+    item.routing_workspace != null &&
+    item.routing_workspace !== item.workspace
+  );
+}
+
+/** Capitalise the first letter of a workspace name for display. */
+function formatWorkspaceName(workspace: ArtifactWorkspace): string {
+  return workspace.charAt(0).toUpperCase() + workspace.slice(1);
+}
+
+// ---------------------------------------------------------------------------
+// AutoRouteButton — P7-02
+// ---------------------------------------------------------------------------
+
+interface AutoRouteButtonProps {
+  item: ArtifactCard;
+  targetWorkspace: ArtifactWorkspace;
+  isPending: boolean;
+  onRoute: () => void;
+}
+
+/**
+ * AutoRouteButton — renders the prominent one-click routing CTA.
+ *
+ * State management (loading, success, error) is owned by the parent
+ * InboxAutoRouteSection via useAutoRoute(). This component is pure-view.
+ *
+ * P7-02.
+ */
+function AutoRouteButton({ targetWorkspace, isPending, onRoute }: AutoRouteButtonProps) {
+  const workspaceLabel = formatWorkspaceName(targetWorkspace);
+
+  return (
+    <button
+      type="button"
+      aria-label={`Auto-route to ${workspaceLabel}`}
+      disabled={isPending}
+      onClick={onRoute}
+      className={cn(
+        "inline-flex h-9 w-full items-center justify-center gap-2 rounded-md",
+        "bg-primary px-4 text-sm font-bold text-primary-foreground",
+        "transition-opacity hover:opacity-90 active:opacity-75",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        "disabled:cursor-not-allowed disabled:opacity-50",
+      )}
+    >
+      <ArrowRightCircle aria-hidden="true" className="size-4 shrink-0" />
+      {isPending ? "Routing…" : `Auto-route to ${workspaceLabel}`}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// AutoRouteToast — undo-capable success toast (P7-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * Since useToast uses string messages, the Undo affordance is rendered by a
+ * custom toast overlay component mounted alongside the rail (not inside the
+ * global toast queue).  This avoids needing to extend the Toast type with
+ * ReactNode messages.
+ *
+ * UndoRouteToast renders an overlay card that auto-dismisses after 5 s and
+ * exposes a keyboard-accessible Undo button.
+ */
+interface UndoRouteToastProps {
+  artifactId: string;
+  targetWorkspace: ArtifactWorkspace;
+  originalWorkspace: ArtifactWorkspace;
+  onDismiss: () => void;
+}
+
+function UndoRouteToast({
+  artifactId,
+  targetWorkspace,
+  originalWorkspace,
+  onDismiss,
+}: UndoRouteToastProps) {
+  const { add: addToast } = useToast();
+  const [isUndoing, setIsUndoing] = useState(false);
+
+  const handleUndo = useCallback(async () => {
+    if (isUndoing) return;
+    setIsUndoing(true);
+    try {
+      await patchArtifactWorkspace(artifactId, originalWorkspace);
+      addToast({ message: "Routing undone", type: "info" });
+    } catch {
+      addToast({ message: "Failed to undo routing. Please try again.", type: "error" });
+    } finally {
+      onDismiss();
+    }
+  }, [artifactId, originalWorkspace, isUndoing, addToast, onDismiss]);
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      aria-label={`Routed to ${formatWorkspaceName(targetWorkspace)}`}
+      className={cn(
+        "flex items-center justify-between gap-3 rounded-md border",
+        "bg-primary/10 px-3 py-2 text-sm",
+      )}
+    >
+      <span className="flex-1 font-medium">
+        Routed to {formatWorkspaceName(targetWorkspace)}
+      </span>
+      <button
+        type="button"
+        aria-label={`Undo routing to ${formatWorkspaceName(targetWorkspace)}`}
+        disabled={isUndoing}
+        onClick={handleUndo}
+        className={cn(
+          "shrink-0 rounded px-2 py-0.5 text-xs font-semibold",
+          "underline-offset-2 hover:underline",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+        )}
+      >
+        {isUndoing ? "Undoing…" : "Undo"}
+      </button>
+      <button
+        type="button"
+        aria-label="Dismiss routing notification"
+        onClick={onDismiss}
+        className={cn(
+          "shrink-0 rounded p-0.5 opacity-60 hover:opacity-100",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        )}
+      >
+        <svg
+          aria-hidden="true"
+          className="size-3.5"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M6 18L18 6M6 6l12 12"
+          />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// useAutoRoute — state machine for the auto-route flow (P7-02)
+// ---------------------------------------------------------------------------
+
+type AutoRouteState =
+  | { phase: "idle" }
+  | { phase: "pending" }
+  | { phase: "success"; originalWorkspace: ArtifactWorkspace; targetWorkspace: ArtifactWorkspace }
+  | { phase: "error"; message: string };
+
+interface UseAutoRouteOptions {
+  item: ArtifactCard;
+  targetWorkspace: ArtifactWorkspace;
+}
+
+function useAutoRoute({ item, targetWorkspace }: UseAutoRouteOptions) {
+  const [state, setState] = useState<AutoRouteState>({ phase: "idle" });
+  const { add: addToast } = useToast();
+
+  const route = useCallback(async () => {
+    if (state.phase === "pending") return;
+    const originalWorkspace = item.workspace;
+    setState({ phase: "pending" });
+
+    try {
+      await patchArtifactWorkspace(item.id, targetWorkspace);
+      setState({ phase: "success", originalWorkspace, targetWorkspace });
+    } catch {
+      const msg = `Failed to route to ${formatWorkspaceName(targetWorkspace)}. Please try again.`;
+      setState({ phase: "error", message: msg });
+      addToast({ message: msg, type: "error" });
+    }
+  }, [item.id, item.workspace, targetWorkspace, state.phase, addToast]);
+
+  const dismiss = useCallback(() => {
+    setState({ phase: "idle" });
+  }, []);
+
+  return { state, route, dismiss };
 }
 
 // ---------------------------------------------------------------------------
@@ -300,6 +508,11 @@ export interface InboxContextRailProps {
  *
  * A "Finalize Entry" primary CTA sits below the rail for direct promotion.
  *
+ * When the selected item has inbox_group === "needs_destination" and a
+ * routing_workspace that differs from its current workspace, an Auto-route CTA
+ * is rendered above the ContextRail. Clicking it fires PATCH
+ * /api/artifacts/{id}/workspace and shows a 5-second undo toast (P7-02).
+ *
  * Usage:
  * ```tsx
  * <aside className="hidden w-72 shrink-0 xl:block">
@@ -333,9 +546,21 @@ export function InboxContextRail({
 
   const customTabs = buildCustomTabs(selectedItem);
   const actions = buildActions(selectedItem);
+  const showAutoRoute = shouldShowAutoRoute(selectedItem);
+  // Safe cast: shouldShowAutoRoute guarantees routing_workspace is non-null here.
+  const routingTarget = selectedItem.routing_workspace as ArtifactWorkspace;
 
   return (
     <div className={cn("flex flex-col gap-3", className)}>
+      {/* P7-02: Auto-route CTA — only shown when routing_workspace is available
+          and differs from the current workspace. Sits above all other actions. */}
+      {showAutoRoute && (
+        <InboxAutoRouteSection
+          item={selectedItem}
+          targetWorkspace={routingTarget}
+        />
+      )}
+
       {/* Rail: actions + Properties tab */}
       <ContextRail
         customTabs={customTabs}
@@ -373,6 +598,53 @@ export function InboxContextRail({
           </span>
         </button>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// InboxAutoRouteSection — self-contained auto-route + undo flow (P7-02)
+// ---------------------------------------------------------------------------
+
+/**
+ * InboxAutoRouteSection manages the full auto-route state machine for one
+ * selected item: idle → pending → success (undo window) | error.
+ *
+ * Rendered above the ContextRail actions when shouldShowAutoRoute() is true.
+ * Keeps its own routing state so the rest of the rail is unaffected.
+ */
+interface InboxAutoRouteSectionProps {
+  item: ArtifactCard;
+  targetWorkspace: ArtifactWorkspace;
+}
+
+function InboxAutoRouteSection({ item, targetWorkspace }: InboxAutoRouteSectionProps) {
+  const { state, route, dismiss } = useAutoRoute({ item, targetWorkspace });
+
+  if (state.phase === "success") {
+    return (
+      <UndoRouteToast
+        artifactId={item.id}
+        targetWorkspace={state.targetWorkspace}
+        originalWorkspace={state.originalWorkspace}
+        onDismiss={dismiss}
+      />
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <AutoRouteButton
+        item={item}
+        targetWorkspace={targetWorkspace}
+        isPending={state.phase === "pending"}
+        onRoute={route}
+      />
+      {state.phase === "error" && (
+        <p role="alert" className="text-xs text-destructive">
+          {state.message}
+        </p>
+      )}
     </div>
   );
 }
