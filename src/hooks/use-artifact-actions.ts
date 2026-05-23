@@ -17,6 +17,8 @@ import {
   archiveArtifact,
   deleteArtifact,
   linkArtifact,
+  linkArtifactToProject,
+  moveArtifactWorkspace,
   requestReview,
 } from "@/lib/api/artifacts";
 import type { LinkArtifactRequest, RequestReviewRequest } from "@/lib/api/artifacts";
@@ -75,5 +77,48 @@ export function useLinkArtifact(artifactId: string) {
 export function useRequestReview(artifactId: string) {
   return useMutation({
     mutationFn: (body: RequestReviewRequest) => requestReview(artifactId, body),
+  });
+}
+
+/**
+ * Mutation hook for PATCH /api/artifacts/{id}/workspace.
+ *
+ * Moves the artifact to a different workspace (e.g. inbox → library).
+ * Invalidates inbox, artifacts, and the per-artifact detail cache so all
+ * dependent views (Inbox, Library, Detail) reflect the new workspace.
+ *
+ * P6-02: InboxContextRail workspace move action.
+ */
+export function useMoveArtifactWorkspace(artifactId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (targetWorkspace: string) =>
+      moveArtifactWorkspace(artifactId, targetWorkspace),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["artifacts"] });
+      queryClient.invalidateQueries({ queryKey: ["inbox"] });
+      queryClient.invalidateQueries({ queryKey: ["artifact", artifactId] });
+    },
+  });
+}
+
+/**
+ * Mutation hook for POST /api/artifacts/{artifactId}/projects/{projectId}/link.
+ *
+ * Associates the artifact with a project workspace.
+ * Invalidates the per-artifact detail cache and the global artifacts list
+ * so Project workspace views pick up the new association.
+ *
+ * P6-02: InboxContextRail project link action.
+ */
+export function useLinkArtifactToProject(artifactId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (projectId: string) =>
+      linkArtifactToProject(artifactId, projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["artifact", artifactId] });
+      queryClient.invalidateQueries({ queryKey: ["artifacts"] });
+    },
   });
 }

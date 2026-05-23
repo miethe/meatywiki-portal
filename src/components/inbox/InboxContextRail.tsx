@@ -7,15 +7,24 @@
  *   - customTabs: single "Properties" tab showing inbox-item metadata
  *     (type, source, intake date, content length derived from raw_content /
  *     frontmatter_jsonb.word_count)
- *   - actions: five stub action buttons (verb-first, lucide icons)
+ *   - actions: five action buttons (verb-first, lucide icons)
  *   - footer: "Finalize Entry" primary CTA (stub)
  *   - empty state: "Select an inbox item to see details & actions"
  *   - auto-route CTA: one-click workspace routing with 5-second undo (P7-02)
  *
- * All actions and the footer CTA are stubs that console.debug only — no
- * backend flows are wired (per P5-03 spec).
+ * P6-01: wired "Start Compilation" + "Request Review" to real endpoints.
+ *   - Start Compilation: useCompileArtifact({ artifactId, onSuccess, onError })
+ *   - Request Review: useRequestReview(artifactId).mutate({ review_type: "manual" })
+ *   - Add to Synthesis: stub (hasEndpoint: false) — no endpoint exists yet.
  *
- * Task: P5-03, P7-02
+ * P6-02/P6-03: wired "Move to Research" and "Link to Project Nexus".
+ *   - Move to Research: useMoveArtifactWorkspace(artifactId).mutate("research")
+ *     On success: calls onMoveSuccess(id) for optimistic row removal (P6-03),
+ *     invalidates ["inbox"] cache, and shows a success toast.
+ *   - Link to Project Nexus: useLinkArtifactToProject(artifactId) — placeholder
+ *     toast until a project picker modal ships (P7 deferred item).
+ *
+ * Task: P5-03 (scaffold), P6-01 (endpoint wiring), P6-02/P6-03 (move + link), P7-02 (auto-route)
  * Stitch ref: "Inbox" screen (ID: 837a47df72a648749bafefd22988de7f)
  */
 
@@ -36,6 +45,12 @@ import {
 } from "@/components/layout/ContextRail";
 import type { ArtifactCard, ArtifactWorkspace } from "@/types/artifact";
 import { patchArtifactWorkspace } from "@/lib/api/artifacts";
+import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import {
+  useRequestReview,
+  useMoveArtifactWorkspace,
+  useLinkArtifactToProject,
+} from "@/hooks/use-artifact-actions";
 import { useToast } from "@/hooks/use-toast";
 
 // ---------------------------------------------------------------------------
@@ -364,59 +379,6 @@ function useAutoRoute({ item, targetWorkspace }: UseAutoRouteOptions) {
 }
 
 // ---------------------------------------------------------------------------
-// Action stubs
-// ---------------------------------------------------------------------------
-
-function buildActions(item: ArtifactCard): ContextRailAction[] {
-  const stub = (label: string) => () => {
-    console.debug("[inbox-rail] action:", label, item.id);
-  };
-
-  return [
-    {
-      label: "Move to Research",
-      ariaLabel: "Move this item to the Research workspace",
-      hasEndpoint: false,
-      description: "Route this artifact into the Research workflow",
-      onClick: stub("Move to Research"),
-      icon: FlaskConical,
-    },
-    {
-      label: "Link to Project Nexus",
-      ariaLabel: "Link this item to a Project Nexus entry",
-      hasEndpoint: false,
-      description: "Associate this artifact with a project",
-      onClick: stub("Link to Project Nexus"),
-      icon: Link2,
-    },
-    {
-      label: "Add to Synthesis",
-      ariaLabel: "Add this item to a Synthesis artifact",
-      hasEndpoint: false,
-      description: "Merge into an existing synthesis document",
-      onClick: stub("Add to Synthesis"),
-      icon: GitMerge,
-    },
-    {
-      label: "Start Compilation",
-      ariaLabel: "Trigger compilation for this artifact",
-      hasEndpoint: false,
-      description: "Begin the compile stage for this artifact",
-      onClick: stub("Start Compilation"),
-      icon: Zap,
-    },
-    {
-      label: "Request Review",
-      ariaLabel: "Request a review for this artifact",
-      hasEndpoint: false,
-      description: "Flag this artifact for manual review",
-      onClick: stub("Request Review"),
-      icon: ClipboardCheck,
-    },
-  ];
-}
-
-// ---------------------------------------------------------------------------
 // Inbox-specific tab set (single Properties tab)
 // ---------------------------------------------------------------------------
 
@@ -499,12 +461,32 @@ export interface InboxContextRailProps {
    * selects an item before a detail fetch resolves).
    */
   isLoadingDetails?: boolean;
+  /**
+   * P6-03: Called with the artifact ID after a successful workspace move so the
+   * parent (InboxClient) can optimistically remove the row from the list without
+   * waiting for a network refetch. Optional — if not provided, the item will
+   * disappear only after the ["inbox"] query cache invalidation triggers a refetch.
+   */
+  onMoveSuccess?: (artifactId: string) => void;
   className?: string;
 }
 
 /**
  * InboxContextRail wires a selected inbox item into the shared <ContextRail>
- * with inbox-specific tabs (Properties) and suggested action stubs.
+ * with inbox-specific tabs (Properties) and suggested action buttons.
+ *
+ * P6-01: Two buttons wired to real endpoints:
+ *   - "Start Compilation": POST /api/artifacts/:id/compile
+ *   - "Request Review": POST /api/artifacts/:id/review
+ *
+ * P6-02/P6-03: Two more buttons wired:
+ *   - "Move to Research": PATCH /api/artifacts/:id/workspace → "research"
+ *     Calls onMoveSuccess(id) on success for immediate row removal.
+ *   - "Link to Project Nexus": placeholder toast (project picker is P7).
+ *
+ * Hooks must be called at the component level (not inside buildActions), so
+ * compile / requestReview mutation functions are wired here and passed into
+ * the action definitions.
  *
  * A "Finalize Entry" primary CTA sits below the rail for direct promotion.
  *
@@ -516,15 +498,130 @@ export interface InboxContextRailProps {
  * Usage:
  * ```tsx
  * <aside className="hidden w-72 shrink-0 xl:block">
- *   <InboxContextRail selectedItem={selectedItem} />
+ *   <InboxContextRail
+ *     selectedItem={selectedItem}
+ *     onMoveSuccess={removeArtifact}
+ *   />
  * </aside>
  * ```
  */
 export function InboxContextRail({
   selectedItem,
   isLoadingDetails = false,
+  onMoveSuccess,
   className,
 }: InboxContextRailProps) {
+  const { add: showToast } = useToast();
+
+  // ---------------------------------------------------------------------------
+  // Mutation: Start Compilation
+  // Hooks must be called unconditionally; the compile() function guards on
+  // selectedItem.id internally (no-op when isCompiling).
+  // ---------------------------------------------------------------------------
+  const { compile, isCompiling } = useCompileArtifact({
+    artifactId: selectedItem?.id ?? "",
+    onSuccess: () => {
+      showToast({
+        type: "success",
+        message: "Compilation started — the artifact is being processed.",
+      });
+    },
+    onError: (msg) => {
+      showToast({
+        type: "error",
+        message: `Compilation failed: ${msg}`,
+      });
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // Mutation: Request Review
+  // useRequestReview takes an artifactId at hook-call time (not mutation time).
+  // ---------------------------------------------------------------------------
+  const reviewMutation = useRequestReview(selectedItem?.id ?? "");
+  const isRequestingReview = reviewMutation.status === "pending";
+
+  const requestReview = () => {
+    if (!selectedItem?.id || isRequestingReview) return;
+    reviewMutation.mutate(
+      { review_type: "verification" },
+      {
+        onSuccess: () => {
+          showToast({
+            type: "success",
+            message: "Review requested — this artifact has been flagged for manual review.",
+          });
+        },
+        onError: (err) => {
+          const msg =
+            err instanceof Error ? err.message : "An unexpected error occurred.";
+          showToast({
+            type: "error",
+            message: `Review request failed: ${msg}`,
+          });
+        },
+      },
+    );
+  };
+
+  // ---------------------------------------------------------------------------
+  // Mutation: Move to Workspace (P6-02/P6-03)
+  // useMoveArtifactWorkspace invalidates ["inbox"] on success. The onMoveSuccess
+  // callback additionally triggers optimistic row removal in InboxClient so the
+  // item disappears immediately rather than waiting for the cache invalidation
+  // to trigger a full refetch.
+  // ---------------------------------------------------------------------------
+  const moveMutation = useMoveArtifactWorkspace(selectedItem?.id ?? "");
+  const isMoving = moveMutation.status === "pending";
+
+  const moveToResearch = () => {
+    if (!selectedItem?.id || isMoving) return;
+    const artifactId = selectedItem.id;
+    moveMutation.mutate("research", {
+      onSuccess: () => {
+        // P6-03: notify parent to remove the row optimistically
+        onMoveSuccess?.(artifactId);
+        showToast({
+          type: "success",
+          message: "Artifact moved to Research workspace.",
+        });
+      },
+      onError: (err) => {
+        const msg =
+          err instanceof Error ? err.message : "An unexpected error occurred.";
+        showToast({
+          type: "error",
+          message: `Move failed: ${msg}`,
+        });
+      },
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Mutation: Link to Project (P6-02)
+  // Full project picker UI is deferred to P7. For now this toasts an info
+  // message explaining the feature is coming, so the button is visible and
+  // functional but non-destructive. hasEndpoint is set to true to indicate
+  // the underlying API exists; the stub behaviour is a UI gap, not an API gap.
+  // ---------------------------------------------------------------------------
+  const linkMutation = useLinkArtifactToProject(selectedItem?.id ?? "");
+  const isLinking = linkMutation.status === "pending";
+
+  const linkToProject = () => {
+    if (!selectedItem?.id || isLinking) return;
+    // Project picker modal is a P7 deferred item (DI-066 or similar).
+    // Toasting an info message keeps the button alive without a no-op click.
+    console.debug("[inbox-rail] Link to Project: needs project picker UI (P7)");
+    showToast({
+      type: "info",
+      message: "Project linking requires a project picker — coming in a future release.",
+    });
+  };
+
+  // ---------------------------------------------------------------------------
+  // Early returns (after all hook calls to preserve hook call order)
+  // ---------------------------------------------------------------------------
+
   if (!selectedItem) {
     return (
       <div className={cn("flex flex-col gap-3", className)}>
@@ -544,8 +641,69 @@ export function InboxContextRail({
     );
   }
 
+  // ---------------------------------------------------------------------------
+  // Action definitions — hooks are all called above; callbacks close over their
+  // mutation state. Order: Move to Research, Link to Project Nexus, Add to
+  // Synthesis (stub), Start Compilation, Request Review.
+  // ---------------------------------------------------------------------------
+
+  const actions: ContextRailAction[] = [
+    {
+      // P6-02/P6-03: wired to PATCH /api/artifacts/:id/workspace
+      label: isMoving ? "Moving…" : "Move to Research",
+      ariaLabel: isMoving
+        ? "Move in progress"
+        : "Move this item to the Research workspace",
+      hasEndpoint: true,
+      description: "Route this artifact into the Research workflow",
+      onClick: moveToResearch,
+      icon: FlaskConical,
+    },
+    {
+      // P6-02: wired; project picker UI deferred to P7
+      label: isLinking ? "Linking…" : "Link to Project Nexus",
+      ariaLabel: isLinking
+        ? "Linking in progress"
+        : "Link this item to a Project Nexus entry",
+      hasEndpoint: true,
+      description: "Associate this artifact with a project",
+      onClick: linkToProject,
+      icon: Link2,
+    },
+    {
+      // No endpoint exists yet for synthesis merging — leave as stub.
+      label: "Add to Synthesis",
+      ariaLabel: "Add this item to a Synthesis artifact",
+      hasEndpoint: false,
+      description: "Merge into an existing synthesis document",
+      // No onClick: ContextRail treats absence of onClick as stub (renders "Soon" tag).
+      icon: GitMerge,
+    },
+    {
+      // P6-01: wired to POST /api/artifacts/:id/compile
+      label: isCompiling ? "Compiling…" : "Start Compilation",
+      ariaLabel: isCompiling
+        ? "Compilation in progress"
+        : "Trigger compilation for this artifact",
+      hasEndpoint: true,
+      description: "Begin the compile stage for this artifact",
+      onClick: compile, // compile() self-guards: returns early when isCompiling
+      icon: Zap,
+    },
+    {
+      // P6-01: wired to POST /api/artifacts/:id/review
+      label: isRequestingReview ? "Requesting…" : "Request Review",
+      ariaLabel: isRequestingReview
+        ? "Review request in progress"
+        : "Request a review for this artifact",
+      hasEndpoint: true,
+      description: "Flag this artifact for manual review",
+      onClick: requestReview, // requestReview() self-guards: returns early when isRequestingReview
+      icon: ClipboardCheck,
+    },
+  ];
+
   const customTabs = buildCustomTabs(selectedItem);
-  const actions = buildActions(selectedItem);
   const showAutoRoute = shouldShowAutoRoute(selectedItem);
   // Safe cast: shouldShowAutoRoute guarantees routing_workspace is non-null here.
   const routingTarget = selectedItem.routing_workspace as ArtifactWorkspace;

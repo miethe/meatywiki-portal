@@ -15,9 +15,13 @@
  * network refetch. Caller passes a partial update that is merged into the
  * matching artifact by ID.
  *
+ * P6-03: Added `removeArtifact` — optimistically removes an artifact from the
+ * local list by ID. Used by InboxContextRail after a successful workspace move
+ * so the moved item disappears immediately without waiting for a network refetch.
+ *
  * Usage:
  *   const { artifacts, cursor, isLoading, error, loadMore, hasMore,
- *           optimisticUpdateArtifact } = useInboxArtifacts({ initialData });
+ *           optimisticUpdateArtifact, removeArtifact } = useInboxArtifacts({ initialData });
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -61,6 +65,13 @@ export interface UseInboxArtifactsResult {
    * Use after compile success to reflect the new status without a full refetch.
    */
   optimisticUpdateArtifact: (id: string, patch: Partial<ArtifactCard>) => void;
+  /**
+   * P6-03: Optimistically remove an artifact from the local list by ID.
+   * Use after a successful workspace move so the item disappears immediately.
+   * The caller is responsible for re-inserting the item (via re-seeding state
+   * from props or a full refetch) if the mutation later fails.
+   */
+  removeArtifact: (id: string) => void;
   /**
    * P3-06 inbox-live-status: recently processed artifacts (past 24 h).
    * Only populated when `includeProcessed=true` is passed in options.
@@ -145,6 +156,12 @@ export function useInboxArtifacts({
     [],
   );
 
+  // P6-03: Optimistic remove — filter the artifact out of the local list.
+  // Produces a new array so React detects the change and re-renders.
+  const removeArtifact = useCallback((id: string) => {
+    setArtifacts((prev) => prev.filter((a) => a.id !== id));
+  }, []);
+
   return {
     artifacts,
     cursor,
@@ -153,6 +170,7 @@ export function useInboxArtifacts({
     error,
     loadMore,
     optimisticUpdateArtifact,
+    removeArtifact,
     processedItems,
     refreshProcessed,
   };

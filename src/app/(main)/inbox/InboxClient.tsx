@@ -649,7 +649,7 @@ export function InboxClient({ initialData }: InboxClientProps) {
   // feedback until SSE/poll delivers a terminal event (future phase).
   const compilingIdsRef = useRef<Set<string>>(new Set<string>());
 
-  const { artifacts, hasMore, isLoading, error, loadMore, processedItems, refreshProcessed } =
+  const { artifacts, hasMore, isLoading, error, loadMore, processedItems, refreshProcessed, removeArtifact } =
     useInboxArtifacts({ initialData, includeProcessed: true });
 
   const {
@@ -1010,7 +1010,7 @@ export function InboxClient({ initialData }: InboxClientProps) {
           aria-label="Inbox item context"
           className="hidden w-72 shrink-0 xl:block"
         >
-          <InboxContextRail selectedItem={selectedItem} />
+          <InboxContextRail selectedItem={selectedItem} onMoveSuccess={removeArtifact} />
         </aside>
       </div>
 

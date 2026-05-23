@@ -951,3 +951,65 @@ export function invalidateActivityCache(
 ): void {
   void queryClient.invalidateQueries({ queryKey: artifactActivityQueryKey(artifactId) });
 }
+
+// ---------------------------------------------------------------------------
+// Move artifact workspace (P6-02 — InboxContextRail workspace action)
+// ---------------------------------------------------------------------------
+
+/**
+ * Move an artifact to a different workspace.
+ *
+ * Backend: PATCH /api/artifacts/{id}/workspace
+ * Body: { target_workspace: string }
+ * Response: ArtifactDetail (the updated artifact, no envelope wrapper).
+ *
+ * Throws ApiError on 404 (unknown artifact) or 422 (invalid workspace value).
+ *
+ * P6-02: wired into useMoveArtifactWorkspace for InboxContextRail action.
+ */
+export async function moveArtifactWorkspace(
+  id: string,
+  targetWorkspace: string,
+): Promise<ArtifactDetail> {
+  return apiFetch<ArtifactDetail>(
+    `/artifacts/${encodeURIComponent(id)}/workspace`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ target_workspace: targetWorkspace }),
+    },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Link artifact to project (P6-02 — InboxContextRail project link action)
+// ---------------------------------------------------------------------------
+
+export interface LinkArtifactToProjectResponse {
+  artifact_id: string;
+  project_id: string;
+  status: string;
+}
+
+/**
+ * Link an artifact to a project.
+ *
+ * Backend: POST /api/artifacts/{artifactId}/projects/{projectId}/link
+ * Body: {} (empty — IDs are path params)
+ * Response: { artifact_id, project_id, status }
+ *
+ * Throws ApiError on 404 (unknown artifact or project) or 409 (already linked).
+ *
+ * P6-02: wired into useLinkArtifactToProject for InboxContextRail action.
+ */
+export async function linkArtifactToProject(
+  artifactId: string,
+  projectId: string,
+): Promise<LinkArtifactToProjectResponse> {
+  return apiFetch<LinkArtifactToProjectResponse>(
+    `/artifacts/${encodeURIComponent(artifactId)}/projects/${encodeURIComponent(projectId)}/link`,
+    {
+      method: "POST",
+      body: JSON.stringify({}),
+    },
+  );
+}
