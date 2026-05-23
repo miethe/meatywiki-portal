@@ -147,6 +147,12 @@ export interface PendingApprovalPanelProps {
   isLoading: boolean;
   error: Error | null;
   refetch: () => void;
+  /**
+   * Optional info element rendered inline next to the "Pending Approval" label.
+   * Accepts any ReactNode — typically an <InfoTooltip> icon. When undefined,
+   * no extra element is rendered and existing callers are unaffected.
+   */
+  info?: React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +175,7 @@ export function PendingApprovalPanel({
   isLoading,
   error,
   refetch,
+  info,
 }: PendingApprovalPanelProps) {
   const [scanState, setScanState] = useState<"idle" | "scanning">("idle");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -388,8 +395,9 @@ export function PendingApprovalPanel({
                 className={cn(someSelected && "opacity-60")}
               />
             )}
-            <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Pending Approval
+              {info ?? null}
             </span>
             <CountPill count={count} />
           </div>

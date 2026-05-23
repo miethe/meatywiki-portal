@@ -38,6 +38,8 @@ import type {
   LensVerificationState,
 } from "@/types/artifact";
 import type { LibraryFilters } from "@/hooks/useLibraryArtifacts";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // Known values for filter dropdowns
@@ -125,6 +127,8 @@ interface MultiSelectChipsProps {
   options: readonly { value: string; label: string }[];
   selected: string[];
   onChange: (next: string[]) => void;
+  /** Optional InfoTooltip copy string to display next to the group label */
+  tooltip?: string;
   className?: string;
 }
 
@@ -133,6 +137,7 @@ function MultiSelectChips({
   options,
   selected,
   onChange,
+  tooltip,
   className,
 }: MultiSelectChipsProps) {
   function toggle(value: string) {
@@ -149,8 +154,17 @@ function MultiSelectChips({
       aria-label={label}
       className={cn("flex flex-wrap items-center gap-1", className)}
     >
-      <span className="shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <span className="shrink-0 inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
+        {tooltip && (
+          <InfoTooltip
+            content={tooltip}
+            side="top"
+            align="start"
+            icon="info"
+            label={`About ${label.toLowerCase()}`}
+          />
+        )}
       </span>
       {options.map(({ value, label: optLabel }) => {
         const isActive = selected.includes(value);
@@ -603,6 +617,7 @@ export function LibraryFilterBar({
             label="Workspace"
             options={FACET_OPTIONS}
             selected={facet ? [facet] : []}
+            tooltip={TOOLTIP_COPY.library.workspaceFacetHeader}
             onChange={(next) => {
               // Single-select for facet: take last selected value
               const last = next[next.length - 1] as ArtifactFacet | undefined;
@@ -746,6 +761,7 @@ export function LibraryFilterBar({
             label="Fidelity"
             options={LENS_FIDELITY_OPTIONS}
             selected={lensFidelity}
+            tooltip={TOOLTIP_COPY.library.fidelityChip}
             onChange={(next) =>
               onFiltersChange({ lensFidelity: next as LensFidelity[] })
             }
@@ -759,6 +775,7 @@ export function LibraryFilterBar({
             label="Freshness"
             options={LENS_FRESHNESS_OPTIONS}
             selected={lensFreshness}
+            tooltip={TOOLTIP_COPY.library.freshnessChip}
             onChange={(next) =>
               onFiltersChange({ lensFreshness: next as LensFreshness[] })
             }

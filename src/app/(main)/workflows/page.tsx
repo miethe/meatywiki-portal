@@ -50,6 +50,9 @@ import { MetricsPanel } from "@/components/ui/metrics-panel";
 import { ContextRail } from "@/components/ui/context-rail";
 import { ContextRailProvider, useContextRailToggle } from "@/components/ui/context-rail-context";
 import { WorkflowStatusBadge } from "@/components/ui/workflow-status-badge";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 import { ssePool } from "@/lib/sse/pool";
 import { RoutingRecommendationCard } from "@/components/artifact/routing-recommendation-card";
 import { cn } from "@/lib/utils";
@@ -152,7 +155,15 @@ function ResourceIntensityGauge({ value, className }: ResourceIntensityGaugeProp
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">Resource Intensity</span>
+        <span className="flex items-center gap-1 text-muted-foreground">
+          Resource Intensity
+          <InfoTooltip
+            content={TOOLTIP_COPY.workflow.resourceIntensity}
+            side="top"
+            label="About resource intensity"
+            icon="info"
+          />
+        </span>
         <span className="font-semibold tabular-nums">{clamped}%</span>
       </div>
       <div
@@ -192,6 +203,12 @@ function AutomatedDiscoveryCard() {
           className="size-3.5 shrink-0 text-amber-500 dark:text-amber-400"
         />
         <span className="text-xs font-semibold text-foreground">Auto-sync ready</span>
+        <InfoTooltip
+          content={TOOLTIP_COPY.workflow.automatedDiscovery}
+          side="top"
+          label="About automated discovery"
+          icon="info"
+        />
       </div>
       <p className="text-[11px] leading-relaxed text-muted-foreground">
         Automated Discovery monitors your vault for new captures and queues ingest
@@ -558,6 +575,9 @@ function WorkflowsPageInner() {
     <div className="flex min-h-0 flex-1 gap-0">
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col gap-6 overflow-y-auto p-6">
+        {/* P3-06: First-run tour offer banner */}
+        <FirstRunOffer tourId="workflowRun" tourLabel="Workflows" />
+
         {/* Page header */}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -634,12 +654,19 @@ function WorkflowsPageInner() {
         {/* Active Workflows section */}
         <section aria-labelledby="active-workflows-heading">
           <div className="mb-3 flex items-center justify-between gap-2">
-            <h2
-              id="active-workflows-heading"
-              className="text-base font-semibold tracking-tight"
-            >
-              Active Workflows
-            </h2>
+            <div className="flex items-center gap-1.5">
+              <h2
+                id="active-workflows-heading"
+                className="text-base font-semibold tracking-tight"
+              >
+                Active Workflows
+              </h2>
+              <InfoTooltip
+                content={TOOLTIP_COPY.workflow.activeWorkflows}
+                side="right"
+                label="About active workflows"
+              />
+            </div>
             {activeRuns.length > 0 && (
               <span
                 aria-label={`${activeRuns.length} active`}
@@ -661,12 +688,19 @@ function WorkflowsPageInner() {
 
         {/* Historical Workflows section */}
         <section aria-labelledby="historical-workflows-heading">
-          <h2
-            id="historical-workflows-heading"
-            className="mb-3 text-base font-semibold tracking-tight"
-          >
-            Historical Workflows
-          </h2>
+          <div className="mb-3 flex items-center gap-1.5">
+            <h2
+              id="historical-workflows-heading"
+              className="text-base font-semibold tracking-tight"
+            >
+              Historical Workflows
+            </h2>
+            <InfoTooltip
+              content={TOOLTIP_COPY.workflow.historicalWorkflows}
+              side="right"
+              label="About historical workflows"
+            />
+          </div>
           <HistoricalWorkflowsSection
             recentRuns={recentRuns}
             isLoading={isLoading}

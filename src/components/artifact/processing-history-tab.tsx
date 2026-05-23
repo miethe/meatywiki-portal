@@ -21,6 +21,7 @@
  *   - error_detail or degraded_reason (for failure/degraded events)
  *
  * P2-02 — Processing history tab on artifact detail.
+ * P2-03 — InfoTooltip on degraded/failed badges and terminal event icons.
  */
 
 import { useState } from "react";
@@ -36,6 +37,8 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useProcessingHistory, type StageEventItem, type StageEventType } from "@/hooks/use-processing-history";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -269,13 +272,19 @@ function EventSkeleton({ isLast }: { isLast: boolean }) {
 
 /**
  * A single timeline event row.
+ *
+ * isTerminal: true when this is the last event in a run (newest in sorted order,
+ * index 0 after reversal). The terminal event icon gets an InfoTooltip from
+ * TOOLTIP_COPY.workflow.terminalEventIcon.
  */
 function EventRow({
   event,
   isLast,
+  isTerminal,
 }: {
   event: StageEventItem;
   isLast: boolean;
+  isTerminal: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -306,21 +315,53 @@ function EventRow({
         />
       )}
 
-      {/* Status icon dot */}
-      <div
-        aria-hidden="true"
-        className={cn(
-          "relative z-10 mt-1 flex h-9 w-9 flex-none items-center justify-center rounded-full border",
-          styles.dotClass,
+      {/* Status icon dot — wrapped with InfoTooltip for terminal events */}
+      <div className="relative z-10 mt-1 flex-none">
+        {isTerminal ? (
+          <div className="relative">
+            <div
+              className={cn(
+                "flex h-9 w-9 items-center justify-center rounded-full border",
+                styles.dotClass,
+              )}
+            >
+              <Icon
+                className={cn(
+                  "h-4 w-4",
+                  styles.iconClass,
+                  eventType === "stage_started" && "animate-spin",
+                )}
+              />
+            </div>
+            {/* Terminal event InfoTooltip — positioned at top-right of icon dot */}
+            <div className="absolute -right-1 -top-1">
+              <InfoTooltip
+                content={TOOLTIP_COPY.workflow.terminalEventIcon}
+                side="top"
+                align="start"
+                icon="info"
+                label="About this terminal event"
+                iconClassName="h-3 w-3 text-muted-foreground/70"
+              />
+            </div>
+          </div>
+        ) : (
+          <div
+            aria-hidden="true"
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-full border",
+              styles.dotClass,
+            )}
+          >
+            <Icon
+              className={cn(
+                "h-4 w-4",
+                styles.iconClass,
+                eventType === "stage_started" && "animate-spin",
+              )}
+            />
+          </div>
         )}
-      >
-        <Icon
-          className={cn(
-            "h-4 w-4",
-            styles.iconClass,
-            eventType === "stage_started" && "animate-spin",
-          )}
-        />
       </div>
 
       {/* Event body */}
@@ -341,24 +382,42 @@ function EventRow({
             {label}
           </span>
 
-          {/* Degraded badge — amber pill with degraded_reason tooltip */}
+          {/* Degraded badge — amber pill with event-specific degraded_reason tooltip,
+              plus an InfoTooltip icon explaining the system-level degraded status */}
           {eventType === "stage_degraded" && (
-            <BadgeWithTooltip
-              label="Degraded"
-              tooltipText={event.degraded_reason}
-              badgeClass="bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
-              tooltipClass="bg-amber-900 text-amber-50 dark:bg-amber-800"
-            />
+            <span className="inline-flex items-center gap-1">
+              <BadgeWithTooltip
+                label="Degraded"
+                tooltipText={event.degraded_reason}
+                badgeClass="bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300"
+                tooltipClass="bg-amber-900 text-amber-50 dark:bg-amber-800"
+              />
+              <InfoTooltip
+                content={TOOLTIP_COPY.workflow.degradedBadge}
+                side="top"
+                align="center"
+                label="About degraded status"
+              />
+            </span>
           )}
 
-          {/* Failed badge — red pill with error_detail tooltip */}
+          {/* Failed badge — red pill with event-specific error_detail tooltip,
+              plus an InfoTooltip icon explaining the system-level failed status */}
           {(eventType === "stage_failed" || eventType === "compile_failed") && (
-            <BadgeWithTooltip
-              label="Failed"
-              tooltipText={event.error_detail}
-              badgeClass="bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
-              tooltipClass="bg-red-900 text-red-50 dark:bg-red-800"
-            />
+            <span className="inline-flex items-center gap-1">
+              <BadgeWithTooltip
+                label="Failed"
+                tooltipText={event.error_detail}
+                badgeClass="bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300"
+                tooltipClass="bg-red-900 text-red-50 dark:bg-red-800"
+              />
+              <InfoTooltip
+                content={TOOLTIP_COPY.workflow.failedBadge}
+                side="top"
+                align="center"
+                label="About failed status"
+              />
+            </span>
           )}
 
           {event.duration_ms !== null && (
@@ -501,6 +560,9 @@ interface ProcessingHistoryTabProps {
  *
  * Events are shown newest-first (the backend returns chronological order;
  * we reverse for display so the most recent status is at the top).
+ *
+ * The newest event (index 0 after reversal) is the terminal event and receives
+ * an InfoTooltip on its icon dot via isTerminal=true (P2-03).
  */
 export function ProcessingHistoryTab({ artifactId }: ProcessingHistoryTabProps) {
   const { events, isLoading, isError, error, refetch } = useProcessingHistory(artifactId);
@@ -548,6 +610,7 @@ export function ProcessingHistoryTab({ artifactId }: ProcessingHistoryTabProps) 
             key={event.event_id}
             event={event}
             isLast={idx === sorted.length - 1}
+            isTerminal={idx === 0}
           />
         ))}
       </ul>

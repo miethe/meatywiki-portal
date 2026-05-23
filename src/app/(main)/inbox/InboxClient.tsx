@@ -75,6 +75,9 @@ import { useCompileEvents } from "@/hooks/useCompileEvents";
 import { useInboxPending } from "@/hooks/useInboxPending";
 import { PendingApprovalPanel } from "@/components/inbox/PendingApprovalPanel";
 import { invalidateActivityCache } from "@/lib/api/artifacts";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
@@ -118,6 +121,16 @@ const GROUP_LABELS: Record<InboxGroup, string> = {
   new: "NEW",
   needs_compile: "NEEDS COMPILE",
   needs_destination: "NEEDS DESTINATION",
+};
+
+// P1-06 (v2.3 onboarding): tooltip copy keys for each section header.
+// Defined as a constant to avoid constructing JSX in the module body;
+// the actual <InfoTooltip> elements are created inline in the render loop
+// using these content strings pulled from the finalized TOOLTIP_COPY.inbox keys.
+const GROUP_TOOLTIP_CONTENT: Record<InboxGroup, string> = {
+  new: TOOLTIP_COPY.inbox.sectionNew,
+  needs_compile: TOOLTIP_COPY.inbox.sectionNeedsCompile,
+  needs_destination: TOOLTIP_COPY.inbox.sectionNeedsDestination,
 };
 
 /** Derive urgency for the whole group based on whether any item is >24h old.
@@ -496,6 +509,9 @@ function InboxItemWithCompile({
     onError: handleHttpError,
   });
 
+  // P1-06 (v2.3 onboarding): the compile button is wrapped with InfoTooltip
+  // using asChild so the existing button element is the trigger — the click
+  // target is fully preserved and the tooltip appears on hover/focus.
   const compileSlot = stageIndicatorVisible ? (
     <CompileStageIndicator
       events={events}
@@ -503,39 +519,48 @@ function InboxItemWithCompile({
       onDone={() => setStageIndicatorVisible(false)}
     />
   ) : (
-    <button
-      type="button"
-      aria-label={
-        isCompiling
-          ? `Compilation in progress for ${artifact.title}`
-          : `Compile ${artifact.title}`
-      }
-      aria-busy={isCompiling}
-      disabled={isCompiling}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!isCompiling) {
-          compile();
-        }
-      }}
-      className={cn(
-        "pointer-events-auto inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5",
-        "text-xs font-medium transition-colors",
-        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-        isCompiling
-          ? "cursor-not-allowed opacity-70 text-muted-foreground border-border"
-          : "text-foreground hover:bg-accent hover:text-accent-foreground",
-      )}
+    <div data-tour="inbox-compile-button">
+    <InfoTooltip
+      asChild
+      content={TOOLTIP_COPY.inbox.compileButton}
+      side="top"
+      align="end"
     >
-      {isCompiling && (
-        <svg aria-hidden="true" className="size-3 animate-spin" fill="none" viewBox="0 0 24 24">
-          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-        </svg>
-      )}
-      {isCompiling ? "Compiling…" : "Compile"}
-    </button>
+      <button
+        type="button"
+        aria-label={
+          isCompiling
+            ? `Compilation in progress for ${artifact.title}`
+            : `Compile ${artifact.title}`
+        }
+        aria-busy={isCompiling}
+        disabled={isCompiling}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!isCompiling) {
+            compile();
+          }
+        }}
+        className={cn(
+          "pointer-events-auto inline-flex h-7 items-center gap-1.5 rounded-md border px-2.5",
+          "text-xs font-medium transition-colors",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          isCompiling
+            ? "cursor-not-allowed opacity-70 text-muted-foreground border-border"
+            : "text-foreground hover:bg-accent hover:text-accent-foreground",
+        )}
+      >
+        {isCompiling && (
+          <svg aria-hidden="true" className="size-3 animate-spin" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        )}
+        {isCompiling ? "Compiling…" : "Compile"}
+      </button>
+    </InfoTooltip>
+    </div>
   );
 
   // SSE error pill — inline, below the card (higher priority than HTTP error).
@@ -744,6 +769,9 @@ export function InboxClient({ initialData }: InboxClientProps) {
         </button>
       </div>
 
+      {/* P3-06: First-run tour offer banner */}
+      <FirstRunOffer tourId="inbox" tourLabel="Inbox" className="mb-1" />
+
       {/* ------------------------------------------------------------------ */}
       {/* Two-column layout: artifact list (left) + ContextRail (right)      */}
       {/* P5-03: ContextRail hidden below xl (1280px). We use xl (not lg)    */}
@@ -760,13 +788,21 @@ export function InboxClient({ initialData }: InboxClientProps) {
           {/* P2-03: Pending Approval panel — rendered above status groups when
                there are pending items or the initial fetch is in-flight. */}
           {(pendingCount > 0 || pendingLoading) && (
-            <div className="mb-6">
+            <div className="mb-6" data-tour="inbox-pending-approval">
+              {/* P1-06: sectionPendingApproval tooltip wired via the info slot. */}
               <PendingApprovalPanel
                 items={pendingItems}
                 count={pendingCount}
                 isLoading={pendingLoading}
                 error={pendingError}
                 refetch={pendingRefetch}
+                info={
+                  <InfoTooltip
+                    content={TOOLTIP_COPY.inbox.sectionPendingApproval}
+                    side="top"
+                    align="start"
+                  />
+                }
               />
             </div>
           )}
@@ -789,12 +825,44 @@ export function InboxClient({ initialData }: InboxClientProps) {
                 // so the user can see all three groups at a glance and understand
                 // the triage structure even when a group is empty.
                 const urgency = items.length > 0 ? deriveGroupUrgency(items) : "normal";
+                const tourAttr =
+                  groupKey === "new" ? "inbox-new-section"
+                  : groupKey === "needs_compile" ? "inbox-needs-compile-section"
+                  : undefined;
                 return (
+                  <div key={groupKey} {...(tourAttr ? { "data-tour": tourAttr } : {})}>
                   <StatusGroupSection
                     key={groupKey}
                     label={GROUP_LABELS[groupKey]}
                     count={items.length}
                     urgency={urgency}
+                    // P1-06 (v2.3 onboarding): section header info tooltip.
+                    info={
+                      <InfoTooltip
+                        content={GROUP_TOOLTIP_CONTENT[groupKey]}
+                        side="top"
+                        align="start"
+                      />
+                    }
+                    // P1-06 (v2.3 onboarding): urgency badge column explanation.
+                    // Placed once on the "new" section header (the first group,
+                    // where items arrive fresh and urgency is most actionable).
+                    // Per-row wrapping is not possible without modifying the shared
+                    // ArtifactCard component (UrgencyBadge is rendered internally
+                    // there). A single column-level icon is the least-invasive
+                    // approach that surfaces the urgencyBadge copy exactly once
+                    // per page load, satisfying AC-4 (PRD §P1-06 count = 7).
+                    rightInfo={
+                      groupKey === "new" ? (
+                        <InfoTooltip
+                          content={TOOLTIP_COPY.inbox.urgencyBadge}
+                          icon="info"
+                          label="About urgency scores"
+                          side="top"
+                          align="end"
+                        />
+                      ) : undefined
+                    }
                   >
                     {items.length === 0 ? (
                       // P2-12 / F-17: muted empty-group placeholder so the
@@ -808,10 +876,10 @@ export function InboxClient({ initialData }: InboxClientProps) {
                         aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
                         className="flex flex-col gap-2"
                       >
-                        {items.map((artifact) => {
+                        {items.map((artifact, index) => {
                           const { level, minutesAgo } = deriveItemUrgency(artifact);
                           return (
-                            <li key={artifact.id}>
+                            <li key={artifact.id} {...(groupKey === "new" && index === 0 ? { "data-tour": "inbox-urgency-badge" } : {})}>
                               {/*
                                * FE-04: needs_compile group gets InboxItemWithCompile
                                * (includes compile button + per-item error state).
@@ -843,6 +911,7 @@ export function InboxClient({ initialData }: InboxClientProps) {
                       </ul>
                     )}
                   </StatusGroupSection>
+                  </div>
                 );
               })}
             </div>
@@ -917,8 +986,20 @@ export function InboxClient({ initialData }: InboxClientProps) {
             </p>
           )}
 
-          {/* P3-05 / P3-06: Recently processed artifacts (past 24 h). */}
-          <ProcessedSection items={processedItems} />
+          {/* P3-05 / P3-06: Recently processed artifacts (past 24 h).
+              P1-06: sectionProcessed tooltip wired via the info slot. */}
+          <div data-tour="inbox-processed-section">
+          <ProcessedSection
+            items={processedItems}
+            info={
+              <InfoTooltip
+                content={TOOLTIP_COPY.inbox.sectionProcessed}
+                side="top"
+                align="start"
+              />
+            }
+          />
+          </div>
         </section>
 
         {/* ---------------------------------------------------------------- */}

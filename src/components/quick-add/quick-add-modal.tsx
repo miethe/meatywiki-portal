@@ -54,6 +54,8 @@ import { AudioRecorder } from "@/components/quick-add/audio-recorder";
 import { FileDropZone } from "@/components/quick-add/file-drop-zone";
 import type { WorkflowRunStatus } from "@/types/artifact";
 import type { SSEWorkflowEvent, WorkflowCompletedEvent, CompileFailedEvent, StageDegradedEvent } from "@/lib/sse/types";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -636,6 +638,14 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                 ? activeTab === "file" ? "File submitted" : "Audio submitted"
                 : "Quick Add"}
             </h2>
+            {/* Tooltip for the Quick Add button / modal purpose — shown only on form phase */}
+            {phase === "form" && (
+              <InfoTooltip
+                content={TOOLTIP_COPY.quickAdd.quickAddButton}
+                side="right"
+                label="About Quick Add"
+              />
+            )}
             {/* P4-02: offline queue badge */}
             <QueueBadge
               queuedCount={queuedCount}
@@ -673,28 +683,42 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
         {/* --- FORM PHASE --- */}
         {phase === "form" && (
           <>
-            {/* Tab bar */}
-            <div role="tablist" aria-label="Intake type" className="flex border-b">
-              {(["note", "url", "audio", "file"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  role="tab"
-                  aria-selected={activeTab === tab}
-                  aria-controls={`quick-add-${tab}-panel`}
-                  id={`quick-add-${tab}-tab`}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={cn(
-                    "flex-1 py-2.5 text-sm font-medium transition-colors",
-                    "border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    activeTab === tab
-                      ? "border-primary text-foreground"
-                      : "border-transparent text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {tabLabel(tab)}
-                </button>
-              ))}
+            {/* Tab bar — source type selector */}
+            <div className="flex items-center border-b">
+              <div
+                role="tablist"
+                aria-label="Intake type"
+                className="flex flex-1"
+              >
+                {(["note", "url", "audio", "file"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    role="tab"
+                    aria-selected={activeTab === tab}
+                    aria-controls={`quick-add-${tab}-panel`}
+                    id={`quick-add-${tab}-tab`}
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                    className={cn(
+                      "flex-1 py-2.5 text-sm font-medium transition-colors",
+                      "border-b-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                      activeTab === tab
+                        ? "border-primary text-foreground"
+                        : "border-transparent text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {tabLabel(tab)}
+                  </button>
+                ))}
+              </div>
+              {/* Tooltip for source type selector — positioned at end of tab bar */}
+              <div className="flex items-center px-3">
+                <InfoTooltip
+                  content={TOOLTIP_COPY.quickAdd.sourceTypeSelector}
+                  side="left"
+                  label="About source type selection"
+                />
+              </div>
             </div>
 
             <form onSubmit={handleSubmit} noValidate>
@@ -877,6 +901,15 @@ export function QuickAddModal({ open, onOpenChange }: QuickAddModalProps) {
                   hidden={activeTab !== "file"}
                   className="flex flex-col gap-3"
                 >
+                  {/* File upload label row with tooltip */}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-medium text-foreground">Upload a file</span>
+                    <InfoTooltip
+                      content={TOOLTIP_COPY.quickAdd.fileUpload}
+                      side="right"
+                      label="About file uploads"
+                    />
+                  </div>
                   <FileDropZone
                     disabled={isSubmitting}
                     onFile={(file) => setFileFile(file)}

@@ -179,6 +179,9 @@ import {
 } from "@/lib/graph/autoDegrade";
 import { ANIMATION_TIMINGS } from "@/lib/graph/animationTimings";
 import { useAnimationBudget } from "@/hooks/useAnimationBudget";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 
 // ---------------------------------------------------------------------------
 // P2-08: cosmos.gl lazy chunk (Next.js dynamic import, ssr: false)
@@ -3756,7 +3759,7 @@ export function VaultGraphPageClient() {
 
           {/* Toolbar row: encoding toggles (P2-09) + saved views (P3-06) + P4 controls */}
           {!isLoading && !isNeighborhoodLoading && displayNodes.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap" data-tour="graph-lod-selector">
               <EncodingToolbar
                 colorMode={colorMode}
                 sizeMode={sizeMode}
@@ -3779,10 +3782,19 @@ export function VaultGraphPageClient() {
                 <HelpCircle aria-hidden="true" className="size-3.5" />
               </button>
               {/* P3-09: Grouping selector */}
-              <GraphGroupingSelector
-                mode={groupingMode}
-                onChange={setGroupingMode}
-              />
+              <div className="flex items-center gap-0.5" data-tour="graph-cluster-controls">
+                <GraphGroupingSelector
+                  mode={groupingMode}
+                  onChange={setGroupingMode}
+                />
+                <InfoTooltip
+                  content={TOOLTIP_COPY.graph.clusterBySelector}
+                  side="bottom"
+                  align="center"
+                  icon="info"
+                  label="About cluster-by grouping"
+                />
+              </div>
               {/* Saved views menu (P3-06) — passes live grouping so it is captured in snapshots */}
               <SavedViewsMenu
                 currentFilter={graphFilterValues}
@@ -3830,21 +3842,30 @@ export function VaultGraphPageClient() {
               </button>
 
               {/* P4-09: Export PNG */}
-              <button
-                type="button"
-                aria-label={isExporting ? "Exporting…" : "Export graph as PNG"}
-                onClick={handleExportPng}
-                disabled={isExporting}
-                className={cn(
-                  "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
-                  "transition-colors hover:bg-accent hover:text-accent-foreground",
-                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                  "disabled:pointer-events-none disabled:opacity-50",
-                )}
-              >
-                <Download aria-hidden="true" className="size-3" />
-                <span className="hidden sm:inline">PNG</span>
-              </button>
+              <div className="flex items-center gap-0.5" data-tour="graph-export-button">
+                <button
+                  type="button"
+                  aria-label={isExporting ? "Exporting…" : "Export graph as PNG"}
+                  onClick={handleExportPng}
+                  disabled={isExporting}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium",
+                    "transition-colors hover:bg-accent hover:text-accent-foreground",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    "disabled:pointer-events-none disabled:opacity-50",
+                  )}
+                >
+                  <Download aria-hidden="true" className="size-3" />
+                  <span className="hidden sm:inline">PNG</span>
+                </button>
+                <InfoTooltip
+                  content={TOOLTIP_COPY.graph.exportButton}
+                  side="bottom"
+                  align="center"
+                  icon="info"
+                  label="About graph export"
+                />
+              </div>
 
               {/* P4-09: Export SVG */}
               <button
@@ -3930,6 +3951,9 @@ export function VaultGraphPageClient() {
               sampled={sampled}
             />
           )}
+
+          {/* P3-06 (v2.3 onboarding): First-run tour offer banner */}
+          <FirstRunOffer tourId="graph" tourLabel="Graph Explorer" />
 
           {/* P5-03: Opt-in warning banner — shown before canvas when matrix = opt-in-warning */}
           {effectiveDegradeConfig?.mode === "opt-in-warning" && !optInOverride && !isNeighborhoodMode && (
@@ -4051,6 +4075,7 @@ export function VaultGraphPageClient() {
                           ref={canvasContainerRef}
                           role="application"
                           data-testid="graph-canvas"
+                          data-tour="graph-canvas"
                           aria-label={`Knowledge graph — ${displayNodes.length} nodes visible. Tab to cycle nodes by degree, arrow keys to traverse neighbors, Space to open popover, Enter for detail, Escape to dismiss. Shift+drag to select multiple nodes.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
                           tabIndex={0}
                           onKeyDown={handleKeyDown}
@@ -4250,6 +4275,7 @@ export function VaultGraphPageClient() {
 
         {/* Right legend panel (P3-06, P2-09) */}
         <aside
+          data-tour="graph-semantic-neighbors"
           aria-label="Graph legend"
           className="hidden xl:flex xl:w-[220px] xl:shrink-0 xl:flex-col xl:gap-4"
         >

@@ -27,6 +27,8 @@ import { ShellNav } from "./shell-nav";
 import { ShellHeader } from "./shell-header";
 import { SmartTriageButton } from "@/components/inbox/smart-triage-button";
 import { Separator } from "@/components/ui/separator";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { TourProvider } from "@/components/tour/TourProvider";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -80,6 +82,8 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
     pathname === "/library" || pathname.startsWith("/artifact/");
 
   return (
+    <TourProvider>
+    <TooltipProvider delayDuration={200}>
     <MobileNavContext.Provider value={{ isOpen: mobileNavOpen, toggle, close }}>
       <div className="flex h-screen overflow-hidden bg-background">
         {/* ---------------------------------------------------------------- */}
@@ -179,5 +183,7 @@ export function ShellClient({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     </MobileNavContext.Provider>
+    </TooltipProvider>
+    </TourProvider>
   );
 }

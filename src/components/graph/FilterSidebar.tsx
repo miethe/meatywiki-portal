@@ -278,6 +278,7 @@ export function FilterSidebar({
   return (
     <aside
       ref={sidebarRef}
+      data-tour="graph-filter-panel"
       role="complementary"
       aria-label="Graph filters"
       onKeyDown={handleKeyDown}

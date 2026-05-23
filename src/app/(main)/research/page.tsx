@@ -42,6 +42,9 @@ import { SynthesisNarrative } from "@/components/research/SynthesisNarrative";
 import { WorkspaceHealthGauge } from "@/components/research/WorkspaceHealthGauge";
 import { StaleArtifactsPanel } from "@/components/research/StaleArtifactsPanel";
 import { ActiveResearchRuns } from "@/components/research/ActiveResearchRuns";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 
 // ---------------------------------------------------------------------------
 // Shimmer primitive (inlined for ContextRail skeleton sections)
@@ -183,12 +186,22 @@ export default function ResearchHomePage() {
       {/* ------------------------------------------------------------------ */}
       <ResearchWorkspaceEmpty />
 
+      {/* P3-06: First-run tour offer banner */}
+      <FirstRunOffer tourId="researchWizard" tourLabel="Research" />
+
       {/* ------------------------------------------------------------------ */}
       {/* Page heading + workspace selector                                   */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3" data-tour="research-start-button">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Research</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Research</h1>
+            <InfoTooltip
+              content={TOOLTIP_COPY.research.researchWizard}
+              side="right"
+              label="About the Research workspace"
+            />
+          </div>
           <p className="text-sm text-muted-foreground">
             Workspace for compiled knowledge exploration
           </p>
@@ -212,11 +225,14 @@ export default function ResearchHomePage() {
         <div className="flex min-w-0 flex-1 flex-col gap-6">
 
           {/* Priority Topics 2×2 grid */}
+          {/* data-tour: research-scope-selection on the grid area */}
           {/*
            * TODO: wire GET /api/research/priority-topics.
            * PriorityTopicsGrid renders skeletons + disabled Add New Entity slot.
            */}
+          <div data-tour="research-scope-selection">
           <PriorityTopicsGrid />
+          </div>
 
           {/* Evidence + Contradictions row */}
           {/*
@@ -250,7 +266,9 @@ export default function ResearchHomePage() {
           {/* Freshness score bar (0–100), last synthesis date, source      */}
           {/* artifact count, configurable threshold, cursor pagination.    */}
           {/* ------------------------------------------------------------ */}
+          <div data-tour="research-results">
           <StaleArtifactsPanel />
+          </div>
 
           {/* ------------------------------------------------------------ */}
           {/* Active Research Runs widget — P5-01/P5-02/P5-04              */}
@@ -258,7 +276,9 @@ export default function ResearchHomePage() {
           {/* every 5 s with exponential backoff on error (cap 30 s).      */}
           {/* SSE migration deferred (OQ-5).                               */}
           {/* ------------------------------------------------------------ */}
+          <div data-tour="research-active-runs">
           <ActiveResearchRuns />
+          </div>
         </div>
 
         {/* ---------------------------------------------------------------- */}

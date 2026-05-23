@@ -1786,12 +1786,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       {/* ------------------------------------------------------------------ */}
       {/* Locked top region — title + key-detail badges (does not scroll)    */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex shrink-0 flex-col gap-4">
+      <div className="flex shrink-0 flex-col gap-4" data-tour="artifact-detail-header">
         <ArtifactTitleBlock artifact={detailArtifact} />
 
         <div className="flex flex-col gap-2">
           {/* Lens Badge Set — FULL variant, above the tab bar per manifest §3.4 */}
-          <LensBadgeSet artifact={detailArtifact} variant="detail" />
+          <div data-tour="artifact-detail-lens-panel">
+            <LensBadgeSet artifact={detailArtifact} variant="detail" />
+          </div>
 
           {/* Type / workspace / indicator badge row */}
           <div className="flex flex-wrap items-center gap-2">
@@ -1823,7 +1825,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       <div className="flex min-h-0 flex-1 gap-6">
         {/* Main content column — scrolls independently of the rail and of   */}
         {/* the locked top region. pr-1 keeps cards clear of the scrollbar.  */}
-        <div className="flex h-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+        <div className="flex h-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" data-tour="artifact-detail-body">
           {/* Handoff Chain ribbon (P4-04) */}
           <HandoffChainRibbon artifact={detailArtifact} />
 
@@ -1871,6 +1873,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
                       aria-selected={tab === activeTab}
                       aria-controls={tabPanelId(tab)}
                       onClick={() => setActiveTab(tab)}
+                      {...(tab === "Processing" ? { "data-tour": "artifact-detail-history-tab" } : {})}
                       className={cn(
                         "whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
                         "focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
@@ -1936,6 +1939,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
                   role="tabpanel"
                   aria-labelledby={tabButtonId("Backlinks")}
                   hidden={activeTab !== "Backlinks"}
+                  data-tour="artifact-detail-edges"
                 >
                   {activeTab === "Backlinks" && (
                     <BacklinksTab artifactId={detailArtifact.id} />

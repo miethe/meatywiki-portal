@@ -36,6 +36,8 @@ import {
 } from "@/components/library";
 import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
 import type { LibraryFilters } from "@/components/library";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // The locked facet for this screen
@@ -276,6 +278,11 @@ export default function ProjectsPage() {
             <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
             {/* Visual badge indicating "Project planning" facet — P5-05 requirement */}
             <ProjectsFacetBadge />
+            <InfoTooltip
+              content={TOOLTIP_COPY.projects.projectWorkspace}
+              side="right"
+              label="About the Projects workspace"
+            />
           </div>
           <p className="text-sm text-muted-foreground">
             Project planning artifacts — filtered Library view

@@ -45,6 +45,8 @@ import type { DecisionTable, DecisionRow } from "@/lib/api/decisions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Breadcrumbs } from "@/components/ui/breadcrumbs";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -725,7 +727,7 @@ export function DecisionTableClient({ initialTable }: DecisionTableClientProps) 
       </div>
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2" data-tour="decisions-criteria">
         <Button
           size="sm"
           onClick={handleSave}
@@ -775,7 +777,7 @@ export function DecisionTableClient({ initialTable }: DecisionTableClientProps) 
       )}
 
       {/* Criteria table */}
-      <div className="overflow-x-auto rounded-lg border">
+      <div className="overflow-x-auto rounded-lg border" data-tour="decisions-table">
         <table className="w-full text-sm" aria-label={`Criteria for ${tableName}`}>
           <thead>
             <tr className="border-b border-border bg-muted/30">
@@ -791,7 +793,14 @@ export function DecisionTableClient({ initialTable }: DecisionTableClientProps) 
                 className="py-2.5 pr-6 text-left text-xs font-medium uppercase tracking-wide text-muted-foreground"
                 style={{ width: 180 }}
               >
-                Weight (0–10)
+                <div className="flex items-center gap-1.5">
+                  Weight (0–10)
+                  <InfoTooltip
+                    content={TOOLTIP_COPY.decisions.evaluationCriteria}
+                    side="top"
+                    label="About evaluation criteria weights"
+                  />
+                </div>
               </th>
               <th
                 scope="col"
@@ -840,7 +849,7 @@ export function DecisionTableClient({ initialTable }: DecisionTableClientProps) 
       </div>
 
       {/* Footer count */}
-      <p className="text-xs text-muted-foreground" aria-live="polite">
+      <p className="text-xs text-muted-foreground" aria-live="polite" data-tour="decisions-artifact-links">
         {rows.length === 1 ? "1 criterion" : `${rows.length} criteria`}
       </p>
     </div>

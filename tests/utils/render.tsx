@@ -1,5 +1,6 @@
 import React from "react";
 import { render, type RenderOptions, type RenderResult } from "@testing-library/react";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 /**
  * Test render utilities for MeatyWiki Portal.
@@ -34,7 +35,7 @@ import { render, type RenderOptions, type RenderResult } from "@testing-library/
  * - ThemeProvider (if added in later phases)
  */
 function AllProviders({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return <>{children}</>;
+  return <TooltipProvider delayDuration={0}>{children}</TooltipProvider>;
 }
 
 // ---------------------------------------------------------------------------

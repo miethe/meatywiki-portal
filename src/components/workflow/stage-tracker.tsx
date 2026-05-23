@@ -23,6 +23,8 @@
  *
  * SSE updates: component is purely presentational (takes props). Parents feed
  * updated run objects via useWorkflowRuns / RunSSEBridge hooks.
+ *
+ * P2-03: InfoTooltip added to full-variant stage rows and timeline header.
  */
 
 import React, { useMemo } from "react";
@@ -37,6 +39,8 @@ import {
   stageConnectorClass,
   type StageInfo,
 } from "@/lib/workflow/stages";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -214,6 +218,16 @@ function FullTracker({
             {isActive && (
               <span className="text-[11px] text-muted-foreground">(running)</span>
             )}
+            {/* InfoTooltip explaining what this stage row means — shown on first row only
+                to avoid repeating the same help icon on every row */}
+            {idx === 0 && (
+              <InfoTooltip
+                content={TOOLTIP_COPY.workflow.stageTrackerRow}
+                side="right"
+                align="start"
+                label="About pipeline stages"
+              />
+            )}
           </li>
         );
       })}
@@ -306,6 +320,7 @@ function TimelineStageNode({
 /**
  * Timeline tracker: horizontal row of 6 circles connected by thin lines.
  * Height: ~40px (fits within the 40–60px spec range).
+ * An InfoTooltip icon sits after the last stage node to explain the tracker.
  */
 function TimelineTracker({
   stageInfos,
@@ -319,23 +334,31 @@ function TimelineTracker({
   const isResearch = researchOrigin === true;
 
   return (
-    <ol
-      role="list"
-      aria-label={`Workflow stage timeline${isResearch ? " (research)" : ""}`}
-      className={cn(
-        "flex items-center w-full min-h-[40px] max-h-[60px] px-1",
-        isResearch && "rounded ring-1 ring-amber-400/60 bg-amber-50/40 dark:ring-amber-500/50 dark:bg-amber-950/20",
-        className,
-      )}
-    >
-      {stageInfos.map((info, idx) => (
-        <TimelineStageNode
-          key={info.key}
-          info={info}
-          isLast={idx === stageInfos.length - 1}
-        />
-      ))}
-    </ol>
+    <div className="flex items-center gap-1.5">
+      <ol
+        role="list"
+        aria-label={`Workflow stage timeline${isResearch ? " (research)" : ""}`}
+        className={cn(
+          "flex items-center w-full min-h-[40px] max-h-[60px] px-1",
+          isResearch && "rounded ring-1 ring-amber-400/60 bg-amber-50/40 dark:ring-amber-500/50 dark:bg-amber-950/20",
+          className,
+        )}
+      >
+        {stageInfos.map((info, idx) => (
+          <TimelineStageNode
+            key={info.key}
+            info={info}
+            isLast={idx === stageInfos.length - 1}
+          />
+        ))}
+      </ol>
+      <InfoTooltip
+        content={TOOLTIP_COPY.workflow.stageTrackerRow}
+        side="top"
+        align="end"
+        label="About pipeline stages"
+      />
+    </div>
   );
 }
 

@@ -78,6 +78,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "./dropdown-menu";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 /**
  * Minimal active-run shape for Stage Tracker integration (DP3-03).
@@ -597,13 +599,23 @@ export function ArtifactCard({
               )}
               {workflow_status && <WorkflowStatusBadge status={workflow_status} />}
             </div>
-            {/* Right: Lens Badge compact (null-safe — renders nothing when all null) */}
-            <LensBadgeSet
-              artifact={artifact}
-              variant="compact"
-              researchOrigin={research_origin}
-              className="shrink-0"
-            />
+            {/* Right: Lens Badge compact + info tooltip (P2-02 InfoTooltip) */}
+            <div className="flex items-center gap-0.5 shrink-0">
+              <LensBadgeSet
+                artifact={artifact}
+                variant="compact"
+                researchOrigin={research_origin}
+              />
+              <span className="pointer-events-auto">
+                <InfoTooltip
+                  content={TOOLTIP_COPY.library.lensBadgeCluster}
+                  side="top"
+                  align="end"
+                  icon="info"
+                  label="About lens badges"
+                />
+              </span>
+            </div>
           </div>
         )}
 
@@ -801,8 +813,21 @@ export function ArtifactCard({
         ) : (
           <div className="flex items-center justify-between gap-2 pt-0.5">
             <div className="flex flex-wrap items-center gap-1">
-              {/* Freshness indicator from metadata (P4-04): compact, cards-only */}
-              <ArtifactFreshnessBadge freshness={artifact.metadata?.freshness} />
+              {/* Freshness indicator + info tooltip (P2-02 InfoTooltip) */}
+              {artifact.metadata?.freshness ? (
+                <span className="pointer-events-auto inline-flex items-center gap-0.5">
+                  <ArtifactFreshnessBadge freshness={artifact.metadata?.freshness} />
+                  <InfoTooltip
+                    content={TOOLTIP_COPY.library.freshnessChip}
+                    side="top"
+                    align="start"
+                    icon="info"
+                    label="About freshness"
+                  />
+                </span>
+              ) : (
+                <ArtifactFreshnessBadge freshness={artifact.metadata?.freshness} />
+              )}
               {/*
                * Derivative count badge (library-source-rollup-v1 FE-03):
                * rendered when artifact has derivatives (rollup view only).

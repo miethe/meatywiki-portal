@@ -42,6 +42,8 @@ import type {
   ExternalResearchTaskStatus,
 } from "@/types/workflows/research";
 import { UploadResultModal } from "@/components/research/UploadResultModal";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -207,6 +209,11 @@ function TaskRow({ task, onTaskAction, onUploadResult, actionInFlight }: TaskRow
       <span className="flex-1 text-xs font-medium text-foreground">
         {TASK_STATUS_LABEL[currentStatus] ?? currentStatus}
       </span>
+      <InfoTooltip
+        content={TOOLTIP_COPY.research.researchTaskStatus}
+        side="top"
+        label="About research task status"
+      />
 
       {/* Action buttons */}
       <div className="flex items-center gap-1">

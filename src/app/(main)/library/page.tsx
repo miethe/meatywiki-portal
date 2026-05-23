@@ -106,6 +106,9 @@ import {
   useContextRailToggle,
 } from "@/components/ui/context-rail-context";
 import type { ArtifactCard as ArtifactCardType } from "@/types/artifact";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -361,8 +364,15 @@ function ArchiveFilterColumn({ filters, onChange, alwaysVisible = false }: Archi
 
         {/* Archive Type */}
         <fieldset>
-          <legend className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
+          <legend className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
             Archive Type
+            <InfoTooltip
+              content={TOOLTIP_COPY.library.artifactTypeFacetHeader}
+              side="right"
+              align="start"
+              icon="info"
+              label="About artifact type filter"
+            />
           </legend>
           <div className="flex flex-col gap-1">
             {KNOWN_ARTIFACT_TYPES.map(({ value, label }) => (
@@ -396,8 +406,15 @@ function ArchiveFilterColumn({ filters, onChange, alwaysVisible = false }: Archi
 
         {/* Knowledge Focus */}
         <fieldset>
-          <legend className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
+          <legend className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
             Knowledge Focus
+            <InfoTooltip
+              content={TOOLTIP_COPY.library.workspaceFacetHeader}
+              side="right"
+              align="start"
+              icon="info"
+              label="About knowledge focus filter"
+            />
           </legend>
           <div className="flex flex-wrap gap-1">
             {KNOWLEDGE_FOCUS_OPTIONS.map((tag) => (
@@ -423,8 +440,15 @@ function ArchiveFilterColumn({ filters, onChange, alwaysVisible = false }: Archi
 
         {/* Freshness */}
         <fieldset>
-          <legend className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
+          <legend className="inline-flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground mb-2">
             Freshness
+            <InfoTooltip
+              content={TOOLTIP_COPY.library.lensDimensionSlider}
+              side="right"
+              align="start"
+              icon="info"
+              label="About freshness range filter"
+            />
           </legend>
           <div className="flex flex-col gap-1.5">
             <div className="flex justify-between text-[10px] text-muted-foreground">
@@ -1288,10 +1312,17 @@ function LibraryPageInner() {
         </div>
       </div>
 
+      {/* P3-06: First-run tour offer banner */}
+      <FirstRunOffer tourId="library" tourLabel="Library" className="shrink-0" />
+
       {/* Lens switcher (library-source-rollup-v1 FE-06) */}
-      <LibraryLensSwitcher lens={lens} onLensChange={handleLensChange} />
+      <div data-tour="library-workspace-selector">
+        <LibraryLensSwitcher lens={lens} onLensChange={handleLensChange} />
+      </div>
 
       {/* Filter bar — top strip for sort/search/lens filters */}
+      <div data-tour="library-filter-bar">
+      <div data-tour="library-search">
       <LibraryFilterBar
         filters={filters}
         onFiltersChange={handleFiltersChange}
@@ -1300,6 +1331,8 @@ function LibraryPageInner() {
           !isRollupLens(lens) && !isAllLens(lens) && !!groupedLensType ? ["type"] : undefined
         }
       />
+      </div>
+      </div>
 
       {/* ------------------------------------------------------------------ */}
       {/* Three-column body: filter col | main grid | context rail            */}
@@ -1357,11 +1390,12 @@ function LibraryPageInner() {
                     P3-03: <li> wrapper captures plain-click → select; cmd/ctrl
                     click passes through to the underlying ArtifactCard <Link>. */}
                 {!isLoading &&
-                  artifacts.map((artifact) => {
+                  artifacts.map((artifact, artifactIndex) => {
                     const isSelected = selectedArtifact?.id === artifact.id;
                     return (
                       <li
                         key={artifact.id}
+                        {...(artifactIndex === 0 ? { "data-tour": "library-artifact-card" } : {})}
                         aria-current={isSelected ? "true" : undefined}
                         title={
                           isSelected
@@ -1374,6 +1408,7 @@ function LibraryPageInner() {
                             "ring-2 ring-primary ring-offset-2 ring-offset-background",
                         )}
                       >
+                        <div {...(artifactIndex === 0 ? { "data-tour": "library-lens-badges" } : {})}>
                         <ArtifactCard
                           artifact={artifact}
                           variant={viewMode}
@@ -1384,6 +1419,7 @@ function LibraryPageInner() {
                           onArchive={handleArchive}
                           onDelete={handleDeleteRequest}
                         />
+                        </div>
                       </li>
                     );
                   })}

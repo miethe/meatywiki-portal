@@ -24,6 +24,9 @@ import {
 import type { DecisionTablesEnvelope, DecisionTableSummary } from "@/lib/api/decisions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 
 // ---------------------------------------------------------------------------
 // Create table form (inline)
@@ -278,10 +281,20 @@ export function DecisionsListClient({ initialData }: DecisionsListClientProps) {
 
   return (
     <>
+      {/* P3-06: First-run tour offer banner */}
+      <FirstRunOffer tourId="decisions" tourLabel="Decisions" />
+
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Decisions</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">Decisions</h1>
+            <InfoTooltip
+              content={TOOLTIP_COPY.decisions.decisionFramework}
+              side="right"
+              label="About the Decision Framework"
+            />
+          </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
             Decision Framework tables — define and weight evaluation criteria
           </p>
@@ -305,7 +318,7 @@ export function DecisionsListClient({ initialData }: DecisionsListClientProps) {
         <EmptyState onNew={() => setShowCreate(true)} />
       ) : (
         <>
-          <section aria-label="Decision tables">
+          <section aria-label="Decision tables" data-tour="decisions-list">
             <ul
               role="list"
               className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"

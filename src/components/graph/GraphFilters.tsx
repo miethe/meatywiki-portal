@@ -18,6 +18,7 @@
  *   - §10 sidebar section order
  *
  * v2.2 — graph explorer filter panel (P3-02).
+ * P2-05 — InfoTooltip added to section headers + semantic neighbor row.
  */
 
 import { useState, type ReactNode } from "react";
@@ -34,6 +35,8 @@ import {
   EDGE_TYPE_COLORS,
   EDGE_TYPE_COLOR_DEFAULT,
 } from "@/types/graph";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 // ---------------------------------------------------------------------------
 // FilterState — all 16 dimensions (source of truth for P3-02 controls)
@@ -260,38 +263,59 @@ const FIDELITY_TRACK_LABELS = [
 interface FilterAccordionSectionProps {
   label: string;
   defaultOpen?: boolean;
+  /** Optional InfoTooltip content for this section header. */
+  tooltip?: string;
   children: ReactNode;
 }
 
 function FilterAccordionSection({
   label,
   defaultOpen = false,
+  tooltip,
   children,
 }: FilterAccordionSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   return (
     <div className="border-b border-border/60 last:border-b-0">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "flex w-full items-center justify-between px-3 py-2",
-          "text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
-          "hover:text-foreground transition-colors",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-        )}
-      >
-        {label}
-        <ChevronRight
-          aria-hidden="true"
+      {/*
+       * The header is a flex row: [toggle button] [tooltip icon].
+       * The InfoTooltip sits outside the toggle button to avoid nesting
+       * interactive elements (which is invalid HTML).
+       */}
+      <div className="flex items-center">
+        <button
+          type="button"
+          aria-expanded={open}
+          onClick={() => setOpen((v) => !v)}
           className={cn(
-            "size-3 shrink-0 transition-transform duration-150",
-            open && "rotate-90",
+            "flex flex-1 items-center justify-between px-3 py-2",
+            "text-[10px] font-semibold uppercase tracking-wider text-muted-foreground",
+            "hover:text-foreground transition-colors",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
           )}
-        />
-      </button>
+        >
+          {label}
+          <ChevronRight
+            aria-hidden="true"
+            className={cn(
+              "size-3 shrink-0 transition-transform duration-150",
+              open && "rotate-90",
+            )}
+          />
+        </button>
+        {tooltip && (
+          <div className="pr-2 shrink-0">
+            <InfoTooltip
+              content={tooltip}
+              side="right"
+              align="start"
+              icon="info"
+              label={`About ${label}`}
+            />
+          </div>
+        )}
+      </div>
 
       {open && (
         <div className="pb-3">
@@ -317,13 +341,26 @@ interface FilterDimRowProps {
    * Value should match the primary FilterState key for this dimension.
    */
   dataDim?: string;
+  /** Optional InfoTooltip content shown next to the dim label. */
+  tooltip?: string;
 }
 
-function FilterDimRow({ label, active = false, onReset, children, dataDim }: FilterDimRowProps) {
+function FilterDimRow({ label, active = false, onReset, children, dataDim, tooltip }: FilterDimRowProps) {
   return (
     <div className="flex flex-col gap-1.5 px-3 py-1.5" data-filter-dim={dataDim}>
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-medium text-foreground/70">{label}</span>
+        <div className="flex items-center gap-1">
+          <span className="text-[11px] font-medium text-foreground/70">{label}</span>
+          {tooltip && (
+            <InfoTooltip
+              content={tooltip}
+              side="right"
+              align="start"
+              icon="info"
+              label={`About ${label} filter`}
+            />
+          )}
+        </div>
         {active && onReset && (
           <button
             type="button"
@@ -413,7 +450,11 @@ export function GraphFilters({
       {/* ================================================================== */}
       {/* PRIMARY — workspace, artifact_type, edge_type                       */}
       {/* ================================================================== */}
-      <FilterAccordionSection label="Primary filters" defaultOpen>
+      <FilterAccordionSection
+        label="Primary filters"
+        defaultOpen
+        tooltip={TOOLTIP_COPY.graph.filterWorkspace}
+      >
 
         {/* Dim 1: workspace */}
         <FilterDimRow
@@ -421,6 +462,7 @@ export function GraphFilters({
           active={wsActive}
           onReset={() => patch("ws", [])}
           dataDim="ws"
+          tooltip={TOOLTIP_COPY.graph.filterWorkspace}
         >
           <SegmentedControl
             value={values.ws}
@@ -436,6 +478,7 @@ export function GraphFilters({
           active={typesActive}
           onReset={() => patch("types", [])}
           dataDim="types"
+          tooltip={TOOLTIP_COPY.graph.filterArtifactType}
         >
           <GroupedMultiSelect
             value={values.types}
@@ -450,6 +493,7 @@ export function GraphFilters({
           active={edgesActive}
           onReset={() => patch("edges", [])}
           dataDim="edges"
+          tooltip={TOOLTIP_COPY.graph.filterEdgeType}
         >
           {/* Contract §2.3 note: 3 engine-only types not available in web graph */}
           <p className="text-[10px] text-muted-foreground/60 italic mb-1.5">
@@ -474,7 +518,10 @@ export function GraphFilters({
       {/* ================================================================== */}
       {/* SECONDARY — freshness_class, project, domain, date_range            */}
       {/* ================================================================== */}
-      <FilterAccordionSection label="Secondary filters">
+      <FilterAccordionSection
+        label="Secondary filters"
+        tooltip={TOOLTIP_COPY.graph.filterFreshnessClass}
+      >
 
         {/* Dim 4: freshness_class */}
         <FilterDimRow
@@ -482,6 +529,7 @@ export function GraphFilters({
           active={freshnessActive}
           onReset={() => patch("freshness", [])}
           dataDim="freshness"
+          tooltip={TOOLTIP_COPY.graph.filterFreshnessClass}
         >
           <SegmentedControl
             value={values.freshness}
@@ -497,6 +545,7 @@ export function GraphFilters({
           active={projectActive}
           onReset={() => patch("project", [])}
           dataDim="project"
+          tooltip={TOOLTIP_COPY.graph.filterProject}
         >
           <MultiSelectAutocomplete
             value={values.project}
@@ -513,6 +562,7 @@ export function GraphFilters({
           active={domainActive}
           onReset={() => patch("domain", [])}
           dataDim="domain"
+          tooltip={TOOLTIP_COPY.graph.filterDomain}
         >
           <MultiSelectAutocomplete
             value={values.domain}
@@ -528,6 +578,7 @@ export function GraphFilters({
           label="Date range"
           active={dateActive}
           dataDim="date_from"
+          tooltip={TOOLTIP_COPY.graph.filterDateRange}
           onReset={() =>
             onChange({
               ...values,
@@ -561,7 +612,10 @@ export function GraphFilters({
       {/* ================================================================== */}
       {/* ADVANCED — dims 8-15 (collapsed by default)                         */}
       {/* ================================================================== */}
-      <FilterAccordionSection label="Advanced filters">
+      <FilterAccordionSection
+        label="Advanced filters"
+        tooltip={TOOLTIP_COPY.graph.filterFidelityLevel}
+      >
 
         {/* Dim 8: fidelity_level */}
         <FilterDimRow
@@ -569,6 +623,7 @@ export function GraphFilters({
           active={fidelityActive}
           onReset={() => patch("fidelity_min", 0)}
           dataDim="fidelity_min"
+          tooltip={TOOLTIP_COPY.graph.filterFidelityLevel}
         >
           <SingleRangeSlider
             min={0}
@@ -604,6 +659,7 @@ export function GraphFilters({
           active={fscoreActive}
           onReset={() => onChange({ ...values, fscore_min: 0, fscore_max: 1 })}
           dataDim="fscore_min"
+          tooltip={TOOLTIP_COPY.graph.filterFreshnessScore}
         >
           <RangeSlider
             min={0}
@@ -623,6 +679,7 @@ export function GraphFilters({
           active={confActive}
           onReset={() => onChange({ ...values, conf_min: 0, conf_max: 1 })}
           dataDim="conf_min"
+          tooltip={TOOLTIP_COPY.graph.filterConfidence}
         >
           <RangeSlider
             min={0}
@@ -702,6 +759,7 @@ export function GraphFilters({
           active={tagsActive}
           onReset={() => patch("tags", [])}
           dataDim="tags"
+          tooltip={TOOLTIP_COPY.graph.filterTags}
         >
           <MultiSelectAutocomplete
             value={values.tags}
@@ -713,7 +771,11 @@ export function GraphFilters({
         </FilterDimRow>
 
         {/* Dim 15: semantic_neighbor — disabled placeholder */}
-        <FilterDimRow label="Semantic neighbor" dataDim="sem_node">
+        <FilterDimRow
+          label="Semantic neighbor"
+          dataDim="sem_node"
+          tooltip={TOOLTIP_COPY.graph.filterSemanticNeighbor}
+        >
           <div
             className={cn(
               "flex flex-col gap-1.5 rounded-md border border-dashed border-border/60",

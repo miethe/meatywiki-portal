@@ -330,7 +330,7 @@ export function LensRadarChart({
   const rationale = metadata?.lens_rationale_jsonb;
 
   return (
-    <div className={cn("relative flex flex-col items-center gap-3", className)}>
+    <div data-tour="lens-radar-chart" className={cn("relative flex flex-col items-center gap-3", className)}>
       {/* Accessible data table (visually hidden) */}
       <table className="sr-only">
         <caption>Lens dimension scores</caption>

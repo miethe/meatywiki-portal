@@ -49,6 +49,8 @@ import {
   type ResearchRun,
   type PollingStatus,
 } from "@/types/research-runs";
+import InfoTooltip from "@/components/ui/info-tooltip";
+import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 
 import { ResearchRunCard } from "@/components/research/ResearchRunCard";
 
@@ -276,6 +278,11 @@ export function ActiveResearchRuns() {
           <h2 className="text-base font-semibold text-foreground">
             Active Research Runs
           </h2>
+          <InfoTooltip
+            content={TOOLTIP_COPY.research.activeRuns}
+            side="right"
+            label="About Active Research Runs"
+          />
           {hasRuns && (
             <span
               aria-label={`${runs.length} run${runs.length === 1 ? "" : "s"}`}

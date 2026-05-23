@@ -509,22 +509,26 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
         <div className="col-span-12 lg:col-span-9 flex flex-col gap-6">
           {/* Panel E: Operator actions — only rendered when run is actionable */}
           {currentRun && (
+            <div data-tour="workflow-operator-actions">
             <OperatorActionsBlock
               runId={runId}
               status={currentRun.status}
               onAction={handleOperatorAction}
               data-testid="operator-actions-block"
             />
+            </div>
           )}
 
           {/* Panel A: Timeline */}
           <div
             className="rounded-xl border border-border bg-card p-6"
             data-testid="timeline-panel-container"
+            data-tour="workflow-timeline"
           >
             <h2 className="mb-4 text-sm font-semibold text-foreground">
               Stage Timeline
             </h2>
+            <div data-tour="workflow-stage-tracker">
             <TimelinePanel
               stages={stages}
               selectedStageName={selectedStageName}
@@ -532,13 +536,16 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
               isLoading={isLoading}
               error={error}
             />
+            </div>
           </div>
 
           {/* Panel B: Stage context — appears when a stage is selected */}
+          <div data-tour="workflow-stage-details">
           <StageContextPanel
             stage={selectedStage}
             data-testid="stage-context-panel"
           />
+          </div>
 
           <WorkflowOutputsPanel events={events} currentRun={currentRun} />
 

@@ -84,6 +84,12 @@ export interface ProcessedSectionProps {
    * from sessionStorage (default: collapsed when empty).
    */
   defaultCollapsed?: boolean;
+  /**
+   * Optional info element rendered inline next to the "Processed" heading.
+   * Accepts any ReactNode — typically an <InfoTooltip> icon. When undefined,
+   * no extra element is rendered and existing callers are unaffected.
+   */
+  info?: React.ReactNode;
   className?: string;
 }
 
@@ -94,6 +100,7 @@ export interface ProcessedSectionProps {
 export function ProcessedSection({
   items,
   defaultCollapsed,
+  info,
   className,
 }: ProcessedSectionProps) {
   const hasItems = items.length > 0;
@@ -146,9 +153,12 @@ export function ProcessedSection({
         )}
       >
         <div className="flex items-center gap-2">
-          <h2 className="text-sm font-medium text-foreground">
-            Processed
-          </h2>
+          <span className="inline-flex items-center gap-1">
+            <h2 className="text-sm font-medium text-foreground">
+              Processed
+            </h2>
+            {info ?? null}
+          </span>
           <span
             className={cn(
               "inline-flex h-5 min-w-[20px] items-center justify-center rounded-full",

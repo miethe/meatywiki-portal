@@ -37,6 +37,31 @@ const eslintConfig = [
       ],
     },
   },
+  // P2-10: Enforce that InfoTooltip `content` prop always comes from the copy
+  // registry (src/lib/copy/tooltips.ts), never from inline string literals.
+  // This keeps all tooltip copy in one place and prevents undiscoverable
+  // ad-hoc strings from accumulating in component files.
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            'JSXOpeningElement[name.name="InfoTooltip"] JSXAttribute[name.name="content"] Literal',
+          message:
+            "InfoTooltip content must come from src/lib/copy/tooltips.ts — do not use inline string literals.",
+        },
+      ],
+    },
+  },
+  // The copy registry itself is exempt — string literals are expected there.
+  {
+    files: ["src/lib/copy/**"],
+    rules: {
+      "no-restricted-syntax": "off",
+    },
+  },
 ];
 
 export default eslintConfig;
