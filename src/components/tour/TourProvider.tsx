@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import { usePathname } from 'next/navigation';
 import type { EventData, Step } from 'react-joyride';
 import { STATUS } from 'react-joyride';
 
@@ -23,6 +24,8 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [run, setRun] = useState(false);
 
   const prefersReducedMotion = usePrefersReducedMotion();
+  const pendingTourRef = useRef<string | null>(null);
+  const pathname = usePathname();
 
   const start = useCallback((tourId: string) => {
     const tourDefinitions = TOURS as Record<string, readonly TourStep[]>;
@@ -57,8 +60,25 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     [stop],
   );
 
+  const requestTour = useCallback((tourId: string) => {
+    pendingTourRef.current = tourId;
+  }, []);
+
+  // Start a pending tour after route navigation has settled.
+  useEffect(() => {
+    if (!pendingTourRef.current) return;
+    const tourId = pendingTourRef.current;
+    const timer = setTimeout(() => {
+      if (pendingTourRef.current === tourId) {
+        start(tourId);
+        pendingTourRef.current = null;
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [pathname, start]);
+
   return (
-    <TourContext.Provider value={{ currentTour, start, stop }}>
+    <TourContext.Provider value={{ currentTour, start, stop, requestTour }}>
       {children}
       <Joyride
         steps={steps}

@@ -66,6 +66,11 @@ export interface UseTourResult {
 
 export function useTour(tourId: string): UseTourResult {
   const ctx = useTourContext();
+  const [isComplete, setIsComplete] = useState(false);
+
+  useEffect(() => {
+    setIsComplete(getTourState(tourId)?.completed ?? false);
+  }, [tourId]);
 
   const start = useCallback(() => {
     ctx?.start(tourId);
@@ -75,7 +80,6 @@ export function useTour(tourId: string): UseTourResult {
     ctx?.stop();
   }, [ctx]);
 
-  const isComplete = getTourState(tourId)?.completed ?? false;
   const isRunning = ctx?.currentTour === tourId;
 
   return { start, stop, isComplete, isRunning };

@@ -74,6 +74,7 @@ function makeTourCtx(overrides?: Partial<TourContextValue>): TourContextValue {
     currentTour: null,
     start: jest.fn(),
     stop: jest.fn(),
+    requestTour: jest.fn(),
     ...overrides,
   };
 }

@@ -24,6 +24,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   ChevronDown,
   ChevronRight,
@@ -34,6 +35,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { CompletionBadge } from "@/components/tutorial/CompletionBadge";
 import { useTour } from "@/hooks/use-tour";
+import { useTourContext } from "@/components/tour/tour-context";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -79,6 +81,8 @@ export function FlowCard({
   isComplete: isCompleteProp = false,
 }: FlowCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const router = useRouter();
+  const tourCtx = useTourContext();
 
   // useTour must be called unconditionally. When tourId is null we pass an
   // empty string as a sentinel; the result is discarded in that case.
@@ -205,7 +209,10 @@ export function FlowCard({
           disabled={!hasTour}
           aria-disabled={!hasTour}
           title={hasTour ? undefined : "No tour available"}
-          onClick={hasTour ? tour.start : undefined}
+          onClick={hasTour ? () => {
+            tourCtx?.requestTour(tourId!);
+            router.push(deepLinkHref);
+          } : undefined}
           className={cn(!hasTour && "cursor-not-allowed opacity-60")}
         >
           <Play className="size-3.5" aria-hidden="true" />
