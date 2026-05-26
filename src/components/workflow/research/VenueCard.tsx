@@ -143,7 +143,7 @@ function ScoreBar({ score }: ScoreBarProps) {
 }
 
 // ---------------------------------------------------------------------------
-// VenueCard
+// VenueCard (legacy grid variant — Step 2 pre-v2.4)
 // ---------------------------------------------------------------------------
 
 export interface VenueCardProps {
@@ -224,5 +224,109 @@ export function VenueCard({ card, selected, onSelect, disabled = false }: VenueC
         </p>
       </div>
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// RoutingMatrixCard — matrix column card variant (v2.4 Step 2 redesign)
+// ---------------------------------------------------------------------------
+
+/**
+ * RoutingMatrixCard — displays a single RouteCard inside the 3-column routing
+ * recommendation matrix. Shows display_name, confidence %, rationale, expected
+ * output, and a "SELECT PATH" button.
+ *
+ * Selected state: highlighted border + background + "Selected" label.
+ */
+export function RoutingMatrixCard({ card, selected, onSelect, disabled = false }: VenueCardProps) {
+  const pct = Math.round(card.score * 100);
+  // Use display_name when present; fall back to venue meta label
+  const displayName = card.display_name || getVenueMeta(card.route).label;
+  const { Icon, accentClass } = getVenueMeta(card.route);
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col rounded-xl border-2 p-3 text-left transition-all duration-150",
+        !selected && "border-border bg-card",
+        selected && "border-foreground/70 bg-accent/30 shadow-sm",
+      )}
+    >
+      {/* Header: icon + display name + confidence badge */}
+      <div className="mb-2.5 flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <Icon
+            aria-hidden
+            className={cn("size-4 shrink-0", accentClass)}
+          />
+          <span className="truncate text-[13px] font-semibold leading-tight">
+            {displayName}
+          </span>
+        </div>
+        {/* Confidence badge */}
+        <span
+          className={cn(
+            "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold tabular-nums",
+            pct >= 70
+              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+              : pct >= 40
+                ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                : "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",
+          )}
+          aria-label={`Confidence: ${pct}%`}
+        >
+          {pct}%
+        </span>
+      </div>
+
+      {/* Expected output */}
+      <div className="mb-2">
+        <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Expected Output
+        </p>
+        <p className="text-[11px] text-foreground/90 leading-relaxed">
+          {card.expected_output}
+        </p>
+      </div>
+
+      {/* Rationale */}
+      <div className="mb-3 flex-1">
+        <p className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Rationale
+        </p>
+        <p className="line-clamp-4 text-[11px] text-muted-foreground leading-relaxed">
+          {card.rationale}
+        </p>
+      </div>
+
+      {/* SELECT PATH button */}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={selected}
+        aria-label={`Select path: ${displayName}`}
+        onClick={onSelect}
+        disabled={disabled}
+        className={cn(
+          "mt-auto w-full rounded-lg border py-1.5 text-[11px] font-semibold uppercase tracking-wide",
+          "transition-all duration-150",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          !selected &&
+            "border-border bg-background text-foreground hover:border-foreground/40 hover:bg-accent/20",
+          selected &&
+            "border-foreground/60 bg-foreground text-background hover:bg-foreground/90",
+        )}
+      >
+        {selected ? (
+          <span className="flex items-center justify-center gap-1.5">
+            <CheckCircle2 aria-hidden className="size-3" />
+            Selected
+          </span>
+        ) : (
+          "Select Path"
+        )}
+      </button>
+    </div>
   );
 }

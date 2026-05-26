@@ -367,13 +367,20 @@ export type WorkflowRunStatus =
   | "paused"
   | "complete"
   | "failed"
-  | "abandoned";
+  | "abandoned"
+  /** v2.4: draft run created via save_as_draft=true; not yet enqueued. */
+  | "draft"
+  // external_research_v1 statuses (portal-v2.1)
+  | "waiting_external"
+  | "result_uploaded";
 
 export type WorkflowTemplateId =
   | "source_ingest_v1"
   | "research_synthesis_v1"
   | "lint_scope_v1"
-  | "compile_v1";
+  | "compile_v1"
+  // portal-v2.1 external research template
+  | "external_research_v1";
 
 export interface ArtifactRef {
   artifact_id: string;

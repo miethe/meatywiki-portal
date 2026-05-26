@@ -95,6 +95,7 @@ function StatusPill({ status }: { status: ResearchRun["status"] }) {
     complete: { label: "Complete", cls: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" },
     failed: { label: "Failed", cls: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300" },
     abandoned: { label: "Abandoned", cls: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-500" },
+    draft: { label: "Draft", cls: "bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-700" },
   };
   const { label, cls } = cfg[status] ?? { label: status, cls: "bg-muted text-muted-foreground" };
   return (

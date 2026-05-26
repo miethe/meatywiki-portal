@@ -13,17 +13,12 @@
  *   error        — error message string, or null when healthy
  *   lastFetchedAt — ISO timestamp of the most recent successful fetch
  *
- * Polling contract (P5-02 / P5-04):
- *   - Interval: 5 s nominal; backed off exponentially on fetch errors (max 30 s).
- *   - In-flight guard: a new poll is skipped when the previous one has not yet settled.
- *   - Backoff resets to 5 s on next successful fetch.
- *   - Cleanup: interval cleared on unmount via useEffect return.
- *   - Error toast: shown on fetch failure using the lightweight local toast pattern
- *     (same as PendingApprovalPanel / PendingApprovalItem).
- *
- * ResearchRunCard placeholder (P5-03):
- *   Rendered as a skeleton grid cell until P5-03 lands the full card component.
- *   The import stub is below; remove TODO comment and uncomment when P5-03 ships.
+ * Draft run support (P5-02 / P5-03):
+ *   - Runs with status="draft" are shown with a "Draft" badge.
+ *   - Clicking a draft run card opens the research wizard at Step 3 pre-populated
+ *     with the saved draft data (fetched via GET /api/workflows/{run_id}).
+ *   - onDraftReEntry callback is called with ResearchRun when a draft card is clicked.
+ *     The parent (/research page) manages the wizard dialog open state.
  *
  * SSE migration note:
  *   // TODO(OQ-5): migrate polling to SSE when external_research_v1 SSE contract
@@ -31,7 +26,7 @@
  *   //   but this is the first research consumer — polling is the MVP choice per the
  *   //   OQ-5 decision in phase-5-progress.md.
  *
- * P5-01 / P5-02 / P5-04 (audit-wave-2-phase-5).
+ * P5-01 / P5-02 / P5-03 / P5-04 (audit-wave-2-phase-5).
  */
 
 import React, {
@@ -40,7 +35,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { RefreshCw, FlaskConical, AlertCircle } from "lucide-react";
+import { RefreshCw, FlaskConical, AlertCircle, FileEdit } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listActiveResearchRuns } from "@/lib/api/research";
 import {
@@ -51,6 +46,7 @@ import {
 } from "@/types/research-runs";
 import InfoTooltip from "@/components/ui/info-tooltip";
 import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+import { InitiationWizardDialog } from "@/components/workflow/initiation-wizard";
 
 import { ResearchRunCard } from "@/components/research/ResearchRunCard";
 
@@ -131,9 +127,17 @@ function formatTimestamp(isoDate: string): string {
 // Empty state
 // ---------------------------------------------------------------------------
 
+/**
+ * P1-02: Empty state with "Start Research" CTA.
+ *
+ * Renders a dashed-border placeholder when the active runs list is empty.
+ * The "Start Research" button opens the research wizard (external_research_v1)
+ * via InitiationWizardDialog with a custom trigger so no default trigger
+ * button is rendered — the CTA is fully inline.
+ */
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed bg-muted/20 px-6 py-10 text-center">
+    <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed bg-muted/20 px-6 py-10 text-center">
       <FlaskConical
         aria-hidden="true"
         className="size-8 text-muted-foreground/50"
@@ -143,11 +147,110 @@ function EmptyState() {
           No active research runs
         </p>
         <p className="text-xs text-muted-foreground">
-          Start a research run from the inbox or use the Research wizard to
-          create one.
+          Start a new research run to begin.
         </p>
       </div>
+      <InitiationWizardDialog
+        template_id="external_research_v1"
+        trigger={
+          <button
+            type="button"
+            aria-label="Start a new research run"
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-4 py-2",
+              "bg-foreground text-background text-sm font-semibold",
+              "transition-colors hover:bg-foreground/90",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+            )}
+          >
+            <FlaskConical aria-hidden="true" className="size-3.5" />
+            Start Research
+          </button>
+        }
+      />
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Draft badge
+// ---------------------------------------------------------------------------
+
+function DraftBadge() {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5",
+        "text-[10px] font-semibold uppercase tracking-wide",
+        "border-amber-300 bg-amber-50 text-amber-700",
+        "dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-300",
+      )}
+    >
+      <FileEdit aria-hidden="true" className="size-2.5" />
+      Draft
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Draft run card (simplified — clicking re-opens wizard)
+// ---------------------------------------------------------------------------
+
+interface DraftRunCardProps {
+  run: ResearchRun;
+  onClick: (run: ResearchRun) => void;
+}
+
+function DraftRunCard({ run, onClick }: DraftRunCardProps) {
+  const shortId = run.run_id.slice(-8);
+
+  function formatRelativeTime(isoDate: string): string {
+    const diffMs = Date.now() - new Date(isoDate).getTime();
+    const diffMin = Math.floor(diffMs / 60_000);
+    if (diffMin < 1) return "Just now";
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24) return `${diffH}h ago`;
+    return `${Math.floor(diffH / 24)}d ago`;
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={`Resume draft run: ${run.topic ?? "Untitled"}`}
+      onClick={() => onClick(run)}
+      className={cn(
+        "flex w-full flex-col gap-2 rounded-lg border bg-card p-4 text-left shadow-sm",
+        "border-amber-200 dark:border-amber-800/60",
+        "transition-colors hover:border-amber-300 hover:bg-amber-50/40",
+        "dark:hover:border-amber-700 dark:hover:bg-amber-950/20",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <p className="truncate text-sm font-medium text-foreground">
+            {run.topic ?? "Untitled research run"}
+          </p>
+          {run.research_question && (
+            <p className="line-clamp-2 text-xs text-muted-foreground">
+              {run.research_question}
+            </p>
+          )}
+        </div>
+        <DraftBadge />
+      </div>
+
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="font-mono">{shortId}</span>
+        <span aria-hidden="true">·</span>
+        <span>{formatRelativeTime(run.created_at)}</span>
+        <span aria-hidden="true">·</span>
+        <span className="text-amber-600 dark:text-amber-400">
+          Click to resume
+        </span>
+      </div>
+    </button>
   );
 }
 
@@ -155,7 +258,15 @@ function EmptyState() {
 // Main component
 // ---------------------------------------------------------------------------
 
-export function ActiveResearchRuns() {
+export interface ActiveResearchRunsProps {
+  /**
+   * Called when a draft run card is clicked.
+   * The parent is responsible for opening the wizard with the draft data.
+   */
+  onDraftReEntry?: (run: ResearchRun) => void;
+}
+
+export function ActiveResearchRuns({ onDraftReEntry }: ActiveResearchRunsProps = {}) {
   const [runs, setRuns] = useState<ResearchRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -269,6 +380,17 @@ export function ActiveResearchRuns() {
   // ------------------------------------------------------------------
 
   const hasRuns = runs.length > 0;
+  const draftRuns = runs.filter((r) => r.status === "draft");
+  const activeRuns = runs.filter((r) => r.status !== "draft");
+  const hasDrafts = draftRuns.length > 0;
+  const hasActiveRuns = activeRuns.length > 0;
+
+  const handleDraftCardClick = useCallback(
+    (run: ResearchRun) => {
+      onDraftReEntry?.(run);
+    },
+    [onDraftReEntry],
+  );
 
   return (
     <section aria-label="Active Research Runs" className="flex flex-col gap-3">
@@ -381,13 +503,34 @@ export function ActiveResearchRuns() {
       {/* Empty state */}
       {!loading && !hasRuns && !error && <EmptyState />}
 
-      {/* Run grid */}
-      {hasRuns && (
+      {/* Draft runs — shown above active runs with amber treatment */}
+      {hasDrafts && (
+        <div className="flex flex-col gap-2">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+            Drafts
+          </p>
+          <div
+            aria-label={`${draftRuns.length} draft run${draftRuns.length === 1 ? "" : "s"}`}
+            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            {draftRuns.map((run) => (
+              <DraftRunCard
+                key={run.run_id}
+                run={run}
+                onClick={handleDraftCardClick}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Active run grid */}
+      {hasActiveRuns && (
         <div
-          aria-label={`${runs.length} active research run${runs.length === 1 ? "" : "s"}`}
+          aria-label={`${activeRuns.length} active research run${activeRuns.length === 1 ? "" : "s"}`}
           className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
         >
-          {runs.map((run) => (
+          {activeRuns.map((run) => (
             <ResearchRunCard
               key={run.run_id}
               run={run}

@@ -1,274 +1,250 @@
 "use client";
 
 /**
- * EvidencePulsePanel — "New Evidence" + "Contradictions" feeds.
+ * EvidencePulsePanel — live "New Evidence" + "Contradictions" feeds.
  *
  * ADR-DPI-004 DP1-06 #2: Evidence Pulse panel.
  *
- * Two time-decayed feeds:
- *   - New Evidence: recently ingested evidence artifacts (evidence subtype).
- *   - Contradictions: artifacts with active `contradicts` edges, sorted by
- *     recency of the contradiction edge.
+ * Wires both evidence-pulse endpoints:
+ *   - Left column: NewEvidenceColumn (GET /api/research/evidence-pulse/new)
+ *   - Right column: contradiction pairs (GET /api/research/evidence-pulse/contradictions)
+ *   - Header badge: total_count from useEvidencePulseNew
+ *   - Trend arrow: ↑ if last_7_days > prior_7_days, ↓ if less, → if equal
  *
- * Backend aggregate endpoints not yet available.
- *   Missing endpoints:
- *     GET /api/research/evidence-pulse/new
- *       Returns: { data: { items: Array<EvidenceItem> } }
- *       EvidenceItem: { id, title, subtype, updated, snippet? }
- *       Query params: limit (default 5), topic_id?
+ * WCAG 2.1 AA:
+ *   - Panel is a labelled section (aria-labelledby).
+ *   - Badge count has an aria-label.
+ *   - Trend arrow has aria-label describing the direction.
+ *   - Contradiction rows are keyboard-navigable links.
+ *   - Colour is never the sole differentiator (arrows + labels supplement colour).
  *
- *     GET /api/research/evidence-pulse/contradictions
- *       Returns: { data: { items: Array<ContradictionItem> } }
- *       ContradictionItem: { id, title, subtype, edge_count, updated }
- *       Query params: limit (default 5), topic_id?
- *
- * While endpoints are absent both feeds render skeletons.
- * When endpoints ship replace stub logic with hooks.
- *
- * WCAG 2.1 AA: feeds are labelled sections; rows are list items.
- *
- * Stitch reference: Research Home (0cf6fb7b…) — Evidence Pulse section.
+ * Portal v1.7 Phase 4 (P4-05).
+ * Replaces the props-only skeleton from P6-03.
  */
 
 import Link from "next/link";
-import { AlertTriangle, Sparkles } from "lucide-react";
+import { AlertTriangle, Sparkles, ArrowUp, ArrowDown, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/ui/type-badge";
+import { NewEvidenceColumn } from "./NewEvidenceColumn";
+import { useEvidencePulseNew, useEvidencePulseContradictions } from "@/hooks/useEvidencePulse";
+import type { EvidenceContradictionPair } from "@/lib/api/research";
 
 // ---------------------------------------------------------------------------
-// Types
+// Helpers
 // ---------------------------------------------------------------------------
 
-export interface EvidenceItem {
-  id: string;
-  title: string;
-  subtype?: string | null;
-  updated?: string | null;
-  snippet?: string | null;
+type TrendDirection = "up" | "down" | "flat";
+
+function getTrend(last7: number, prior7: number): TrendDirection {
+  if (last7 > prior7) return "up";
+  if (last7 < prior7) return "down";
+  return "flat";
 }
 
-export interface ContradictionItem {
-  id: string;
-  title: string;
-  subtype?: string | null;
-  edge_count: number;
-  updated?: string | null;
-}
+// ---------------------------------------------------------------------------
+// Trend arrow
+// ---------------------------------------------------------------------------
 
-export interface EvidencePulsePanelProps {
-  /** New evidence items; undefined = endpoint missing (show skeleton + notice) */
-  newEvidence?: EvidenceItem[];
-  /** Contradiction items; undefined = endpoint missing */
-  contradictions?: ContradictionItem[];
-  isLoading?: boolean;
-  /** Active topic scope from TopicScopeDropdown; passed through for future use */
-  topicId?: string | null;
+interface TrendArrowProps {
+  direction: TrendDirection;
   className?: string;
 }
 
+function TrendArrow({ direction, className }: TrendArrowProps) {
+  if (direction === "up") {
+    return (
+      <ArrowUp
+        aria-label="Trending up"
+        className={cn("size-3 text-emerald-600 dark:text-emerald-400", className)}
+      />
+    );
+  }
+  if (direction === "down") {
+    return (
+      <ArrowDown
+        aria-label="Trending down"
+        className={cn("size-3 text-rose-500 dark:text-rose-400", className)}
+      />
+    );
+  }
+  return (
+    <ArrowRight
+      aria-label="Stable trend"
+      className={cn("size-3 text-muted-foreground", className)}
+    />
+  );
+}
+
 // ---------------------------------------------------------------------------
-// Skeleton row
+// Skeleton row (contradictions side)
 // ---------------------------------------------------------------------------
 
-function SkeletonRow() {
+function Shimmer({ className }: { className?: string }) {
   return (
     <div
       aria-hidden="true"
-      className="flex animate-pulse items-center gap-2 rounded-md border bg-card px-3 py-2"
-    >
-      <div className="h-4 w-14 rounded-sm bg-muted" />
-      <div className="h-4 flex-1 rounded bg-muted" />
+      className={cn("animate-pulse rounded bg-muted", className)}
+    />
+  );
+}
+
+function SkeletonContradictionRow() {
+  return (
+    <div aria-hidden="true" className="flex items-center gap-2 rounded-md border bg-card px-3 py-2">
+      <Shimmer className="h-4 w-14 rounded-sm" />
+      <Shimmer className="h-4 flex-1" />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// New evidence feed row
+// Contradiction row
 // ---------------------------------------------------------------------------
 
-function EvidenceRow({ item }: { item: EvidenceItem }) {
+function ContradictionRow({ pair }: { pair: EvidenceContradictionPair }) {
+  const artifact = pair.artifact_a;
   return (
     <li className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 transition-shadow hover:shadow-sm">
-      {item.subtype && <TypeBadge type={item.subtype} />}
-      <Link
-        href={`/artifact/${item.id}`}
-        className={cn(
-          "min-w-0 flex-1 truncate text-sm font-medium text-foreground leading-snug",
-          "hover:underline underline-offset-2",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
-        )}
-      >
-        {item.title}
-      </Link>
-    </li>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Contradiction feed row
-// ---------------------------------------------------------------------------
-
-function ContradictionRow({ item }: { item: ContradictionItem }) {
-  return (
-    <li className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 transition-shadow hover:shadow-sm">
-      {item.subtype && <TypeBadge type={item.subtype} />}
-      <Link
-        href={`/artifact/${item.id}`}
-        className={cn(
-          "min-w-0 flex-1 truncate text-sm font-medium text-foreground leading-snug",
-          "hover:underline underline-offset-2",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
-        )}
-      >
-        {item.title}
-      </Link>
-      <span
-        aria-label={`${item.edge_count} contradicting edge${item.edge_count !== 1 ? "s" : ""}`}
-        className="shrink-0 rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300"
-      >
-        {item.edge_count}
-      </span>
-    </li>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Feed section
-// ---------------------------------------------------------------------------
-
-interface FeedSectionProps {
-  id: string;
-  label: string;
-  icon: React.ReactNode;
-  iconColour: string;
-  endpointMissing: boolean;
-  endpointName: string;
-  children: React.ReactNode;
-}
-
-function FeedSection({
-  id,
-  label,
-  icon,
-  iconColour,
-  endpointMissing,
-  endpointName,
-  children,
-}: FeedSectionProps) {
-  return (
-    <section aria-labelledby={`pulse-heading-${id}`} className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5">
-        <span aria-hidden="true" className={iconColour}>
-          {icon}
+      {artifact.subtype && (
+        <span className="shrink-0">
+          <TypeBadge type={artifact.subtype} />
         </span>
-        <h3
-          id={`pulse-heading-${id}`}
-          className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
-        >
-          {label}
-        </h3>
-        {endpointMissing && (
-          <span
-            className="rounded-sm bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground"
-            role="note"
-          >
-            Soon
-          </span>
-        )}
-      </div>
-
-      {endpointMissing && (
-        <p className="text-[10px] text-muted-foreground" role="note">
-          Requires{" "}
-          <code className="rounded bg-muted px-0.5 font-mono text-[9px]">
-            {endpointName}
-          </code>{" "}
-          — coming soon.
-        </p>
       )}
-
-      <ul role="list" aria-label={label} className="flex flex-col gap-1.5">
-        {children}
-      </ul>
-    </section>
+      <Link
+        href={`/artifact/${artifact.id}`}
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm font-medium text-foreground leading-snug",
+          "hover:underline underline-offset-2",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+        )}
+        aria-label={`${artifact.title} vs ${pair.artifact_b.title}`}
+      >
+        {artifact.title}
+        <span
+          aria-hidden="true"
+          className="mx-1 text-[10px] font-bold text-rose-400 dark:text-rose-600"
+        >
+          vs
+        </span>
+        <span className="text-muted-foreground">{pair.artifact_b.title}</span>
+      </Link>
+    </li>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Main component
+// EvidencePulsePanel
 // ---------------------------------------------------------------------------
+
+export interface EvidencePulsePanelProps {
+  /** Optional topic scope from TopicScopeDropdown. */
+  topicId?: string | null;
+  className?: string;
+}
 
 /**
- * EvidencePulsePanel renders two feeds: New Evidence + Contradictions.
+ * EvidencePulsePanel renders two side-by-side feeds:
+ *   - Left: NewEvidenceColumn (live from useEvidencePulseNew)
+ *   - Right: Contradictions (live from useEvidencePulseContradictions)
  *
- * While backend endpoints are missing renders skeletons.
- * Pass `newEvidence` and `contradictions` props when endpoints ship.
+ * The panel header shows a total_count badge and a trend arrow derived from
+ * the 7-day rolling delta (last_7_days vs prior_7_days).
  */
-export function EvidencePulsePanel({
-  newEvidence,
-  contradictions,
-  isLoading = false,
-  className,
-}: EvidencePulsePanelProps) {
-  const newMissing = newEvidence === undefined;
-  const contradictionsMissing = contradictions === undefined;
-  const loading = isLoading;
+export function EvidencePulsePanel({ topicId, className }: EvidencePulsePanelProps) {
+  const {
+    total_count,
+    last_7_days,
+    prior_7_days,
+    isLoading: newLoading,
+    isError: newError,
+  } = useEvidencePulseNew(topicId ? { topic_id: topicId } : undefined);
 
-  const skeletonCount = 4;
+  const {
+    items: contradictions,
+    isLoading: contradictionsLoading,
+    isError: contradictionsError,
+  } = useEvidencePulseContradictions();
+
+  const trend = getTrend(last_7_days, prior_7_days);
+  const showBadge = !newLoading && !newError && total_count > 0;
 
   return (
     <section aria-labelledby="evidence-pulse-heading" className={cn("flex flex-col gap-4", className)}>
-      <h2
-        id="evidence-pulse-heading"
-        className="text-sm font-semibold text-foreground"
-      >
-        Evidence Pulse
-      </h2>
+      {/* Panel header */}
+      <div className="flex items-center gap-2">
+        <Sparkles
+          aria-hidden="true"
+          className="size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+        />
+        <h2
+          id="evidence-pulse-heading"
+          className="text-sm font-semibold text-foreground"
+        >
+          Evidence Pulse
+        </h2>
 
+        {showBadge && (
+          <span
+            className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+            aria-label={`${total_count} new evidence item${total_count !== 1 ? "s" : ""}`}
+          >
+            {total_count}
+          </span>
+        )}
+
+        {!newLoading && !newError && (
+          <TrendArrow direction={trend} className="ml-0.5" />
+        )}
+      </div>
+
+      {/* Two-column feed layout */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        {/* New Evidence feed */}
-        <FeedSection
-          id="new-evidence"
-          label="New Evidence"
-          icon={<Sparkles className="size-3.5" />}
-          iconColour="text-emerald-600 dark:text-emerald-400"
-          endpointMissing={newMissing}
-          endpointName="GET /api/research/evidence-pulse/new"
-        >
-          {newMissing || loading
-            ? Array.from({ length: skeletonCount }, (_, i) => <SkeletonRow key={i} />)
-            : newEvidence.length === 0
-            ? (
-              <li className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
-                No new evidence.
-              </li>
-            )
-            : newEvidence.map((item) => (
-              <EvidenceRow key={item.id} item={item} />
-            ))}
-        </FeedSection>
+        {/* Left column — New Evidence */}
+        <NewEvidenceColumn topicId={topicId ?? undefined} />
 
-        {/* Contradictions feed */}
-        <FeedSection
-          id="contradictions"
-          label="Contradictions"
-          icon={<AlertTriangle className="size-3.5" />}
-          iconColour="text-rose-600 dark:text-rose-400"
-          endpointMissing={contradictionsMissing}
-          endpointName="GET /api/research/evidence-pulse/contradictions"
+        {/* Right column — Contradictions */}
+        <section
+          aria-labelledby="evidence-pulse-contradictions-heading"
+          className="flex flex-col gap-2"
         >
-          {contradictionsMissing || loading
-            ? Array.from({ length: skeletonCount }, (_, i) => <SkeletonRow key={i} />)
-            : contradictions.length === 0
-            ? (
-              <li className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle
+              aria-hidden="true"
+              className="size-3.5 text-rose-600 dark:text-rose-400"
+            />
+            <h3
+              id="evidence-pulse-contradictions-heading"
+              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            >
+              Contradictions
+            </h3>
+          </div>
+
+          <ul role="list" aria-label="Contradiction pairs" className="flex flex-col gap-1.5">
+            {contradictionsLoading ? (
+              Array.from({ length: 4 }, (_, i) => <SkeletonContradictionRow key={i} />)
+            ) : contradictionsError ? (
+              <li
+                role="alert"
+                className="rounded-md border border-dashed px-3 py-3 text-center text-xs text-muted-foreground"
+              >
+                <span className="font-medium text-destructive">Failed to load contradictions.</span>
+              </li>
+            ) : contradictions.length === 0 ? (
+              <li
+                role="status"
+                className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground"
+              >
                 No contradictions detected.
               </li>
-            )
-            : contradictions.map((item) => (
-              <ContradictionRow key={item.id} item={item} />
-            ))}
-        </FeedSection>
+            ) : (
+              contradictions.map((pair, i) => (
+                <ContradictionRow key={`${pair.artifact_a.id}-${pair.artifact_b.id}-${i}`} pair={pair} />
+              ))
+            )}
+          </ul>
+        </section>
       </div>
     </section>
   );

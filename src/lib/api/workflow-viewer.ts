@@ -129,6 +129,101 @@ export async function cancelWorkflow(runId: string): Promise<OperatorActionAck> 
 }
 
 // ---------------------------------------------------------------------------
+// External Research endpoints (portal-v2.1)
+// ---------------------------------------------------------------------------
+
+/** DTO mirroring backend PromptPackageResponse */
+export interface PromptPackageResponse {
+  run_id: string;
+  format: string;
+  content: string;
+  package_artifact_id: string | null;
+  exported_at: string | null;
+}
+
+/** DTO mirroring backend ExternalResearchTaskRow */
+export interface ExternalResearchTaskRow {
+  task_id: string;
+  run_id: string;
+  status: string;
+  notes: string | null;
+  exported_at: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+/** DTO mirroring backend ValidationReport */
+export interface ValidationReport {
+  status: string;
+  warnings: string[];
+}
+
+/** DTO mirroring backend UploadResultResponse */
+export interface UploadResultResponse {
+  result_artifact_id: string;
+  validation: ValidationReport;
+  next_stage: string;
+  warning?: string | null;
+  existing_artifact_id?: string | null;
+}
+
+/** GET /api/workflows/:run_id/external-research/prompt-package */
+export async function fetchPromptPackage(
+  runId: string,
+  format: "json" | "markdown" = "json",
+): Promise<PromptPackageResponse> {
+  return apiFetch<PromptPackageResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/prompt-package?format=${format}`,
+  );
+}
+
+/** PATCH /api/workflows/:run_id/external-research/task */
+export async function patchExternalTask(
+  runId: string,
+  body: { status: string; notes?: string | null },
+): Promise<ExternalResearchTaskRow> {
+  return apiFetch<ExternalResearchTaskRow>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/task`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+/** POST /api/workflows/:run_id/external-research/result (text/paste upload) */
+export async function uploadExternalResult(
+  runId: string,
+  body: { content: string; content_type: string; filename?: string | null },
+): Promise<UploadResultResponse> {
+  return apiFetch<UploadResultResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/result`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+/** POST /api/workflows/:run_id/external-research/result (multipart file upload)
+ *
+ * Uses a raw fetch so the browser can set the multipart boundary in
+ * Content-Type automatically (apiFetch hard-codes application/json).
+ */
+export async function uploadExternalResultFile(
+  runId: string,
+  file: File,
+): Promise<UploadResultResponse> {
+  const { getApiBase } = await import("@/lib/api/config");
+  const formData = new FormData();
+  formData.append("file", file);
+  const url = `${getApiBase()}/workflows/${encodeURIComponent(runId)}/external-research/result`;
+  const response = await fetch(url, { method: "POST", body: formData, credentials: "include" });
+  if (!response.ok) {
+    const raw = await response.text();
+    let body: unknown = raw;
+    try { body = raw ? JSON.parse(raw) : raw; } catch { /* keep raw */ }
+    const { ApiError } = await import("@/lib/api/client");
+    throw new ApiError(response.status, body);
+  }
+  return response.json() as Promise<UploadResultResponse>;
+}
+
+// ---------------------------------------------------------------------------
 // Audit log — GET /api/workflows/:run_id/audit-log (P7-03)
 // ---------------------------------------------------------------------------
 

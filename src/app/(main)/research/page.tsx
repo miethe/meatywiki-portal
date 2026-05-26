@@ -2,6 +2,7 @@
 
 /**
  * Research Home — editorial layout with live panels.
+ * Includes "Active Research Runs" widget (portal-v2.1 P4-04).
  *
  * Layout structure:
  *   - Empty state banner (top, always-on until aggregate APIs ship)
@@ -13,6 +14,7 @@
  *         - ContradictionsPanel (P7-02 — LIVE, wired to backend)
  *         - Synthesis Narrative (skeleton pull-quote + 3-col breakdown)
  *         - Stale Artifacts panel (P7-01 — LIVE, wired to backend)
+ *         - Active Research Runs (P5-01/P5-02/P5-03 — LIVE, polling + draft support)
  *       Right ContextRail (xl+):
  *         - Workspace Health gauge (skeleton circle)
  *         - Recent Syntheses section (skeleton rows)
@@ -23,6 +25,9 @@
  * P7-01: Stale Artifacts panel wired to GET /api/artifacts/research/freshness-status.
  * P7-02: ContradictionsPanel wired to GET /api/artifacts/research/contradictions.
  *        Replaces ContradictionsCallout skeleton placeholder.
+ * P5-03: Draft re-entry — clicking a draft run in ActiveResearchRuns opens the
+ *        research wizard at Step 3 pre-populated with saved draft data.
+ *        Fetch: GET /api/workflows/{run_id} → WorkflowRunDetail.metadata
  *
  * OQ-2 resolution: APIs deferred (Topics, Synthesis, Workspace Health).
  *   Freshness (P7-01) and Contradictions (P7-02) endpoints are live.
@@ -31,7 +36,8 @@
  * Design spec §4.3.
  */
 
-import { ChevronDown } from "lucide-react";
+import { useCallback, useState } from "react";
+import { ChevronDown, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ContextRail } from "@/components/layout/ContextRail";
 import { ResearchWorkspaceEmpty } from "@/components/research/ResearchWorkspaceEmpty";
@@ -45,6 +51,11 @@ import { ActiveResearchRuns } from "@/components/research/ActiveResearchRuns";
 import InfoTooltip from "@/components/ui/info-tooltip";
 import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
+import { InitiationWizardDialog } from "@/components/workflow/initiation-wizard";
+import { getWorkflowRunDetail } from "@/lib/api/research";
+import type { ResearchRun } from "@/types/research-runs";
+import type { ExternalResearchPackageFields } from "@/hooks/useWorkflowWizardState";
+import type { RouteCard, RoutePreference } from "@/types/workflows/research";
 
 // ---------------------------------------------------------------------------
 // Shimmer primitive (inlined for ContextRail skeleton sections)
@@ -174,10 +185,160 @@ const RESEARCH_HOME_RAIL_TABS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Draft re-entry state helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts raw WorkflowRunDetail metadata into ExternalResearchPackageFields.
+ *
+ * The backend stores ExternalResearchParams fields in workflow_runs.metadata
+ * at create-run time. We map the known fields and fall back to defaults for
+ * any missing optional fields.
+ */
+function metadataToPackageFields(
+  meta: Record<string, unknown>,
+): ExternalResearchPackageFields {
+  return {
+    topic: typeof meta["topic"] === "string" ? meta["topic"] : "",
+    research_question:
+      typeof meta["research_question"] === "string"
+        ? meta["research_question"]
+        : "",
+    project: Array.isArray(meta["project"])
+      ? (meta["project"] as string[])
+      : [],
+    domain: Array.isArray(meta["domain"]) ? (meta["domain"] as string[]) : [],
+    selected_artifact_ids: Array.isArray(meta["selected_artifact_ids"])
+      ? (meta["selected_artifact_ids"] as string[])
+      : [],
+    route_preference:
+      typeof meta["route_preference"] === "string"
+        ? (meta["route_preference"] as RoutePreference)
+        : "auto",
+    desired_output:
+      typeof meta["desired_output"] === "string"
+        ? (meta["desired_output"] as ExternalResearchPackageFields["desired_output"])
+        : "briefing",
+    freshness_window:
+      typeof meta["freshness_window"] === "string"
+        ? meta["freshness_window"]
+        : "current",
+    citation_strictness:
+      typeof meta["citation_strictness"] === "string"
+        ? (meta["citation_strictness"] as ExternalResearchPackageFields["citation_strictness"])
+        : "advisory",
+    save_prompt_package:
+      typeof meta["save_prompt_package"] === "boolean"
+        ? meta["save_prompt_package"]
+        : true,
+    sensitivity_profile:
+      typeof meta["sensitivity_profile"] === "string"
+        ? (meta["sensitivity_profile"] as ExternalResearchPackageFields["sensitivity_profile"])
+        : "internal",
+    task_type: typeof meta["task_type"] === "string" ? meta["task_type"] : "",
+    audience: typeof meta["audience"] === "string" ? meta["audience"] : "",
+    time_profile:
+      typeof meta["time_profile"] === "string"
+        ? (meta["time_profile"] as ExternalResearchPackageFields["time_profile"])
+        : "standard",
+    cost_sensitivity:
+      typeof meta["cost_sensitivity"] === "string"
+        ? (meta["cost_sensitivity"] as ExternalResearchPackageFields["cost_sensitivity"])
+        : "medium",
+    reuse_likelihood:
+      typeof meta["reuse_likelihood"] === "string"
+        ? (meta["reuse_likelihood"] as ExternalResearchPackageFields["reuse_likelihood"])
+        : "medium",
+    background:
+      typeof meta["background"] === "string" ? meta["background"] : "",
+  };
+}
+
+/**
+ * Builds a minimal single-card RouteCard array from saved metadata.
+ *
+ * When re-entering a draft, the original route_cards from the analysis are
+ * not persisted in metadata. We synthesise a minimal card from the saved
+ * route_preference so PromptPackagePreview can render the venue section.
+ * The card has a score of 1.0 and a "fast_path" routing_category by default
+ * since the full analysis is not available.
+ */
+function buildMinimalRouteCards(
+  meta: Record<string, unknown>,
+): RouteCard[] {
+  const route =
+    typeof meta["route_preference"] === "string"
+      ? (meta["route_preference"] as RoutePreference)
+      : "auto";
+
+  return [
+    {
+      route,
+      score: 1.0,
+      rationale: "Saved route preference from draft run.",
+      prompt_preview: "",
+      expected_output: "",
+      routing_category: "fast_path",
+      display_name: route,
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
 export default function ResearchHomePage() {
+  // --------------------------------------------------------------------------
+  // Draft re-entry state (P5-03)
+  // --------------------------------------------------------------------------
+
+  /**
+   * When non-null, the wizard dialog opens in draft re-entry mode.
+   * Cleared when the dialog is closed.
+   */
+  const [draftWizardOpen, setDraftWizardOpen] = useState(false);
+  const [draftInitialState, setDraftInitialState] = useState<{
+    fields: ExternalResearchPackageFields;
+    draft_run_id: string;
+    route_cards: RouteCard[];
+    selected_venue: RoutePreference;
+  } | null>(null);
+
+  const handleDraftReEntry = useCallback(async (run: ResearchRun) => {
+    // Fetch full run detail to get metadata
+    try {
+      const envelope = await getWorkflowRunDetail(run.run_id);
+      const detail = envelope.data;
+      const meta = detail.metadata ?? {};
+      const fields = metadataToPackageFields(meta as Record<string, unknown>);
+      const routeCards = buildMinimalRouteCards(meta as Record<string, unknown>);
+      const selectedVenue = fields.route_preference;
+
+      setDraftInitialState({
+        fields,
+        draft_run_id: run.run_id,
+        route_cards: routeCards,
+        selected_venue: selectedVenue,
+      });
+      setDraftWizardOpen(true);
+    } catch {
+      // If fetch fails, fall back to pre-populating from the run summary data
+      const fields = metadataToPackageFields({
+        topic: run.topic ?? "",
+        research_question: run.research_question ?? "",
+      });
+      const routeCards = buildMinimalRouteCards({});
+      setDraftInitialState({
+        fields,
+        draft_run_id: run.run_id,
+        route_cards: routeCards,
+        selected_venue: "auto",
+      });
+      setDraftWizardOpen(true);
+    }
+  }, []);
+
   return (
     <div className="flex flex-col gap-5">
       {/* ------------------------------------------------------------------ */}
@@ -190,9 +351,9 @@ export default function ResearchHomePage() {
       <FirstRunOffer tourId="researchWizard" tourLabel="Research" />
 
       {/* ------------------------------------------------------------------ */}
-      {/* Page heading + workspace selector                                   */}
+      {/* Page heading + workspace selector + Start Research CTA             */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex flex-wrap items-start justify-between gap-3" data-tour="research-start-button">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-semibold tracking-tight">Research</h1>
@@ -207,11 +368,38 @@ export default function ResearchHomePage() {
           </p>
         </div>
 
-        {/*
-         * TODO: wire GET /api/topics to populate dropdown options.
-         * Replace WorkspaceSelector with a real Select bound to topic scope.
-         */}
-        <WorkspaceSelector />
+        <div className="flex items-center gap-2">
+          {/*
+           * TODO: wire GET /api/topics to populate dropdown options.
+           * Replace WorkspaceSelector with a real Select bound to topic scope.
+           */}
+          <WorkspaceSelector />
+
+          {/*
+           * P1-01: "Start Research" CTA — opens research wizard pre-configured
+           * with external_research_v1 template. data-tour attribute is the
+           * anchor for the researchWizard tour step 1.
+           */}
+          <InitiationWizardDialog
+            template_id="external_research_v1"
+            trigger={
+              <button
+                type="button"
+                data-tour="research-start"
+                aria-label="Start a new research run"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5",
+                  "bg-foreground text-background text-sm font-semibold",
+                  "transition-colors hover:bg-foreground/90",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                )}
+              >
+                <FlaskConical aria-hidden="true" className="size-3.5" />
+                Start Research
+              </button>
+            }
+          />
+        </div>
       </div>
 
       {/* ------------------------------------------------------------------ */}
@@ -271,13 +459,16 @@ export default function ResearchHomePage() {
           </div>
 
           {/* ------------------------------------------------------------ */}
-          {/* Active Research Runs widget — P5-01/P5-02/P5-04              */}
+          {/* Active Research Runs widget — P5-01/P5-02/P5-03/P5-04      */}
           {/* Polls GET /api/workflows/runs?template_id=external_research_v1 */}
           {/* every 5 s with exponential backoff on error (cap 30 s).      */}
+          {/* Draft runs shown with amber badge; click to re-enter wizard. */}
           {/* SSE migration deferred (OQ-5).                               */}
           {/* ------------------------------------------------------------ */}
           <div data-tour="research-active-runs">
-          <ActiveResearchRuns />
+            <ActiveResearchRuns
+              onDraftReEntry={(run) => { void handleDraftReEntry(run); }}
+            />
           </div>
         </div>
 
@@ -297,6 +488,23 @@ export default function ResearchHomePage() {
           />
         </aside>
       </div>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Draft re-entry wizard dialog (P5-03)                               */}
+      {/* Controlled — opened when user clicks a draft run card.             */}
+      {/* ------------------------------------------------------------------ */}
+      {draftInitialState !== null && (
+        <InitiationWizardDialog
+          controlled
+          open={draftWizardOpen}
+          onOpenChange={(open) => {
+            setDraftWizardOpen(open);
+            if (!open) setDraftInitialState(null);
+          }}
+          template_id="external_research_v1"
+          initialDraft={draftInitialState}
+        />
+      )}
     </div>
   );
 }

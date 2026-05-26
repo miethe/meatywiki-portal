@@ -21,12 +21,26 @@ import React, { createContext, useCallback, useContext, useReducer } from "react
 import type {
   CreateExternalResearchBody,
   CreateRunResponse,
+  IntentCore,
   RouteCard,
   RoutePreference,
   DesiredOutput,
   CitationStrictness,
+  SensitivityProfile,
+  TimeProfile,
+  CostSensitivity,
+  ReuseLikelihood,
 } from "@/types/workflows/research";
 import { apiFetch } from "@/lib/api/client";
+
+// ---------------------------------------------------------------------------
+// Draft saved response
+// ---------------------------------------------------------------------------
+
+export interface SaveDraftResponse {
+  /** ULID of the created workflow_runs row with status="draft". */
+  run_id: string;
+}
 
 // ---------------------------------------------------------------------------
 // Package fields
@@ -50,6 +64,21 @@ export interface ExternalResearchPackageFields {
   freshness_window: string;
   citation_strictness: CitationStrictness;
   save_prompt_package: boolean;
+  // --- v2.4 additions ---
+  /** Data sensitivity level. Default: "internal". */
+  sensitivity_profile: SensitivityProfile;
+  /** Free-form task type hint. */
+  task_type: string;
+  /** Target audience for the generated output. */
+  audience: string;
+  /** Urgency of the research task. Default: "standard". */
+  time_profile: TimeProfile;
+  /** Operator tolerance for per-run token cost. Default: "medium". */
+  cost_sensitivity: CostSensitivity;
+  /** Estimated likelihood of reuse. Default: "medium". */
+  reuse_likelihood: ReuseLikelihood;
+  /** Optional methodology/background context note. */
+  background: string;
   /** Index signature — required for Record<string, unknown> compat in generic WizardState. */
   [key: string]: unknown;
 }
@@ -65,6 +94,14 @@ export const DEFAULT_PACKAGE_FIELDS: ExternalResearchPackageFields = {
   freshness_window: "current",
   citation_strictness: "advisory",
   save_prompt_package: true,
+  // v2.4 defaults
+  sensitivity_profile: "internal",
+  task_type: "",
+  audience: "",
+  time_profile: "standard",
+  cost_sensitivity: "medium",
+  reuse_likelihood: "medium",
+  background: "",
 };
 
 // ---------------------------------------------------------------------------
@@ -97,6 +134,24 @@ export interface WizardState<
    */
   route_cards: RouteCard[] | null;
 
+  /**
+   * Distilled intent extracted by the routing analysis.
+   * Null until routing analysis succeeds.
+   */
+  intent_core: IntentCore | null;
+
+  /**
+   * Named entities extracted from the research question and topic.
+   * Empty array until routing analysis succeeds.
+   */
+  extracted_entities: string[];
+
+  /**
+   * Archival pattern archetypes detected from the request.
+   * Empty array until routing analysis succeeds.
+   */
+  archival_archetypes: string[];
+
   /** Venue selected by the user in Step 2. Null until user picks one. */
   selected_venue: RoutePreference | null;
 
@@ -119,7 +174,13 @@ export interface WizardState<
   error: string | null;
 
   /** Which operation produced the current error. */
-  error_scope: "routing" | "submit" | null;
+  error_scope: "routing" | "submit" | "draft" | null;
+
+  /** True while save-as-draft POST is in flight. */
+  is_saving_draft: boolean;
+
+  /** Run ID of a successfully saved draft (cleared on RESET). */
+  draft_run_id: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -131,13 +192,17 @@ export type WizardAction<
 > =
   | { type: "SET_PACKAGE_FIELD"; field: keyof TFields; value: TFields[keyof TFields] }
   | { type: "FETCH_ROUTES_START" }
-  | { type: "FETCH_ROUTES_SUCCESS"; route_cards: RouteCard[] }
+  | { type: "FETCH_ROUTES_SUCCESS"; route_cards: RouteCard[]; intent_core: IntentCore; extracted_entities: string[]; archival_archetypes: string[] }
   | { type: "FETCH_ROUTES_ERROR"; error: string }
   | { type: "SELECT_VENUE"; venue: RoutePreference }
   | { type: "ADVANCE_TO_CONFIRM" }
   | { type: "SUBMIT_START" }
   | { type: "SUBMIT_SUCCESS"; run_response: CreateRunResponse }
   | { type: "SUBMIT_ERROR"; error: string }
+  | { type: "SAVE_DRAFT_START" }
+  | { type: "SAVE_DRAFT_SUCCESS"; draft_run_id: string }
+  | { type: "SAVE_DRAFT_ERROR"; error: string }
+  | { type: "LOAD_DRAFT"; fields: TFields; draft_run_id: string; route_cards: RouteCard[]; selected_venue: RoutePreference }
   | { type: "GO_BACK" }
   | { type: "RESET" };
 
@@ -152,11 +217,16 @@ function makeInitialState(
     current_step: 1,
     package_fields: { ...DEFAULT_PACKAGE_FIELDS },
     route_cards: null,
+    intent_core: null,
+    extracted_entities: [],
+    archival_archetypes: [],
     selected_venue: null,
     run_response: null,
     template_id,
     is_fetching_routes: false,
     is_submitting: false,
+    is_saving_draft: false,
+    draft_run_id: null,
     error: null,
     error_scope: null,
   };
@@ -204,6 +274,9 @@ function reducer<TFields extends Record<string, unknown>>(
         is_fetching_routes: false,
         current_step: 2,
         route_cards: action.route_cards,
+        intent_core: action.intent_core,
+        extracted_entities: action.extracted_entities,
+        archival_archetypes: action.archival_archetypes,
         selected_venue: topVenue,
         error: null,
         error_scope: null,
@@ -256,6 +329,52 @@ function reducer<TFields extends Record<string, unknown>>(
       };
 
     // ------------------------------------------------------------------
+    // Step 3 — save as draft
+    // ------------------------------------------------------------------
+    case "SAVE_DRAFT_START":
+      return {
+        ...state,
+        is_saving_draft: true,
+        error: null,
+        error_scope: null,
+      };
+
+    case "SAVE_DRAFT_SUCCESS":
+      return {
+        ...state,
+        is_saving_draft: false,
+        draft_run_id: action.draft_run_id,
+        error: null,
+        error_scope: null,
+      };
+
+    case "SAVE_DRAFT_ERROR":
+      return {
+        ...state,
+        is_saving_draft: false,
+        error: action.error,
+        error_scope: "draft",
+      };
+
+    // ------------------------------------------------------------------
+    // Draft re-entry — loads saved draft at Step 3
+    // ------------------------------------------------------------------
+    case "LOAD_DRAFT":
+      return {
+        ...state,
+        current_step: 3,
+        package_fields: action.fields,
+        route_cards: action.route_cards,
+        selected_venue: action.selected_venue,
+        draft_run_id: action.draft_run_id,
+        is_fetching_routes: false,
+        is_submitting: false,
+        is_saving_draft: false,
+        error: null,
+        error_scope: null,
+      };
+
+    // ------------------------------------------------------------------
     // Navigation
     // ------------------------------------------------------------------
     case "GO_BACK": {
@@ -266,6 +385,9 @@ function reducer<TFields extends Record<string, unknown>>(
           ...state,
           current_step: 1,
           route_cards: null,
+          intent_core: null,
+          extracted_entities: [],
+          archival_archetypes: [],
           selected_venue: null,
           error: null,
           error_scope: null,
@@ -299,9 +421,8 @@ function reducer<TFields extends Record<string, unknown>>(
 /** POST /api/workflows/external-research/routing-analysis */
 async function analyseRouting(
   fields: ExternalResearchPackageFields,
-): Promise<{ route_cards: RouteCard[] }> {
-  // TODO P4-03: wire to real endpoint using apiFetch
-  return apiFetch<{ route_cards: RouteCard[] }>(
+): Promise<import("@/types/workflows/research").RoutingAnalysisResponse> {
+  return apiFetch<import("@/types/workflows/research").RoutingAnalysisResponse>(
     "/workflows/external-research/routing-analysis",
     {
       method: "POST",
@@ -313,8 +434,58 @@ async function analyseRouting(
         constraints: {
           freshness_window: fields.freshness_window,
           citation_strictness: fields.citation_strictness,
+          sensitivity_profile: fields.sensitivity_profile,
         },
       }),
+    },
+  );
+}
+
+/** POST /api/workflows/external-research with save_as_draft=true */
+async function saveResearchDraft(
+  fields: ExternalResearchPackageFields,
+  selectedVenue: RoutePreference,
+): Promise<SaveDraftResponse> {
+  const body: CreateExternalResearchBody & { save_as_draft: boolean } = {
+    topic: fields.topic,
+    research_question: fields.research_question,
+    project: fields.project.length > 0 ? fields.project : undefined,
+    domain: fields.domain.length > 0 ? fields.domain : undefined,
+    selected_artifact_ids:
+      fields.selected_artifact_ids.length > 0
+        ? fields.selected_artifact_ids
+        : undefined,
+    route_preference: selectedVenue,
+    desired_output: fields.desired_output,
+    freshness_window: fields.freshness_window,
+    citation_strictness: fields.citation_strictness,
+    save_prompt_package: fields.save_prompt_package,
+    sensitivity_profile: fields.sensitivity_profile,
+    task_type: fields.task_type || undefined,
+    audience: fields.audience || undefined,
+    time_profile: fields.time_profile,
+    cost_sensitivity: fields.cost_sensitivity,
+    reuse_likelihood: fields.reuse_likelihood,
+    background: fields.background || undefined,
+    save_as_draft: true,
+  };
+
+  return apiFetch<SaveDraftResponse>("/workflows/external-research", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** PATCH /api/workflows/{run_id}/external-research/task — draft → created */
+async function enqueueResearchDraft(
+  draftRunId: string,
+): Promise<CreateRunResponse> {
+  return apiFetch<CreateRunResponse>(
+    `/workflows/${encodeURIComponent(draftRunId)}/external-research/task`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "created" }),
     },
   );
 }
@@ -338,6 +509,14 @@ async function createExternalResearch(
     freshness_window: fields.freshness_window,
     citation_strictness: fields.citation_strictness,
     save_prompt_package: fields.save_prompt_package,
+    // v2.4 optional fields — only included when non-default to keep payload clean
+    sensitivity_profile: fields.sensitivity_profile,
+    task_type: fields.task_type || undefined,
+    audience: fields.audience || undefined,
+    time_profile: fields.time_profile,
+    cost_sensitivity: fields.cost_sensitivity,
+    reuse_likelihood: fields.reuse_likelihood,
+    background: fields.background || undefined,
   };
 
   // TODO P4-03: wire to real endpoint using apiFetch
@@ -364,13 +543,25 @@ export interface UseWizardResult {
     submitPackage: () => Promise<void>;
 
     /**
-     * POST /api/workflows/external-research.
+     * POST /api/workflows/external-research (normal — creates + enqueues run).
      *
      * Dispatches SUBMIT_START → SUBMIT_SUCCESS | SUBMIT_ERROR.
      * No-op if already submitting or selected_venue is null.
      * After SUBMIT_SUCCESS, read state.run_response to open the viewer.
+     *
+     * If state.draft_run_id is set (re-entering a draft), this PATCHes
+     * the draft run to transition draft → created instead of creating a new run.
      */
     handoff: () => Promise<void>;
+
+    /**
+     * POST /api/workflows/external-research with save_as_draft=true.
+     *
+     * Dispatches SAVE_DRAFT_START → SAVE_DRAFT_SUCCESS | SAVE_DRAFT_ERROR.
+     * On success, state.draft_run_id is set.
+     * No-op if already submitting or saving or selected_venue is null.
+     */
+    saveAsDraft: () => Promise<void>;
   };
 }
 
@@ -378,14 +569,34 @@ export interface UseWizardResult {
 // Hook
 // ---------------------------------------------------------------------------
 
-export function useWorkflowWizardState(template_id: string): UseWizardResult {
+export function useWorkflowWizardState(
+  template_id: string,
+  initialDraft?: {
+    fields: ExternalResearchPackageFields;
+    draft_run_id: string;
+    route_cards: RouteCard[];
+    selected_venue: RoutePreference;
+  },
+): UseWizardResult {
   const [state, dispatch] = useReducer(
     reducer as React.Reducer<
       WizardState<ExternalResearchPackageFields>,
       WizardAction<ExternalResearchPackageFields>
     >,
-    template_id,
-    makeInitialState,
+    { template_id, initialDraft },
+    ({ template_id: tid, initialDraft: draft }) => {
+      const base = makeInitialState(tid);
+      if (!draft) return base;
+      // Pre-populate from draft — start at Step 3
+      return {
+        ...base,
+        current_step: 3 as const,
+        package_fields: draft.fields,
+        route_cards: draft.route_cards,
+        selected_venue: draft.selected_venue,
+        draft_run_id: draft.draft_run_id,
+      };
+    },
   );
 
   const submitPackage = useCallback(async (): Promise<void> => {
@@ -394,7 +605,13 @@ export function useWorkflowWizardState(template_id: string): UseWizardResult {
     dispatch({ type: "FETCH_ROUTES_START" });
     try {
       const response = await analyseRouting(state.package_fields);
-      dispatch({ type: "FETCH_ROUTES_SUCCESS", route_cards: response.route_cards });
+      dispatch({
+        type: "FETCH_ROUTES_SUCCESS",
+        route_cards: response.route_cards,
+        intent_core: response.intent_core,
+        extracted_entities: response.extracted_entities ?? [],
+        archival_archetypes: response.archival_archetypes ?? [],
+      });
     } catch (err) {
       dispatch({
         type: "FETCH_ROUTES_ERROR",
@@ -412,10 +629,17 @@ export function useWorkflowWizardState(template_id: string): UseWizardResult {
 
     dispatch({ type: "SUBMIT_START" });
     try {
-      const response = await createExternalResearch(
-        state.package_fields,
-        state.selected_venue,
-      );
+      let response: CreateRunResponse;
+      if (state.draft_run_id !== null) {
+        // Draft re-entry: PATCH draft → created (enqueues the existing run)
+        response = await enqueueResearchDraft(state.draft_run_id);
+      } else {
+        // Normal: create a new run and enqueue
+        response = await createExternalResearch(
+          state.package_fields,
+          state.selected_venue,
+        );
+      }
       dispatch({ type: "SUBMIT_SUCCESS", run_response: response });
     } catch (err) {
       dispatch({
@@ -426,12 +650,34 @@ export function useWorkflowWizardState(template_id: string): UseWizardResult {
             : "Failed to create research run — please try again.",
       });
     }
-  }, [state.is_submitting, state.selected_venue, state.package_fields]);
+  }, [state.is_submitting, state.selected_venue, state.package_fields, state.draft_run_id]);
+
+  const saveAsDraft = useCallback(async (): Promise<void> => {
+    if (state.is_submitting || state.is_saving_draft) return;
+    if (state.selected_venue === null) return;
+
+    dispatch({ type: "SAVE_DRAFT_START" });
+    try {
+      const response = await saveResearchDraft(
+        state.package_fields,
+        state.selected_venue,
+      );
+      dispatch({ type: "SAVE_DRAFT_SUCCESS", draft_run_id: response.run_id });
+    } catch (err) {
+      dispatch({
+        type: "SAVE_DRAFT_ERROR",
+        error:
+          err instanceof Error
+            ? err.message
+            : "Failed to save draft — please try again.",
+      });
+    }
+  }, [state.is_submitting, state.is_saving_draft, state.selected_venue, state.package_fields]);
 
   return {
     state,
     dispatch,
-    actions: { submitPackage, handoff },
+    actions: { submitPackage, handoff, saveAsDraft },
   };
 }
 
@@ -444,20 +690,35 @@ export const WizardStateContext = createContext<UseWizardResult | null>(null);
 /**
  * Mount at the wizard root. Provides wizard state to all sub-components.
  *
- * Usage:
+ * Pass `initialDraft` to pre-populate wizard state from a saved draft run
+ * (re-entry from /research → ActiveResearchRuns draft card click).
+ *
+ * Usage (normal):
  *   <WorkflowWizardProvider template_id="external_research_v1">
- *     <WizardStepNav />
- *     <WizardStepPanel />
+ *     ...
+ *   </WorkflowWizardProvider>
+ *
+ * Usage (draft re-entry):
+ *   <WorkflowWizardProvider template_id="external_research_v1" initialDraft={draftState}>
+ *     ...
  *   </WorkflowWizardProvider>
  */
 export function WorkflowWizardProvider({
   template_id,
+  initialDraft,
   children,
 }: {
   template_id: string;
+  /** When provided, wizard starts at Step 3 pre-populated from the draft run. */
+  initialDraft?: {
+    fields: ExternalResearchPackageFields;
+    draft_run_id: string;
+    route_cards: RouteCard[];
+    selected_venue: RoutePreference;
+  };
   children: React.ReactNode;
 }): React.JSX.Element {
-  const value = useWorkflowWizardState(template_id);
+  const value = useWorkflowWizardState(template_id, initialDraft);
   return (
     <WizardStateContext.Provider value={value}>
       {children}

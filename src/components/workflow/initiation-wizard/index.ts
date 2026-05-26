@@ -4,6 +4,7 @@
  * Primary consumers:
  *   - Workflow Status Surface "New workflow" button
  *   - Artifact Detail context menu (optional artifact ID for routing recommendation)
+ *   - Research page "Start Research" CTA (template_id="external_research_v1")
  *
  * Traces FR-1.5-06 / P1.5-2-03.
  */
@@ -12,3 +13,4 @@ export { InitiationWizardDialog } from "./initiation-wizard-dialog";
 export { InitiationWizard } from "./initiation-wizard";
 export type { InitiationWizardProps } from "./initiation-wizard";
 export type { InitiationWizardDialogProps } from "./initiation-wizard-dialog";
+export type { ResearchPackage, ResearchRouteCard } from "./initiation-wizard";

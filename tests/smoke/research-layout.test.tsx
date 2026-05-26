@@ -16,6 +16,7 @@
 
 import React from "react";
 import { render, screen, within } from "@testing-library/react";
+import { renderWithProviders } from "../utils/render";
 
 // ---------------------------------------------------------------------------
 // Mock next/navigation — ResearchLayout uses usePathname
@@ -44,6 +45,57 @@ jest.mock("@/hooks/useSSE", () => ({
 jest.mock("@/lib/api/workflows", () => ({
   ...jest.requireActual("@/lib/api/workflows"),
   submitSynthesis: jest.fn(),
+}));
+
+// Mock hooks used by BacklinksPage (BacklinksPanel → useArtifactEdges)
+// and QueuePage (ReviewQueue → useReviewQueue, ContextRail research variant
+// → useRecentSyntheses + useLineage).
+jest.mock("@/hooks/useArtifactEdges", () => ({
+  useArtifactEdges: jest.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: jest.fn(),
+  })),
+}));
+
+jest.mock("@/hooks/useReviewQueue", () => ({
+  useReviewQueue: jest.fn(() => ({
+    items: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: jest.fn(),
+    filters: {
+      sort: "priority",
+      order: "asc",
+      priorityFilter: "ALL",
+      gateFilter: "ALL",
+    },
+    setSort: jest.fn(),
+    setPriorityFilter: jest.fn(),
+    setGateFilter: jest.fn(),
+  })),
+}));
+
+jest.mock("@/hooks/useRecentSyntheses", () => ({
+  useRecentSyntheses: jest.fn(() => ({
+    syntheses: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  })),
+}));
+
+jest.mock("@/hooks/useLineage", () => ({
+  useLineage: jest.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: jest.fn(),
+  })),
 }));
 
 // Mock next/link — renders as a plain <a> in jsdom
@@ -231,41 +283,42 @@ describe("Research placeholder pages (P4-01)", () => {
     ).toBeInTheDocument();
   });
 
-  it("Synthesis page renders the Launch synthesis form (P4-02)", () => {
+  it("Synthesis page renders the Start synthesis CTA link (P4-02 wizard entry)", () => {
     render(<SynthesisPage />);
-    // The real SynthesisBuilder renders a submit button (not a placeholder)
+    // DP4-02d replaced the old single-page form with a 2-step wizard entry card.
+    // The CTA is now a Link ("Start synthesis") pointing to /research/synthesis/select-scope.
     expect(
-      screen.getByRole("button", { name: /launch synthesis/i }),
+      screen.getByRole("link", { name: /start synthesis/i }),
     ).toBeInTheDocument();
   });
 
-  it("Backlinks placeholder renders heading and 'Coming in P4-03' message", () => {
-    render(<BacklinksPage />);
+  it("Backlinks page renders heading (P4-03 real implementation)", () => {
+    // BacklinksPage uses useArtifactEdges via BacklinksPanel — needs QueryClient.
+    renderWithProviders(<BacklinksPage />);
     expect(
       screen.getByRole("heading", { name: /backlinks/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/coming in p4-03/i)).toBeInTheDocument();
   });
 
-  it("Backlinks placeholder has accessible status region", () => {
-    render(<BacklinksPage />);
+  it("Backlinks page renders artifact ID lookup form", () => {
+    renderWithProviders(<BacklinksPage />);
     expect(
-      screen.getByRole("status", { name: /backlinks explorer coming soon/i }),
+      screen.getByRole("form", { name: /artifact id lookup/i }),
     ).toBeInTheDocument();
   });
 
-  it("Queue placeholder renders heading and 'Coming in P4-05' message", () => {
-    render(<QueuePage />);
+  it("Queue page renders heading (P4-05 real implementation)", () => {
+    // QueuePage uses useReviewQueue + ContextRail (useRecentSyntheses, useLineage) — needs QueryClient.
+    renderWithProviders(<QueuePage />);
     expect(
       screen.getByRole("heading", { name: /review queue/i }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/coming in p4-05/i)).toBeInTheDocument();
   });
 
-  it("Queue placeholder has accessible status region", () => {
-    render(<QueuePage />);
+  it("Queue page renders context rail aside", () => {
+    renderWithProviders(<QueuePage />);
     expect(
-      screen.getByRole("status", { name: /review queue coming soon/i }),
+      screen.getByRole("complementary", { name: /context rail/i }),
     ).toBeInTheDocument();
   });
 });

@@ -1013,3 +1013,61 @@ export async function linkArtifactToProject(
     },
   );
 }
+
+// ---------------------------------------------------------------------------
+// v1.7 additions — promoteArtifact, ReviewRequest, fetchRoutingRecommendation
+// ---------------------------------------------------------------------------
+
+/**
+ * Response body for POST /api/artifacts/:id/promote.
+ *
+ * ``lifecycle_stage`` is the new stage after promotion
+ * (raw → classified → compiled → reviewed → published).
+ */
+export interface PromoteArtifactResponse {
+  artifact_id: string;
+  lifecycle_stage: string;
+}
+
+/**
+ * Promote an artifact's lifecycle stage.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/promote
+ * Calls EngineAdapter.promote_artifact() which advances vault frontmatter
+ * ``lifecycle_stage`` one step along the linear order.
+ *
+ * Throws ``ApiError`` with status 404 when the artifact is not found,
+ * or 500 on engine adapter error.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-07).
+ */
+export async function promoteArtifact(
+  artifactId: string,
+): Promise<PromoteArtifactResponse> {
+  return apiFetch<PromoteArtifactResponse>(
+    `/artifacts/${encodeURIComponent(artifactId)}/promote`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+/**
+ * Request body for POST /api/artifacts/:id/review.
+ *
+ * ``review_type`` must be one of: lint, verification, promotion, freshness,
+ * contradiction. ``notes`` is optional free-text context.
+ */
+export interface ReviewRequest {
+  review_type: string;
+  notes?: string | null;
+}
+
+/**
+ * Alias for ``getRoutingRecommendation`` — exposes the ``fetch*`` naming
+ * convention used in Phase 3 component wiring (P3-04).
+ *
+ * Backend: GET /api/artifacts/{artifact_id}/routing-recommendation
+ * Throws ``ApiError`` with status 404 when the artifact is not in the overlay.
+ *
+ * Portal v1.7 Phase 3 (P3-01 / P3-04).
+ */
+export { getRoutingRecommendation as fetchRoutingRecommendation };

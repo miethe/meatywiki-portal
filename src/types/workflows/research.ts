@@ -80,6 +80,26 @@ export type ExternalResearchTaskStatus =
 // ---------------------------------------------------------------------------
 
 /**
+ * Sensitivity level for the research package (v2.4 addition).
+ */
+export type SensitivityProfile = "public" | "internal" | "confidential";
+
+/**
+ * Time/urgency profile for the research task (v2.4 addition).
+ */
+export type TimeProfile = "urgent" | "standard" | "deep";
+
+/**
+ * Cost-sensitivity hint (v2.4 addition).
+ */
+export type CostSensitivity = "low" | "medium" | "high";
+
+/**
+ * Reuse-likelihood hint (v2.4 addition).
+ */
+export type ReuseLikelihood = "low" | "medium" | "high";
+
+/**
  * Request body for POST /api/workflows/external-research.
  *
  * `topic` and `research_question` are required (min_length=1).
@@ -110,6 +130,55 @@ export interface CreateExternalResearchBody {
    * A non-empty corpus is also required; empty corpus → package_artifact_id: null.
    */
   save_prompt_package?: boolean;
+  // --- v2.4 additions (all optional, backward-compatible) ---
+  /** Data sensitivity level. Default: "internal". */
+  sensitivity_profile?: SensitivityProfile;
+  /** Free-form task type hint (e.g. "comparative analysis"). */
+  task_type?: string;
+  /** Target audience for the generated output. */
+  audience?: string;
+  /** Urgency of the research task. Default: "standard". */
+  time_profile?: TimeProfile;
+  /** Operator tolerance for per-run token cost. Default: "medium". */
+  cost_sensitivity?: CostSensitivity;
+  /** Estimated likelihood of reuse. Default: "medium". */
+  reuse_likelihood?: ReuseLikelihood;
+  /** Optional methodology context note. Free-form background context for the run. */
+  background?: string;
+}
+
+/**
+ * Response from POST /api/workflows/external-research/package-upload (v2.4).
+ *
+ * Returns the parsed ExternalResearchParams fields on success (HTTP 200).
+ * On validation failure, returns HTTP 422 with field-level errors.
+ */
+export interface PackageUploadResponse {
+  topic: string;
+  research_question: string;
+  project?: string[];
+  domain?: string[];
+  selected_artifact_ids?: string[];
+  route_preference?: RoutePreference;
+  desired_output?: DesiredOutput;
+  freshness_window?: string;
+  citation_strictness?: CitationStrictness;
+  save_prompt_package?: boolean;
+  sensitivity_profile?: SensitivityProfile;
+  task_type?: string;
+  audience?: string;
+  time_profile?: TimeProfile;
+  cost_sensitivity?: CostSensitivity;
+  reuse_likelihood?: ReuseLikelihood;
+  background?: string;
+}
+
+/**
+ * Field-level validation error from a 422 response.
+ */
+export interface PackageUploadFieldError {
+  field: string;
+  message: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -313,6 +382,12 @@ export interface WorkflowRunDetail {
   created_artifacts: ArtifactRefDTO[];
   /** Per-stage timing keyed by stage name. */
   stage_durations: Record<string, StageDuration>;
+  /**
+   * Opaque metadata blob stored at create-run time.
+   * For external_research_v1, contains ExternalResearchParams fields.
+   * Used by P5-03 draft re-entry to reconstruct wizard state.
+   */
+  metadata?: Record<string, unknown> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -338,6 +413,25 @@ export interface RoutingAnalysisRequest {
 }
 
 /**
+ * Routing category grouping for the 3-column matrix in Step 2.
+ * Mirrors: RoutingCategory (external_research.py)
+ */
+export type RoutingCategory = "fast_path" | "precise_vector" | "swarm_synthesis";
+
+/**
+ * Distilled intent extracted from the routing analysis request.
+ * Mirrors: IntentCore (external_research.py)
+ */
+export interface IntentCore {
+  /** The primary research question as understood by the analyser. */
+  research_question: string;
+  /** Fidelity target inferred from the request. */
+  target_fidelity: "exploratory" | "factual" | "exhaustive";
+  /** Depth signal inferred from the request. */
+  estimated_depth: "shallow" | "standard" | "deep";
+}
+
+/**
  * Single venue route card returned by the routing analysis.
  * Mirrors: RouteCard (external_research.py)
  */
@@ -352,6 +446,10 @@ export interface RouteCard {
   prompt_preview: string;
   /** Description of the expected output format / artifact type. */
   expected_output: string;
+  /** Routing category for matrix column grouping. */
+  routing_category: RoutingCategory;
+  /** Human-readable display name for this route card. */
+  display_name: string;
 }
 
 /**
@@ -363,6 +461,12 @@ export interface RouteCard {
  */
 export interface RoutingAnalysisResponse {
   route_cards: RouteCard[];
+  /** Distilled intent extracted from the request. */
+  intent_core: IntentCore;
+  /** Named entities extracted from the research question and topic. */
+  extracted_entities: string[];
+  /** Archival pattern archetypes detected from the request. */
+  archival_archetypes: string[];
 }
 
 // ---------------------------------------------------------------------------

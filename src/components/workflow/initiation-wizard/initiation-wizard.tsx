@@ -38,6 +38,7 @@ import { useCreateWorkflow } from "@/hooks/useCreateWorkflow";
 import {
   WorkflowWizardProvider,
   useWizardStateContext,
+  type ExternalResearchPackageFields,
 } from "@/hooks/useWorkflowWizardState";
 import { ResearchPackageBuilder } from "@/components/workflow/research/ResearchPackageBuilder";
 import { ResearchRouteSelection } from "@/components/workflow/research/ResearchRouteSelection";
@@ -46,7 +47,11 @@ import { WizardStepper, type WizardStep } from "./wizard-stepper";
 import { Step1Source } from "./step-1-source";
 import { Step2Routing } from "./step-2-routing";
 import { Step3Configure } from "./step-3-configure";
+import { ResearchPackageForm } from "./research-package-form";
+import { ResearchRouteCards } from "./research-route-cards";
+import { ResearchPackageSummary } from "./research-package-summary";
 import type { SourceSelection } from "@/lib/api/workflow-templates";
+import type { RouteCard, RoutePreference } from "@/types/workflows/research";
 
 // ---------------------------------------------------------------------------
 // Research wizard — internal implementation
@@ -79,16 +84,29 @@ function ResearchWizardSwitcher(): React.JSX.Element | null {
  * read from useWizardStateContext(). Navigation (Back / Next) is driven by
  * state.current_step and the actions from the context hook — the generic
  * wizard's useReducer is NOT used here.
+ *
+ * initialDraft — when provided, wizard starts at Step 3 pre-populated from
+ * a saved draft run (P5-03 draft re-entry).
  */
 function ResearchInitiationWizard({
   onClose,
   className,
+  initialDraft,
 }: {
   onClose: () => void;
   className?: string;
+  initialDraft?: {
+    fields: ExternalResearchPackageFields;
+    draft_run_id: string;
+    route_cards: RouteCard[];
+    selected_venue: RoutePreference;
+  };
 }): React.JSX.Element {
   return (
-    <WorkflowWizardProvider template_id="external_research_v1">
+    <WorkflowWizardProvider
+      template_id="external_research_v1"
+      initialDraft={initialDraft}
+    >
       <ResearchInitiationWizardInner onClose={onClose} className={className} />
     </WorkflowWizardProvider>
   );
@@ -203,12 +221,81 @@ function ResearchInitiationWizardInner({
 }
 
 // ---------------------------------------------------------------------------
+// Research package payload types (P3-01: kind discriminator)
+// ---------------------------------------------------------------------------
+
+/**
+ * Route card returned by POST /api/workflows/external-research/routing-analysis.
+ * Mirrors backend RouteCard schema.
+ */
+export interface ResearchRouteCard {
+  route: string;
+  score: number;
+  rationale: string;
+  prompt_preview: string;
+  expected_output: string;
+}
+
+/**
+ * Research package payload assembled across wizard Steps 1–3.
+ * Coexists with sourceSelection — does NOT replace it.
+ */
+export interface ResearchPackage {
+  /** Short topic label (required for submission). */
+  topic: string;
+  /** Primary research question (required for submission). */
+  research_question: string;
+  /** Optional background context markdown. */
+  background_context: string;
+  /** Optional project slugs. */
+  project: string[];
+  /** Optional domain hint tags. */
+  domain: string[];
+  /** ULIDs of selected corpus artifacts. */
+  selected_artifact_ids: string[];
+  /** Desired output type. */
+  desired_output: "briefing" | "topic_note" | "blog" | "prd";
+  /** Whether to save the prompt package artifact to the vault. */
+  save_package: boolean;
+  /** Venue preference — "auto" = let analyzer decide. */
+  route_preference: string;
+  /** Selected venue route from Step 2 analysis. */
+  selected_route: ResearchRouteCard | null;
+}
+
+const INITIAL_RESEARCH_PACKAGE: ResearchPackage = {
+  topic: "",
+  research_question: "",
+  background_context: "",
+  project: [],
+  domain: [],
+  selected_artifact_ids: [],
+  desired_output: "briefing",
+  save_package: true,
+  route_preference: "auto",
+  selected_route: null,
+};
+
+// ---------------------------------------------------------------------------
 // State + reducer
 // ---------------------------------------------------------------------------
 
+/**
+ * Discriminator for the current wizard mode.
+ * - "generic": standard source-selection → routing-confirmation → configure flow
+ * - "research": external_research_v1 flow with ResearchPackage payload
+ *
+ * Coexists with sourceSelection; no existing fields removed.
+ */
+type WizardKind = "generic" | "research";
+
 interface WizardState {
   step: WizardStep;
+  /** Discriminator added in P3-01. Coexists with sourceSelection. */
+  kind: WizardKind;
   sourceSelection: SourceSelection;
+  /** Research package payload (populated when kind === "research"). */
+  researchPackage: ResearchPackage;
   selectedTemplateId: string | null;
   params: Record<string, string | number | boolean>;
   submitError: string | null;
@@ -216,7 +303,9 @@ interface WizardState {
 
 const INITIAL_STATE: WizardState = {
   step: 1,
+  kind: "generic",
   sourceSelection: { type: "all_library" },
+  researchPackage: INITIAL_RESEARCH_PACKAGE,
   selectedTemplateId: null,
   params: {},
   submitError: null,
@@ -228,6 +317,7 @@ type WizardAction =
   | { type: "SET_TEMPLATE"; templateId: string }
   | { type: "SET_PARAM"; name: string; value: string | number | boolean }
   | { type: "SET_SUBMIT_ERROR"; error: string | null }
+  | { type: "SET_RESEARCH_PACKAGE"; patch: Partial<ResearchPackage> }
   | { type: "RESET" };
 
 function wizardReducer(state: WizardState, action: WizardAction): WizardState {
@@ -236,13 +326,27 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
       return { ...state, step: action.step, submitError: null };
     case "SET_SOURCE":
       return { ...state, sourceSelection: action.selection };
-    case "SET_TEMPLATE":
-      // Clear params when template changes.
-      return { ...state, selectedTemplateId: action.templateId, params: {} };
+    case "SET_TEMPLATE": {
+      // Detect research template and set kind discriminator.
+      const isResearch = action.templateId === "external_research_v1";
+      return {
+        ...state,
+        selectedTemplateId: action.templateId,
+        params: {},
+        kind: isResearch ? "research" : "generic",
+        // Reset research package when switching away from research template.
+        researchPackage: isResearch ? state.researchPackage : INITIAL_RESEARCH_PACKAGE,
+      };
+    }
     case "SET_PARAM":
       return { ...state, params: { ...state.params, [action.name]: action.value } };
     case "SET_SUBMIT_ERROR":
       return { ...state, submitError: action.error };
+    case "SET_RESEARCH_PACKAGE":
+      return {
+        ...state,
+        researchPackage: { ...state.researchPackage, ...action.patch },
+      };
     case "RESET":
       return { ...INITIAL_STATE };
     default:
@@ -256,10 +360,19 @@ function wizardReducer(state: WizardState, action: WizardAction): WizardState {
 
 function validateStep(state: WizardState): string | null {
   if (state.step === 1) {
+    if (state.kind === "research") {
+      if (!state.researchPackage.topic.trim()) return "Topic is required.";
+      if (!state.researchPackage.research_question.trim()) return "Research question is required.";
+      return null;
+    }
     if (!state.sourceSelection.type) return "Please select a source scope.";
     return null;
   }
   if (state.step === 2) {
+    if (state.kind === "research") {
+      if (!state.researchPackage.selected_route) return "Please select a venue route.";
+      return null;
+    }
     if (!state.selectedTemplateId) return "Please select a workflow template.";
     return null;
   }
@@ -320,6 +433,12 @@ export interface InitiationWizardProps {
    * RoutingRecommendationCard pre-scoped to this artifact.
    */
   artifactId?: string;
+  /**
+   * Optional initial template ID — pre-selects a template and advances to
+   * the appropriate step. Used by "New Research Run" CTA (P3-05) to open
+   * the wizard with external_research_v1 pre-selected.
+   */
+  initialTemplateId?: string;
   /** Called when the wizard should close (no submission). */
   onClose: () => void;
   className?: string;
@@ -331,23 +450,44 @@ export interface InitiationWizardProps {
    * P4-06: conditional rendering branch.
    */
   template_id?: string;
+  /**
+   * When provided, the research wizard opens at Step 3 pre-populated from a
+   * saved draft run. Only applies when template_id === "external_research_v1".
+   *
+   * P5-03: draft run re-entry.
+   */
+  initialDraft?: {
+    fields: ExternalResearchPackageFields;
+    draft_run_id: string;
+    route_cards: RouteCard[];
+    selected_venue: RoutePreference;
+  };
 }
 
 export function InitiationWizard({
   artifactId,
+  initialTemplateId,
   onClose,
   className,
   template_id,
+  initialDraft,
 }: InitiationWizardProps) {
   // Research branch — completely separate state machine and step panels.
   if (template_id === "external_research_v1") {
-    return <ResearchInitiationWizard onClose={onClose} className={className} />;
+    return (
+      <ResearchInitiationWizard
+        onClose={onClose}
+        className={className}
+        initialDraft={initialDraft}
+      />
+    );
   }
 
   // Generic branch — continues below unchanged.
   return (
     <GenericInitiationWizard
       artifactId={artifactId}
+      initialTemplateId={initialTemplateId}
       onClose={onClose}
       className={className}
     />
@@ -360,20 +500,32 @@ export function InitiationWizard({
 
 function GenericInitiationWizard({
   artifactId,
+  initialTemplateId,
   onClose,
   className,
 }: {
   artifactId?: string;
+  initialTemplateId?: string;
   onClose: () => void;
   className?: string;
 }) {
   const router = useRouter();
   const liveId = useId();
 
-  const [state, dispatch] = useReducer(wizardReducer, INITIAL_STATE);
+  const initialState: WizardState = initialTemplateId
+    ? {
+        ...INITIAL_STATE,
+        selectedTemplateId: initialTemplateId,
+        kind: initialTemplateId === "external_research_v1" ? "research" : "generic",
+      }
+    : INITIAL_STATE;
+
+  const [state, dispatch] = useReducer(wizardReducer, initialState);
 
   const { templates, isLoading: isLoadingTemplates, error: templatesError } = useWorkflowTemplates();
   const { mutateAsync: createWorkflow, isPending: isSubmitting } = useCreateWorkflow();
+
+  const isResearchTemplate = state.kind === "research";
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -446,31 +598,60 @@ function GenericInitiationWizard({
       {/* Step content */}
       <div className="flex-1 overflow-y-auto px-6 py-6 min-h-0">
         {state.step === 1 && (
-          <Step1Source
-            value={state.sourceSelection}
-            onChange={(sel) => dispatch({ type: "SET_SOURCE", selection: sel })}
-          />
+          isResearchTemplate ? (
+            <ResearchPackageForm
+              value={state.researchPackage}
+              onChange={(patch) => dispatch({ type: "SET_RESEARCH_PACKAGE", patch })}
+            />
+          ) : (
+            <Step1Source
+              value={state.sourceSelection}
+              onChange={(sel) => dispatch({ type: "SET_SOURCE", selection: sel })}
+            />
+          )
         )}
 
         {state.step === 2 && (
-          <Step2Routing
-            artifactId={artifactId}
-            templates={templates}
-            selectedTemplateId={state.selectedTemplateId}
-            onSelectTemplate={(id) => dispatch({ type: "SET_TEMPLATE", templateId: id })}
-            isLoadingTemplates={isLoadingTemplates}
-            templatesError={templatesError}
-          />
+          isResearchTemplate ? (
+            <ResearchRouteCards
+              researchPackage={state.researchPackage}
+              onSelectRoute={(card) =>
+                dispatch({ type: "SET_RESEARCH_PACKAGE", patch: { selected_route: card } })
+              }
+              submitError={state.submitError}
+            />
+          ) : (
+            <Step2Routing
+              artifactId={artifactId}
+              templates={templates}
+              selectedTemplateId={state.selectedTemplateId}
+              onSelectTemplate={(id) => dispatch({ type: "SET_TEMPLATE", templateId: id })}
+              isLoadingTemplates={isLoadingTemplates}
+              templatesError={templatesError}
+            />
+          )
         )}
 
-        {state.step === 3 && selectedTemplate && (
-          <Step3Configure
-            template={selectedTemplate}
-            sourceSelection={state.sourceSelection}
-            params={state.params}
-            onChange={(name, value) => dispatch({ type: "SET_PARAM", name, value })}
-            submitError={state.submitError}
-          />
+        {state.step === 3 && (
+          isResearchTemplate ? (
+            <ResearchPackageSummary
+              researchPackage={state.researchPackage}
+              onPackageChange={(patch) => dispatch({ type: "SET_RESEARCH_PACKAGE", patch })}
+              onClose={onClose}
+              submitError={state.submitError}
+              onSubmitError={(err) => dispatch({ type: "SET_SUBMIT_ERROR", error: err })}
+            />
+          ) : (
+            selectedTemplate && (
+              <Step3Configure
+                template={selectedTemplate}
+                sourceSelection={state.sourceSelection}
+                params={state.params}
+                onChange={(name, value) => dispatch({ type: "SET_PARAM", name, value })}
+                submitError={state.submitError}
+              />
+            )
+          )
         )}
 
         {/* Validation / step error (shown in steps 1 & 2) */}
@@ -510,14 +691,18 @@ function GenericInitiationWizard({
               Next →
             </WizardButton>
           ) : (
-            <WizardButton
-              variant="primary"
-              onClick={() => void handleSubmit()}
-              disabled={isSubmitting}
-              aria-label="Launch workflow run"
-            >
-              {isSubmitting ? "Launching…" : "Launch Workflow"}
-            </WizardButton>
+            /* Research template: Step 3 (ResearchPackageSummary) owns its own submit CTA.
+               Generic template: wizard footer renders the Launch button. */
+            !isResearchTemplate && (
+              <WizardButton
+                variant="primary"
+                onClick={() => void handleSubmit()}
+                disabled={isSubmitting}
+                aria-label="Launch workflow run"
+              >
+                {isSubmitting ? "Launching…" : "Launch Workflow"}
+              </WizardButton>
+            )
           )}
         </div>
       </div>

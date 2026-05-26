@@ -54,6 +54,8 @@ const TEMPLATE_LABELS: Record<string, string> = {
   research_synthesis_v1: "Research Synthesis",
   lint_scope_v1: "Lint Scope",
   compile_v1: "Full Compile",
+  // portal-v2.1 external research template (P4-05)
+  external_research_v1: "External Research",
 };
 
 const STATUS_LABELS: Record<WorkflowRunStatus, string> = {
@@ -63,6 +65,10 @@ const STATUS_LABELS: Record<WorkflowRunStatus, string> = {
   complete: "Complete",
   failed: "Failed",
   abandoned: "Abandoned",
+  draft: "Draft",
+  // external_research_v1 statuses (portal-v2.1)
+  waiting_external: "Awaiting External",
+  result_uploaded: "Result Uploaded",
 };
 
 const STAGE_NAMES: Record<number, string> = {

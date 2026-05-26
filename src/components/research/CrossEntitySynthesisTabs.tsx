@@ -7,78 +7,26 @@
  *
  * This is a READ-ONLY feed of synthesis artifacts, NOT the Synthesis Builder
  * (DP4-02d). It surfaces recent cross-entity synthesis artifacts grouped by
- * "scope" (e.g., concept ↔ entity, concept ↔ topic, entity ↔ entity).
+ * entity. Each entity drives a tab label; clicking a tab shows that entity's
+ * associated synthesis list. An "All" tab flattens every entity's syntheses.
  *
- * Tab groups:
- *   "All"         — all cross-entity synthesis artifacts, newest first
- *   "Concept ↔ Entity" — syntheses bridging concept + entity subtypes
- *   "Concept ↔ Topic"  — syntheses bridging concept + topic subtypes
- *
- * Backend aggregate endpoint not yet available.
- *   Missing endpoint: GET /api/research/cross-entity-synthesis
- *     Returns: { data: { items: Array<SynthesisItem> } }
- *     SynthesisItem:
- *       { id, title, subtype, scope, updated, source_count, snippet? }
- *     Query params: scope? ("concept_entity" | "concept_topic" | "entity_entity"),
- *                   limit (default 10), topic_id?, cursor?
- *
- * While the endpoint is absent all tabs render skeletons. When the endpoint
- * ships replace stub logic with a hook call (e.g. useCrossEntitySynthesis).
+ * Data source: GET /api/research/cross-entity-synthesis via useCrossEntitySynthesis().
+ * Cursor pagination — "Load more" appends additional entity tabs and their
+ * associated syntheses.
  *
  * WCAG 2.1 AA: tab list + tabpanel with aria-controls / aria-selected pattern.
  *
  * Stitch reference: Research Home (0cf6fb7b…) — Cross-Entity Synthesis tabs.
+ * Portal v1.7 Phase 4 (P4-08).
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
-import { Network } from "lucide-react";
+import { Network, ChevronDown, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/ui/type-badge";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-export type SynthesisScope =
-  | "all"
-  | "concept_entity"
-  | "concept_topic"
-  | "entity_entity";
-
-export interface SynthesisItem {
-  id: string;
-  title: string;
-  subtype?: string | null;
-  scope?: SynthesisScope | null;
-  updated?: string | null;
-  source_count?: number | null;
-  snippet?: string | null;
-}
-
-export interface CrossEntitySynthesisTabsProps {
-  /** Items per tab; undefined = endpoint missing (show skeleton + notice) */
-  items?: SynthesisItem[];
-  isLoading?: boolean;
-  topicId?: string | null;
-  className?: string;
-}
-
-// ---------------------------------------------------------------------------
-// Tab definitions
-// ---------------------------------------------------------------------------
-
-interface TabDef {
-  id: SynthesisScope;
-  label: string;
-  panelId: string;
-}
-
-const TABS: TabDef[] = [
-  { id: "all", label: "All", panelId: "synth-panel-all" },
-  { id: "concept_entity", label: "Concept ↔ Entity", panelId: "synth-panel-ce" },
-  { id: "concept_topic", label: "Concept ↔ Topic", panelId: "synth-panel-ct" },
-];
+import { useCrossEntitySynthesis } from "@/hooks/useCrossEntitySynthesis";
+import type { ArtifactCard } from "@/lib/api/research";
 
 // ---------------------------------------------------------------------------
 // Skeleton row
@@ -100,46 +48,36 @@ function SkeletonRow() {
 }
 
 // ---------------------------------------------------------------------------
-// Synthesis item row
+// Synthesis artifact row
 // ---------------------------------------------------------------------------
 
-function SynthesisRow({ item }: { item: SynthesisItem }) {
+function SynthesisRow({ artifact }: { artifact: ArtifactCard }) {
   return (
     <li className="flex items-start gap-2 rounded-md border bg-card px-3 py-2.5 transition-shadow hover:shadow-sm">
-      {item.subtype && (
+      {artifact.subtype && (
         <span className="mt-0.5 shrink-0">
-          <TypeBadge type={item.subtype} />
+          <TypeBadge type={artifact.subtype} />
         </span>
       )}
 
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <Link
-          href={`/artifact/${item.id}`}
+          href={`/artifact/${artifact.id}`}
           className={cn(
             "truncate text-sm font-medium text-foreground leading-snug",
             "hover:underline underline-offset-2",
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
           )}
         >
-          {item.title}
+          {artifact.title}
         </Link>
 
-        {item.snippet && (
-          <p className="line-clamp-1 text-xs text-muted-foreground">
-            {item.snippet}
+        {artifact.updated && (
+          <p className="text-xs text-muted-foreground">
+            {new Date(artifact.updated).toLocaleDateString()}
           </p>
         )}
       </div>
-
-      {item.source_count != null && (
-        <span
-          aria-label={`${item.source_count} source${item.source_count !== 1 ? "s" : ""}`}
-          title="Source count"
-          className="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary"
-        >
-          {item.source_count}
-        </span>
-      )}
     </li>
   );
 }
@@ -148,14 +86,16 @@ function SynthesisRow({ item }: { item: SynthesisItem }) {
 // Empty state
 // ---------------------------------------------------------------------------
 
-function EmptyFeed({ tabLabel }: { tabLabel: string }) {
+function EmptyFeed({ label }: { label: string }) {
   return (
     <div
       role="status"
       className="rounded-md border border-dashed px-3 py-8 text-center"
     >
       <p className="text-xs text-muted-foreground">
-        No {tabLabel.toLowerCase()} syntheses yet.
+        {label === "All"
+          ? "No cross-entity syntheses found."
+          : `No syntheses for ${label}.`}
       </p>
     </div>
   );
@@ -165,33 +105,62 @@ function EmptyFeed({ tabLabel }: { tabLabel: string }) {
 // Main component
 // ---------------------------------------------------------------------------
 
+export interface CrossEntitySynthesisTabsProps {
+  className?: string;
+}
+
 /**
- * CrossEntitySynthesisTabs renders a tabbed feed of cross-entity synthesis artifacts.
+ * CrossEntitySynthesisTabs renders a tabbed feed of cross-entity synthesis
+ * artifacts, driven by live data from useCrossEntitySynthesis().
  *
- * While backend endpoint is missing renders skeletons.
- * Pass `items` prop when endpoint ships — filtering by tab scope is applied
- * client-side against `item.scope` (replace with server-side when backend supports it).
+ * Entity names serve as tab labels. The "All" tab is always present and
+ * flattens every entity's synthesis list. Clicking "Load more" fetches the
+ * next cursor page and appends any new entity tabs and their syntheses.
  */
 export function CrossEntitySynthesisTabs({
-  items,
-  isLoading = false,
   className,
 }: CrossEntitySynthesisTabsProps) {
-  const [activeTab, setActiveTab] = useState<SynthesisScope>("all");
+  const {
+    entries,
+    isLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    isError,
+    error,
+  } = useCrossEntitySynthesis();
 
-  const endpointMissing = items === undefined;
-  const loading = isLoading || endpointMissing;
+  // Active tab is either "all" or an entity id string
+  const [activeTab, setActiveTab] = useState<string>("all");
 
-  // Client-side filter by scope (replace with server-param when endpoint ships)
-  const filteredItems =
-    items && activeTab !== "all"
-      ? items.filter((item) => item.scope === activeTab)
-      : items ?? [];
+  // Build tab list from loaded entries
+  const tabs = useMemo(() => {
+    const entityTabs = entries.map((entry) => ({
+      id: entry.entity.id,
+      label: entry.entity.title,
+    }));
+    return [{ id: "all", label: "All" }, ...entityTabs];
+  }, [entries]);
 
-  const activeTabDef = TABS.find((t) => t.id === activeTab) ?? TABS[0];
+  // Resolve currently visible syntheses
+  const visibleSyntheses = useMemo<ArtifactCard[]>(() => {
+    if (activeTab === "all") {
+      return entries.flatMap((entry) => entry.syntheses);
+    }
+    const entry = entries.find((e) => e.entity.id === activeTab);
+    return entry?.syntheses ?? [];
+  }, [entries, activeTab]);
+
+  // Keep active tab valid when entries change (e.g., initial load sets "all")
+  const activeTabDef = tabs.find((t) => t.id === activeTab) ?? tabs[0];
+
+  const activeTabId = activeTabDef?.id ?? "all";
+  const activeTabLabel = activeTabDef?.label ?? "All";
+  const panelId = `synth-panel-${activeTabId}`;
 
   return (
     <section aria-labelledby="cross-entity-synth-heading" className={className}>
+      {/* Header */}
       <div className="mb-3 flex items-center gap-2">
         <Network aria-hidden="true" className="size-4 text-muted-foreground" />
         <h2
@@ -200,61 +169,52 @@ export function CrossEntitySynthesisTabs({
         >
           Cross-Entity Synthesis
         </h2>
-        {endpointMissing && (
-          <span
-            className="rounded-sm bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
-            role="note"
-          >
-            Planned
-          </span>
-        )}
       </div>
 
-      {endpointMissing && (
-        <p className="mb-3 text-[11px] text-muted-foreground" role="note">
-          Requires{" "}
-          <code className="rounded bg-muted px-1 font-mono text-[10px]">
-            GET /api/research/cross-entity-synthesis
-          </code>{" "}
-          — coming soon.
-        </p>
+      {/* Error state */}
+      {isError && (
+        <div role="alert" className="mb-3 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          {error?.message ?? "Failed to load cross-entity syntheses."}
+        </div>
       )}
 
-      {/* Tab list */}
-      <div
-        role="tablist"
-        aria-label="Synthesis scope filter"
-        className="mb-3 flex gap-1 overflow-x-auto rounded-md border bg-muted/40 p-1"
-      >
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            id={`synth-tab-${tab.id}`}
-            aria-selected={activeTab === tab.id}
-            aria-controls={tab.panelId}
-            onClick={() => setActiveTab(tab.id)}
-            className={cn(
-              "inline-flex shrink-0 items-center rounded-sm px-3 py-1 text-xs font-medium transition-colors",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-              activeTab === tab.id
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
+      {/* Tab list — hidden while loading first page */}
+      {!isLoading && (
+        <div
+          role="tablist"
+          aria-label="Synthesis entity filter"
+          className="mb-3 flex gap-1 overflow-x-auto rounded-md border bg-muted/40 p-1"
+        >
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              id={`synth-tab-${tab.id}`}
+              aria-selected={activeTabId === tab.id}
+              aria-controls={`synth-panel-${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "inline-flex shrink-0 items-center rounded-sm px-3 py-1 text-xs font-medium transition-colors",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                activeTabId === tab.id
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Tab panel */}
       <div
         role="tabpanel"
-        id={activeTabDef.panelId}
-        aria-labelledby={`synth-tab-${activeTab}`}
+        id={panelId}
+        aria-labelledby={`synth-tab-${activeTabId}`}
       >
-        {loading ? (
+        {isLoading ? (
           <ul
             role="list"
             aria-busy="true"
@@ -265,20 +225,49 @@ export function CrossEntitySynthesisTabs({
               <SkeletonRow key={i} />
             ))}
           </ul>
-        ) : filteredItems.length === 0 ? (
-          <EmptyFeed tabLabel={activeTabDef.label} />
+        ) : visibleSyntheses.length === 0 ? (
+          <EmptyFeed label={activeTabLabel} />
         ) : (
           <ul
             role="list"
-            aria-label={`${activeTabDef.label} cross-entity syntheses`}
+            aria-label={`${activeTabLabel} cross-entity syntheses`}
             className="flex flex-col gap-1.5"
           >
-            {filteredItems.map((item) => (
-              <SynthesisRow key={item.id} item={item} />
+            {visibleSyntheses.map((artifact) => (
+              <SynthesisRow key={artifact.id} artifact={artifact} />
             ))}
           </ul>
         )}
       </div>
+
+      {/* Load more */}
+      {!isLoading && hasNextPage && (
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border bg-background px-4 py-1.5 text-xs font-medium",
+              "text-muted-foreground hover:text-foreground transition-colors",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              "disabled:cursor-not-allowed disabled:opacity-60",
+            )}
+          >
+            {isFetchingNextPage ? (
+              <>
+                <Loader2 aria-hidden="true" className="size-3 animate-spin" />
+                Loading…
+              </>
+            ) : (
+              <>
+                <ChevronDown aria-hidden="true" className="size-3" />
+                Load more
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -138,6 +138,34 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {/* Project Directories section */}
+      <section aria-labelledby="settings-project-dirs-heading">
+        <h2
+          id="settings-project-dirs-heading"
+          className="mb-3 text-base font-semibold"
+        >
+          Project Directories
+        </h2>
+        <div className="rounded-md border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Cross-project knowledge hub</p>
+              <p className="text-xs text-muted-foreground">
+                Register local project directories for the cross-project
+                knowledge connector. Synced artifacts are ingested into the
+                vault automatically.
+              </p>
+            </div>
+            <Link
+              href="/settings/projects"
+              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Manage
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

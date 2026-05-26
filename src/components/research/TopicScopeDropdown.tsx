@@ -6,35 +6,22 @@
  * Replaces the generic lens filter as the primary scoping control on the
  * Research Home surface (ADR-DPI-004 DP1-06 #6).
  *
- * Topic list is fetched from GET /api/topics (endpoint not yet available).
- * While the endpoint is unavailable the dropdown renders a disabled placeholder
- * affordance so the page does not block.
- *
- * Missing endpoint: GET /api/topics
- *   Returns: { data: { items: Array<{ id: string; title: string; article_count: number }> } }
- *   Query params: workspace=research, limit, cursor
- *   Doc ref: docs/project_plans/llm_wiki/portal/ADRs/ADR-DPI-004-research-home-scope.md §6
- *
- * When the endpoint ships replace the hardcoded STUB_TOPICS with a
- * hook call and remove the placeholder notice.
+ * Topic list is fetched from GET /api/topics via the useTopics hook.
  *
  * WCAG 2.1 AA: select element carries labelled-by association.
  *
  * Stitch reference: Research Home (0cf6fb7b…) — topic dropdown scoped filter.
+ *
+ * Portal v1.7 Phase 4 (P4-02).
  */
 
 import { BookOpen, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useTopics } from "@/hooks/useTopics";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-export interface TopicItem {
-  id: string;
-  title: string;
-  article_count?: number;
-}
 
 export interface TopicScopeDropdownProps {
   /** Currently selected topic ID; null / undefined = "All topics" */
@@ -44,13 +31,20 @@ export interface TopicScopeDropdownProps {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder — no backend endpoint yet
-// The SELECT is rendered but pre-populated with a notice row rather than
-// live data. Replace with a real hook when GET /api/topics ships.
+// Skeleton rows — shown while topics are loading
 // ---------------------------------------------------------------------------
 
-const ENDPOINT_MISSING_NOTICE =
-  "Topic list requires GET /api/topics — not yet available.";
+function SkeletonOption() {
+  return (
+    <option value="" disabled>
+      Loading topics…
+    </option>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
 export function TopicScopeDropdown({
   selectedTopicId,
@@ -58,6 +52,9 @@ export function TopicScopeDropdown({
   className,
 }: TopicScopeDropdownProps) {
   const selectId = "research-topic-scope";
+  const { topics, isLoading, isError } = useTopics();
+
+  const isDisabled = isLoading || isError;
 
   return (
     <div className={cn("flex flex-col gap-1", className)}>
@@ -87,28 +84,40 @@ export function TopicScopeDropdown({
             "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
-          disabled
-          title={ENDPOINT_MISSING_NOTICE}
+          disabled={isDisabled}
         >
-          <option value="">All topics</option>
-          <option value="_placeholder" disabled>
-            — topic list coming soon —
-          </option>
+          {isLoading ? (
+            <SkeletonOption />
+          ) : isError ? (
+            <>
+              <option value="">All topics</option>
+              <option value="" disabled>
+                — failed to load topics —
+              </option>
+            </>
+          ) : topics.length === 0 ? (
+            <>
+              <option value="">All topics</option>
+              <option value="" disabled>
+                — No topics found —
+              </option>
+            </>
+          ) : (
+            <>
+              <option value="">All topics</option>
+              {topics.map((topic) => (
+                <option key={topic.id} value={topic.id}>
+                  {topic.title}
+                </option>
+              ))}
+            </>
+          )}
         </select>
         <ChevronDown
           aria-hidden="true"
           className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
         />
       </div>
-
-      {/* Placeholder notice */}
-      <p className="text-[11px] text-muted-foreground" role="note">
-        Topic filter requires{" "}
-        <code className="rounded bg-muted px-1 font-mono text-[10px]">
-          GET /api/topics
-        </code>{" "}
-        — planned feature.
-      </p>
     </div>
   );
 }

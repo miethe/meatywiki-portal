@@ -42,12 +42,13 @@ import { useWorkflowTimeline } from "@/hooks/useWorkflowTimeline";
 import { useRunHistory } from "@/hooks/useRunHistory";
 import { TimelinePanel } from "./timeline-panel";
 import { StageContextPanel } from "./stage-context-panel";
+import { ResearchStagePanel } from "./research-stage-panel";
 import { ArtifactLineageGraph } from "./artifact-lineage-graph";
 import { RunHistoryList } from "./run-history-list";
 import { OperatorActionsBlock } from "./operator-actions-block";
 import { AuditLogPanel } from "./audit-log-panel";
 import type { ArtifactRef, WorkflowRun } from "@/types/artifact";
-import type { WorkflowEvent } from "@/types/workflow-viewer";
+import type { TimelineStage, WorkflowEvent } from "@/types/workflow-viewer";
 
 // ---------------------------------------------------------------------------
 // Template label
@@ -58,6 +59,8 @@ const TEMPLATE_LABELS: Record<string, string> = {
   research_synthesis_v1: "Research Synthesis",
   lint_scope_v1: "Lint Scope",
   compile_v1: "Full Compile",
+  // portal-v2.1 external research (FR-V4)
+  external_research_v1: "External Research",
 };
 
 function templateLabel(id: string): string {
@@ -436,6 +439,63 @@ function WorkflowOutputsPanel({ events, currentRun }: WorkflowOutputsPanelProps)
 }
 
 // ---------------------------------------------------------------------------
+// Stage context panel — conditionally mounts ResearchStagePanel for
+// external_research_v1 runs; generic StageContextPanel otherwise.
+//
+// ResearchStagePanel returns null for deferred/unknown stage names (synthesis,
+// draft, file_back, review — Phase 2–3). We determine whether to use the
+// research panel by checking the stage name against the known Phase 1 set —
+// this mirrors ResearchStagePanel's internal routing without double-rendering.
+// ---------------------------------------------------------------------------
+
+/** Phase 1 research stage names that ResearchStagePanel handles. */
+const RESEARCH_STAGE_NAMES = new Set([
+  "collect_intent",
+  "assemble_package",
+  "analyze_routes",
+  "generate_prompt_package",
+  "export_or_launch_task",
+  "await_result",
+  "upload_or_import_result",
+  "validate_result",
+]);
+
+interface StageContextPanelMaybeResearchProps {
+  stage: TimelineStage | null;
+  templateId: string | null;
+  currentRun: WorkflowRun | null;
+}
+
+function StageContextPanelMaybeResearch({
+  stage,
+  templateId,
+  currentRun,
+}: StageContextPanelMaybeResearchProps) {
+  // Use ResearchStagePanel only for external_research_v1 + a known Phase 1
+  // stage name + an available currentRun. All other cases get the generic panel.
+  const useResearch =
+    templateId === "external_research_v1" &&
+    stage !== null &&
+    currentRun !== null &&
+    RESEARCH_STAGE_NAMES.has(stage.name);
+
+  if (useResearch && stage && currentRun) {
+    return (
+      <ResearchStagePanel
+        stage={stage}
+        workflowRun={currentRun}
+      />
+    );
+  }
+
+  return (
+    <StageContextPanel
+      stage={stage}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main screen
 // ---------------------------------------------------------------------------
 
@@ -539,11 +599,17 @@ export function WorkflowViewerScreen({ runId, run = null }: WorkflowViewerScreen
             </div>
           </div>
 
-          {/* Panel B: Stage context — appears when a stage is selected */}
+          {/* Panel B: Stage context — appears when a stage is selected.
+              For external_research_v1 runs, ResearchStagePanel is preferred;
+              it returns null for deferred stage names (synthesis, draft, etc.)
+              so we fall back to generic StageContextPanel in those cases.
+              All other templates always use generic StageContextPanel unchanged
+              (AC-07 regression: research_synthesis_v1 behavior preserved). */}
           <div data-tour="workflow-stage-details">
-          <StageContextPanel
+          <StageContextPanelMaybeResearch
             stage={selectedStage}
-            data-testid="stage-context-panel"
+            templateId={templateId}
+            currentRun={currentRun}
           />
           </div>
 

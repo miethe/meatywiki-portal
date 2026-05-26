@@ -39,9 +39,9 @@
  *   - "Create Workflow" CTA stays as InitiationWizardDialog (top-bar slot).
  */
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Activity, CheckCircle2, Clock, Zap, ChevronRight } from "lucide-react";
+import { Activity, CheckCircle2, Clock, Zap, ChevronRight, FlaskConical } from "lucide-react";
 import { useWorkflowRuns } from "@/hooks/useWorkflowRuns";
 import { ActiveWorkflowCard } from "@/components/workflow/active-workflow-card";
 import { InitiationWizardDialog } from "@/components/workflow/initiation-wizard";
@@ -545,6 +545,9 @@ function WorkflowsPageInner() {
     workflowHook;
   useContextRailToggle();
 
+  // Controlled state for the "New Research Run" wizard (P3-05).
+  const [researchWizardOpen, setResearchWizardOpen] = useState(false);
+
   // All runs (active + recent) for metrics computation
   const allRuns = useMemo(
     () => [...activeRuns, ...recentRuns],
@@ -591,7 +594,7 @@ function WorkflowsPageInner() {
             </p>
           </div>
 
-          {/* CTAs: Ops Dashboard link, Refresh, "New Initiation" */}
+          {/* CTAs: Ops Dashboard link, Refresh, "New Research Run", "New Initiation" */}
           <div className="flex items-center gap-2 flex-wrap">
             {/* Ops Dashboard shortcut — Screen C */}
             <Link
@@ -623,7 +626,30 @@ function WorkflowsPageInner() {
               Refresh
             </button>
 
-            {/* "New Initiation" primary page-level CTA */}
+            {/* "New Research Run" CTA (P3-05) — opens wizard with external_research_v1 pre-selected */}
+            <button
+              type="button"
+              onClick={() => setResearchWizardOpen(true)}
+              className={cn(
+                "inline-flex min-h-[44px] items-center gap-1.5 rounded-md px-3 text-xs font-medium sm:h-8 sm:min-h-0",
+                "border border-input bg-background text-foreground",
+                "transition-colors hover:bg-accent hover:text-accent-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              )}
+              aria-label="Start a new research run"
+            >
+              <FlaskConical aria-hidden="true" className="size-3.5" />
+              New Research Run
+            </button>
+            {/* Controlled wizard instance for research CTA */}
+            <InitiationWizardDialog
+              controlled
+              open={researchWizardOpen}
+              onOpenChange={setResearchWizardOpen}
+              initialTemplateId="external_research_v1"
+            />
+
+            {/* "New Initiation" primary page-level CTA (generic wizard) */}
             <InitiationWizardDialog />
           </div>
         </div>

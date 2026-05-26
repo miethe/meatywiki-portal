@@ -27,6 +27,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { InitiationWizard } from "./initiation-wizard";
+import type { ExternalResearchPackageFields } from "@/hooks/useWorkflowWizardState";
+import type { RouteCard, RoutePreference } from "@/types/workflows/research";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -45,8 +47,31 @@ export interface InitiationWizardDialogProps {
    * recommendation context.
    */
   artifactId?: string;
+  /**
+   * Optional initial template ID — pre-selects a template when the wizard opens.
+   * Used by "New Research Run" CTA to open with external_research_v1 pre-selected.
+   */
+  initialTemplateId?: string;
   /** Custom trigger element. Defaults to a "New workflow" button. */
   trigger?: React.ReactNode;
+  /**
+   * Optional workflow template ID. When set to "external_research_v1" the
+   * research-flavoured 3-step wizard is rendered. Passed through to
+   * InitiationWizard unchanged.
+   */
+  template_id?: string;
+  /**
+   * When provided, the research wizard opens at Step 3 pre-populated from a
+   * saved draft run. Only applies when template_id === "external_research_v1".
+   *
+   * P5-03: draft run re-entry from ActiveResearchRuns.
+   */
+  initialDraft?: {
+    fields: ExternalResearchPackageFields;
+    draft_run_id: string;
+    route_cards: RouteCard[];
+    selected_venue: RoutePreference;
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +119,10 @@ export function InitiationWizardDialog({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   artifactId,
+  initialTemplateId,
   trigger,
+  template_id,
+  initialDraft,
 }: InitiationWizardDialogProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
 
@@ -124,8 +152,11 @@ export function InitiationWizardDialog({
 
           <InitiationWizard
             artifactId={artifactId}
+            initialTemplateId={initialTemplateId}
             onClose={() => setOpen(false)}
             className="flex-1 min-h-0"
+            template_id={template_id}
+            initialDraft={initialDraft}
           />
         </DialogContent>
       </Dialog>

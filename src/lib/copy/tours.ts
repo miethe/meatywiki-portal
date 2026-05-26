@@ -232,7 +232,7 @@ export const TOURS = {
 
   researchWizard: [
     {
-      target: '[data-tour="research-start-button"]',
+      target: '[data-tour="research-start"]',
       title: 'Start Research',
       content:
         'Launch the research wizard to configure a new external research workflow from a topic or question.',

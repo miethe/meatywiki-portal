@@ -40,6 +40,15 @@ const STAGE_LABELS: Record<string, string> = {
   synthesise: "Synthesise",
   review: "Review",
   result_upload: "Upload",
+  // external_research_v1 Phase 1 stages (FR-V3)
+  collect_intent: "Collect Intent",
+  assemble_package: "Assemble Package",
+  analyze_routes: "Analyze Routes",
+  generate_prompt_package: "Generate Prompt Package",
+  export_or_launch_task: "Export / Launch Task",
+  await_result: "Await Result",
+  upload_or_import_result: "Upload Result",
+  validate_result: "Validate Result",
 };
 
 function stageLabel(name: string): string {

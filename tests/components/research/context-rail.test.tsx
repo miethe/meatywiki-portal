@@ -34,6 +34,27 @@ jest.mock("@/hooks/useArtifactEdges", () => ({
   useArtifactEdges: jest.fn(),
 }));
 
+// Mock useRecentSyntheses — research variant Syntheses tab (P4-01).
+jest.mock("@/hooks/useRecentSyntheses", () => ({
+  useRecentSyntheses: jest.fn(() => ({
+    syntheses: [],
+    isLoading: false,
+    isError: false,
+    error: null,
+  })),
+}));
+
+// Mock useLineage — research variant Lineage tab.
+jest.mock("@/hooks/useLineage", () => ({
+  useLineage: jest.fn(() => ({
+    data: undefined,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: jest.fn(),
+  })),
+}));
+
 jest.mock("next/link", () => ({
   __esModule: true,
   default: function MockLink({
@@ -154,32 +175,47 @@ describe("ContextRail — generic variant", () => {
     );
   });
 
-  it("History tab renders coming-in-v1.6 copy", async () => {
+  it("History tab renders graceful empty state (activity endpoint not yet shipped)", async () => {
     const user = userEvent.setup();
     renderWithProviders(<ContextRail variant="generic" />);
     await user.click(screen.getByRole("tab", { name: "History" }));
-    expect(screen.getByText(/coming in v1\.6/i)).toBeInTheDocument();
+    // HistoryPanel renders an empty state until GET /api/artifacts/:id/activity ships.
+    // OQ-P3-03-C: no mock fixture data — graceful "No activity yet" message.
+    expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
   });
 });
 
 describe("ContextRail — research variant", () => {
-  it("renders Evidence, Contradictions, Lineage, Metadata tabs", () => {
+  it("renders Evidence, Contradictions, Lineage, Syntheses, Metadata tabs", () => {
     renderWithProviders(<ContextRail variant="research" />);
 
     const tablist = screen.getByRole("tablist");
     expect(within(tablist).getByRole("tab", { name: "Evidence" })).toBeInTheDocument();
     expect(within(tablist).getByRole("tab", { name: "Contradictions" })).toBeInTheDocument();
     expect(within(tablist).getByRole("tab", { name: "Lineage" })).toBeInTheDocument();
+    // Syntheses tab added in P4-01 (backed by useRecentSyntheses)
+    expect(within(tablist).getByRole("tab", { name: "Syntheses" })).toBeInTheDocument();
     expect(within(tablist).getByRole("tab", { name: "Metadata" })).toBeInTheDocument();
   });
 
-  it("Evidence tab renders coming-in-v1.6 copy", () => {
+  it("Evidence tab renders coming-soon placeholder (endpoint deferred)", () => {
     renderWithProviders(<ContextRail variant="research" />);
-    expect(screen.getByText(/coming in v1\.6/i)).toBeInTheDocument();
+    // EvidencePanel renders a ComingSoonPanel with "Coming soon" copy
+    expect(screen.getByText(/coming soon/i)).toBeInTheDocument();
   });
 
   it("switches to Lineage tab and shows edges loading", async () => {
-    mockUseArtifactEdges.mockReturnValue(makeEdgesResult({ isLoading: true }));
+    // useLineage mock is set at module level; override to isLoading for this test
+    const { useLineage } = jest.requireMock("@/hooks/useLineage") as {
+      useLineage: jest.MockedFunction<() => { data: undefined; isLoading: boolean; isError: boolean; error: null; refetch: jest.Mock }>;
+    };
+    useLineage.mockReturnValueOnce({
+      data: undefined,
+      isLoading: true,
+      isError: false,
+      error: null,
+      refetch: jest.fn(),
+    });
     const user = userEvent.setup();
     renderWithProviders(
       <ContextRail variant="research" artifactId="abc" />,
