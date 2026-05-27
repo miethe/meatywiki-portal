@@ -126,6 +126,13 @@ export interface ArtifactGraphContext {
 // ---------------------------------------------------------------------------
 
 export type ArtifactStatus = "draft" | "active" | "archived" | "stale";
+
+/**
+ * Inbox-specific status enum returned by the backend for artifacts in the
+ * inbox workspace. These values are returned directly on `ArtifactCard.status`
+ * for inbox items (MISMATCH-04 resolved — backend now ships this enum).
+ */
+export type InboxStatus = "new" | "needs_compile" | "needs_destination";
 export type ArtifactWorkspace =
   | "inbox"
   | "library"
@@ -154,7 +161,16 @@ export interface ArtifactCard {
   type: string; // artifact_type — raw_note | concept | entity | topic | synthesis | …
   subtype?: string | null;
   title: string;
-  status: ArtifactStatus;
+  /**
+   * Artifact lifecycle status. For inbox workspace artifacts this will be an
+   * `InboxStatus` value (`new | needs_compile | needs_destination`); for all
+   * other workspaces this is a standard `ArtifactStatus` value.
+   *
+   * Using a union type here so both inbox and non-inbox contexts are type-safe
+   * without a separate DTO. Components that need to distinguish should narrow
+   * on `workspace === "inbox"` first.
+   */
+  status: ArtifactStatus | InboxStatus;
   schema_version?: string | null;
   /** ISO 8601 string from timestamptz */
   created?: string | null;
@@ -444,4 +460,39 @@ export interface ServiceModeEnvelope<T> {
 export interface SingleEnvelope<T> {
   data: T;
   etag?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Cost breakdown types (P4-FE-002 / P4-FE-003)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-stage cost row returned by GET /api/artifacts/:id?include=cost.
+ *
+ * ``stage`` is one of: classify | extract | compile | query.
+ * ``usd_cents`` is null when pricing is unavailable for this stage
+ * (e.g. provider does not expose cost data or stage was skipped).
+ */
+export interface CostStageRow {
+  stage: "classify" | "extract" | "compile" | "query";
+  tokens: number;
+  usd_cents: number | null;
+}
+
+/**
+ * Cost breakdown sub-object included in ArtifactDetail when
+ * GET /api/artifacts/:id is called with ``?include=cost``.
+ *
+ * ``total_usd`` is null when no pricing data is available across any stage.
+ * ``stages`` is an ordered list — display in the order returned (classify →
+ * extract → compile → query).
+ *
+ * Absent from the response entirely when no cost data has been recorded
+ * for this artifact; the ``cost_breakdown`` field on ArtifactDetail will
+ * be undefined/null.
+ */
+export interface CostBreakdownResponse {
+  stages: CostStageRow[];
+  total_tokens: number;
+  total_usd: number | null;
 }

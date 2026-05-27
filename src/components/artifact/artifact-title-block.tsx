@@ -25,8 +25,7 @@
 
 import { cn } from "@/lib/utils";
 import { Breadcrumbs, type BreadcrumbItem } from "@/components/ui/breadcrumbs";
-import type { ArtifactDetail } from "@/types/artifact";
-import type { ArtifactStatus } from "@/types/artifact";
+import type { ArtifactDetail, ArtifactStatus, InboxStatus } from "@/types/artifact";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,7 +113,8 @@ function extractEyebrowTags(artifact: ArtifactDetail): string[] {
 // Status badge
 // ---------------------------------------------------------------------------
 
-const STATUS_STYLES: Record<ArtifactStatus, string> = {
+const STATUS_STYLES: Record<ArtifactStatus | InboxStatus | string, string> = {
+  // Standard lifecycle statuses
   draft:
     "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
   active:
@@ -123,17 +123,28 @@ const STATUS_STYLES: Record<ArtifactStatus, string> = {
     "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
   stale:
     "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300",
+  // Inbox statuses (MISMATCH-04 resolved — backend now returns these directly)
+  new: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+  needs_compile:
+    "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+  needs_destination:
+    "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
 };
 
-const STATUS_LABELS: Record<ArtifactStatus, string> = {
+const STATUS_LABELS: Record<ArtifactStatus | InboxStatus | string, string> = {
+  // Standard lifecycle statuses
   draft: "Draft",
   active: "Active",
   archived: "Archived",
   stale: "Stale",
+  // Inbox statuses
+  new: "New",
+  needs_compile: "Needs Compile",
+  needs_destination: "Needs Destination",
 };
 
 interface StatusBadgeProps {
-  status: ArtifactStatus;
+  status: ArtifactStatus | InboxStatus;
 }
 
 function StatusBadge({ status }: StatusBadgeProps) {

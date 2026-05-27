@@ -23,7 +23,7 @@
  *   - Total Runs     = all.length
  *   - Success Rate   = complete / total * 100
  *   - Avg Duration   = mean(completed_at - started_at) for completed runs
- *   - Resource Intensity = 68% placeholder (TODO: wire telemetry endpoint when available)
+ *   - Resource Intensity = live from GET /api/workflows/resource-intensity (P4-FE-005)
  *
  * SSE pool cleanup on route leave (Stage Tracker manifest §2.4).
  *
@@ -43,6 +43,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Activity, CheckCircle2, Clock, Zap, ChevronRight, FlaskConical } from "lucide-react";
 import { useWorkflowRuns } from "@/hooks/useWorkflowRuns";
+import { useResourceIntensity } from "@/hooks/useResourceIntensity";
 import { ActiveWorkflowCard } from "@/components/workflow/active-workflow-card";
 import { InitiationWizardDialog } from "@/components/workflow/initiation-wizard";
 import { RunSSEPoolBridge } from "@/components/workflow/run-sse-pool-bridge";
@@ -137,20 +138,58 @@ function primarySourceArtifact(run: WorkflowRun): ArtifactRef | null {
 // ---------------------------------------------------------------------------
 
 interface ResourceIntensityGaugeProps {
-  /** 0–100 percent */
-  value: number;
+  /**
+   * 0–100 percentile value. Pass null to render the gauge in an indeterminate
+   * "no data" state (bar at 0, label shows "N/A").
+   */
+  value: number | null;
+  /** True while the telemetry fetch is in-flight — shows a loading indicator. */
+  isLoading?: boolean;
+  /** True when the telemetry fetch failed — shows an error label. */
+  isError?: boolean;
   className?: string;
 }
 
-function ResourceIntensityGauge({ value, className }: ResourceIntensityGaugeProps) {
-  const clamped = Math.min(100, Math.max(0, value));
-  // Colour: green <50, amber 50–80, rose >80
+function ResourceIntensityGauge({
+  value,
+  isLoading = false,
+  isError = false,
+  className,
+}: ResourceIntensityGaugeProps) {
+  const clamped = value !== null ? Math.min(100, Math.max(0, value)) : 0;
+  // Colour: green <50, amber 50–80, rose >80 (only when value is present)
   const barColour =
-    clamped < 50
-      ? "bg-emerald-500 dark:bg-emerald-400"
-      : clamped < 80
-        ? "bg-amber-500 dark:bg-amber-400"
-        : "bg-rose-500 dark:bg-rose-400";
+    value === null
+      ? "bg-muted-foreground/30"
+      : clamped < 50
+        ? "bg-emerald-500 dark:bg-emerald-400"
+        : clamped < 80
+          ? "bg-amber-500 dark:bg-amber-400"
+          : "bg-rose-500 dark:bg-rose-400";
+
+  // Label in the value slot (right side)
+  let valueLabel: React.ReactNode;
+  if (isLoading) {
+    valueLabel = (
+      <span
+        aria-label="Loading resource intensity"
+        className="inline-block h-3 w-6 animate-pulse rounded bg-muted-foreground/20"
+      />
+    );
+  } else if (isError) {
+    valueLabel = (
+      <span className="text-[10px] text-destructive/70">Unable to load metric</span>
+    );
+  } else if (value === null) {
+    valueLabel = <span className="font-semibold tabular-nums text-muted-foreground">N/A</span>;
+  } else {
+    valueLabel = (
+      <span className="font-semibold tabular-nums">
+        {clamped.toFixed(1)}%{" "}
+        <span className="text-[10px] font-normal text-muted-foreground">(p95 vs baseline)</span>
+      </span>
+    );
+  }
 
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
@@ -164,20 +203,28 @@ function ResourceIntensityGauge({ value, className }: ResourceIntensityGaugeProp
             icon="info"
           />
         </span>
-        <span className="font-semibold tabular-nums">{clamped}%</span>
+        {valueLabel}
       </div>
       <div
         role="meter"
-        aria-valuenow={clamped}
+        aria-valuenow={isLoading || isError ? undefined : clamped}
         aria-valuemin={0}
         aria-valuemax={100}
-        aria-label={`Resource intensity: ${clamped}%`}
+        aria-label={
+          isLoading
+            ? "Resource intensity loading"
+            : isError
+              ? "Resource intensity unavailable"
+              : value === null
+                ? "Resource intensity: no data"
+                : `Resource intensity: ${clamped.toFixed(1)}% of p95 baseline`
+        }
         className="h-2 w-full overflow-hidden rounded-full bg-muted"
       >
         <div
           aria-hidden="true"
           className={cn("h-full rounded-full transition-all", barColour)}
-          style={{ width: `${clamped}%` }}
+          style={{ width: isLoading || isError ? "0%" : `${clamped}%` }}
         />
       </div>
     </div>
@@ -491,6 +538,13 @@ function WorkflowsRailContent({ allRuns }: WorkflowsRailContentProps) {
   const { totalRuns, successRate, successRateDelta, avgDurationMs } =
     useMemo(() => computeMetrics(allRuns), [allRuns]);
 
+  // Resource Intensity — live telemetry from GET /api/workflows/resource-intensity
+  const {
+    percentile,
+    isLoading: riLoading,
+    isError: riError,
+  } = useResourceIntensity();
+
   const metrics = useMemo(
     () => [
       {
@@ -519,14 +573,13 @@ function WorkflowsRailContent({ allRuns }: WorkflowsRailContentProps) {
       {/* Metrics panel */}
       <MetricsPanel metrics={metrics} orientation="stack" />
 
-      {/* Resource Intensity gauge
-          TODO: replace 68% placeholder with real telemetry endpoint.
-          OQ-5: /workflows/metrics endpoint not shipped. Using fixed placeholder. */}
+      {/* Resource Intensity gauge — live from GET /api/workflows/resource-intensity */}
       <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
-        <ResourceIntensityGauge value={68} />
-        <p className="mt-2 text-[10px] text-muted-foreground/60">
-          Placeholder — telemetry endpoint planned
-        </p>
+        <ResourceIntensityGauge
+          value={percentile}
+          isLoading={riLoading}
+          isError={riError}
+        />
       </div>
 
       {/* Automated Discovery card */}

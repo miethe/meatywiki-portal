@@ -1,148 +1,109 @@
 "use client";
 
 /**
- * Projects screen — filtered Library view (taxonomy-redesign P5-05).
+ * Projects workspace shell — P5-FE-001.
  *
- * Renders the Library card + filter layout with `facet='projects'` pre-applied
- * via `lockedFacet`. The facet is locked (not user-editable); all other filters
- * (type, status, date range, lens) remain available.
+ * Replaces the previous facet-filtered Library view with a proper project
+ * workspace backed by the context-pack overlay API:
  *
- * Visual distinction: amber "Project planning" facet badge in the page header,
- * mirroring the locked-facet indicator already rendered inside LibraryFilterBar.
+ *   GET  /api/projects/          → list of ContextPack records
+ *   POST /api/projects/          → create new ContextPack
  *
- * Pattern mirrors the Research (P5-03) and Blog (P5-04) filtered views.
+ * Each project card navigates to /projects/[id] (P5-FE-002).
  *
- * URL: /projects — no sub-routes in v1. URL shape kept minimal (YAGNI).
+ * Design decisions:
+ *   - No multi-user / RBAC affordances (personal-use-first per CLAUDE.md).
+ *   - Create dialog: name + optional description → POST /api/projects/.
+ *   - TanStack Query for data fetching (consistent with rest of Portal).
+ *   - Empty state: friendly CTA, no filter state needed here.
  *
- * Stitch reference: "Projects" workspace (taxonomy-redesign design-pass phase 5).
+ * WCAG 2.1 AA: min-h touch targets, focus-visible rings, role="list",
+ * dialog focus trap from existing Dialog primitive.
  */
 
-import { useState, useCallback, useEffect } from "react";
-import Link from "next/link";
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  LayoutGrid,
-  List,
-  AlertCircle,
   FolderKanban,
-  PackagePlus,
+  Plus,
+  AlertCircle,
+  ChevronRight,
+  Calendar,
+  Package,
+  Loader2,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  ArtifactCard,
-  LibraryFilterBar,
-  useLensFilterUrlSync,
-  useLibraryArtifacts,
-  DEFAULT_LIBRARY_FILTERS,
-} from "@/components/library";
-import { ArtifactCardSkeletonGrid } from "@/components/ui/artifact-card-skeleton";
-import type { LibraryFilters } from "@/components/library";
-import InfoTooltip from "@/components/ui/info-tooltip";
-import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
+  listContextPacks,
+  createContextPack,
+} from "@/lib/api/projects";
+import type { ContextPack } from "@/types/projects";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 // ---------------------------------------------------------------------------
-// The locked facet for this screen
+// Constants
 // ---------------------------------------------------------------------------
 
-const PROJECTS_FACET = "projects" as const;
+const PROJECTS_QUERY_KEY = ["projects", "list"] as const;
 
 // ---------------------------------------------------------------------------
-// View mode — persisted to localStorage (separate key from Library)
+// Helpers
 // ---------------------------------------------------------------------------
 
-type ViewMode = "grid" | "list";
-const VIEW_MODE_KEY = "meatywiki-projects-view";
-
-function getInitialViewMode(): ViewMode {
-  if (typeof window === "undefined") return "grid";
-  try {
-    const stored = window.localStorage.getItem(VIEW_MODE_KEY);
-    if (stored === "list" || stored === "grid") return stored;
-  } catch {
-    // localStorage unavailable (private browsing, etc.) — fall back to default
-  }
-  return "grid";
+function formatDate(iso?: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 // ---------------------------------------------------------------------------
-// View toggle — identical shape to Library/Blog screens
+// Empty state
 // ---------------------------------------------------------------------------
 
-interface ViewToggleProps {
-  view: ViewMode;
-  onChange: (v: ViewMode) => void;
-}
-
-function ViewToggle({ view, onChange }: ViewToggleProps) {
-  return (
-    <div
-      role="group"
-      aria-label="View layout"
-      className="flex rounded-md border"
-    >
-      <button
-        type="button"
-        aria-label="List view"
-        aria-pressed={view === "list"}
-        onClick={() => onChange("list")}
-        className={cn(
-          "inline-flex min-h-[44px] items-center gap-1.5 rounded-l-md border-r px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-          view === "list"
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        )}
-      >
-        <List aria-hidden="true" className="size-3.5" />
-        <span className="hidden sm:inline">List</span>
-      </button>
-      <button
-        type="button"
-        aria-label="Grid view"
-        aria-pressed={view === "grid"}
-        onClick={() => onChange("grid")}
-        className={cn(
-          "inline-flex min-h-[44px] items-center gap-1.5 rounded-r-md px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-          view === "grid"
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        )}
-      >
-        <LayoutGrid aria-hidden="true" className="size-3.5" />
-        <span className="hidden sm:inline">Grid</span>
-      </button>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Empty state — projects-specific copy
-// ---------------------------------------------------------------------------
-
-function EmptyState({ hasFilters }: { hasFilters: boolean }) {
+function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div
       role="status"
-      className="flex flex-col items-center justify-center gap-3 rounded-md border border-dashed py-16 text-center"
+      className="flex flex-col items-center justify-center gap-4 rounded-lg border border-dashed py-20 text-center"
     >
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/30">
+      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-amber-50 dark:bg-amber-950/30">
         <FolderKanban
           aria-hidden="true"
-          className="size-6 text-amber-600 dark:text-amber-400"
+          className="size-7 text-amber-600 dark:text-amber-400"
         />
       </div>
-      <div>
-        <p className="text-sm font-medium text-foreground">
-          {hasFilters
-            ? "No matching project artifacts"
-            : "No project artifacts yet"}
+      <div className="max-w-xs">
+        <p className="text-sm font-semibold text-foreground">
+          No projects yet
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {hasFilters
-            ? "Try adjusting or clearing the active filters."
-            : "Project artifacts compiled into the workspace will appear here."}
+          Create your first project to start organising context packs and
+          resources.
         </p>
       </div>
+      <button
+        type="button"
+        onClick={onCreate}
+        className={cn(
+          "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground sm:h-9 sm:min-h-0",
+          "transition-colors hover:bg-primary/90",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        )}
+      >
+        <Plus aria-hidden="true" className="size-4" />
+        Create your first project
+      </button>
     </div>
   );
 }
@@ -160,7 +121,7 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
       <AlertCircle aria-hidden="true" className="size-8 text-destructive" />
       <div>
         <p className="text-sm font-medium text-foreground">
-          Failed to load project artifacts
+          Failed to load projects
         </p>
         <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
       </div>
@@ -180,18 +141,266 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Projects facet badge — "Project planning" visual indicator in the header
+// Project card
 // ---------------------------------------------------------------------------
 
-function ProjectsFacetBadge() {
+interface ProjectCardProps {
+  pack: ContextPack;
+}
+
+function ProjectCard({ pack }: ProjectCardProps) {
+  const router = useRouter();
+
+  const handleClick = useCallback(() => {
+    router.push(`/projects/${encodeURIComponent(pack.pack_id)}`);
+  }, [router, pack.pack_id]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleClick();
+      }
+    },
+    [handleClick],
+  );
+
   return (
-    <span
-      aria-label="Filtered to projects facet: Project planning"
-      className="inline-flex items-center gap-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
-    >
-      <FolderKanban aria-hidden="true" className="size-3.5" />
-      Project planning
-    </span>
+    <li>
+      <div
+        role="link"
+        tabIndex={0}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        aria-label={`Open project: ${pack.name}`}
+        className={cn(
+          "group flex cursor-pointer items-start justify-between gap-4 rounded-lg border bg-card p-4 transition-all",
+          "hover:border-primary/40 hover:bg-accent/30 hover:shadow-sm",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        )}
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          {/* Icon */}
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-amber-50 dark:bg-amber-950/30">
+            <FolderKanban
+              aria-hidden="true"
+              className="size-4 text-amber-600 dark:text-amber-400"
+            />
+          </div>
+
+          {/* Text content */}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground group-hover:text-primary">
+              {pack.name}
+            </p>
+            {pack.description && (
+              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                {pack.description}
+              </p>
+            )}
+
+            {/* Meta row */}
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <Package aria-hidden="true" className="size-3" />
+                {pack.artifact_count} artifact{pack.artifact_count !== 1 ? "s" : ""}
+              </span>
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <Calendar aria-hidden="true" className="size-3" />
+                {formatDate(pack.created_at)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Chevron */}
+        <ChevronRight
+          aria-hidden="true"
+          className="mt-1 size-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
+        />
+      </div>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Loading skeleton
+// ---------------------------------------------------------------------------
+
+function ProjectCardSkeleton() {
+  return (
+    <li className="flex items-start gap-3 rounded-lg border bg-card p-4" aria-hidden="true">
+      <div className="mt-0.5 h-9 w-9 shrink-0 animate-pulse rounded-md bg-muted" />
+      <div className="flex-1 space-y-2">
+        <div className="h-4 w-2/5 animate-pulse rounded bg-muted" />
+        <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+        <div className="flex gap-3">
+          <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+        </div>
+      </div>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create project dialog
+// ---------------------------------------------------------------------------
+
+interface CreateProjectDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onCreated: (packId: string) => void;
+}
+
+function CreateProjectDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: CreateProjectDialogProps) {
+  const queryClient = useQueryClient();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      createContextPack({
+        name: name.trim(),
+        description: description.trim() || null,
+        artifact_ids: [],
+      }),
+    onSuccess: async (data) => {
+      await queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
+      setName("");
+      setDescription("");
+      onOpenChange(false);
+      onCreated(data.pack_id);
+    },
+  });
+
+  const handleClose = useCallback(() => {
+    if (mutation.isPending) return;
+    setName("");
+    setDescription("");
+    mutation.reset();
+    onOpenChange(false);
+  }, [mutation, onOpenChange]);
+
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!name.trim() || mutation.isPending) return;
+      mutation.mutate();
+    },
+    [name, mutation],
+  );
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="mx-4 max-w-md p-6">
+        <div className="flex items-start justify-between gap-2">
+          <DialogHeader>
+            <DialogTitle>New project</DialogTitle>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Create a context pack to organise related artifacts and resources.
+            </p>
+          </DialogHeader>
+          <button
+            type="button"
+            aria-label="Close dialog"
+            onClick={handleClose}
+            className={cn(
+              "mt-0.5 rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-4">
+          {/* Name field */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="project-name" className="text-sm font-medium">
+              Name <span className="text-destructive" aria-hidden="true">*</span>
+            </label>
+            <Input
+              id="project-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Semantic search spike"
+              maxLength={200}
+              required
+              disabled={mutation.isPending}
+              autoFocus
+            />
+          </div>
+
+          {/* Description field */}
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="project-description" className="text-sm font-medium">
+              Description{" "}
+              <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+            </label>
+            <textarea
+              id="project-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Brief description of this project's purpose…"
+              rows={3}
+              maxLength={1000}
+              disabled={mutation.isPending}
+              className={cn(
+                "flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background",
+                "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "disabled:cursor-not-allowed disabled:opacity-50 resize-none",
+              )}
+            />
+          </div>
+
+          {/* Error message */}
+          {mutation.isError && (
+            <p role="alert" className="text-xs text-destructive">
+              {mutation.error instanceof Error
+                ? mutation.error.message
+                : "Failed to create project. Please try again."}
+            </p>
+          )}
+
+          {/* Actions */}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={mutation.isPending}
+              className={cn(
+                "inline-flex min-h-[44px] items-center rounded-md border px-4 text-sm font-medium sm:h-9 sm:min-h-0",
+                "transition-colors hover:bg-accent hover:text-accent-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "disabled:pointer-events-none disabled:opacity-50",
+              )}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={!name.trim() || mutation.isPending}
+              className={cn(
+                "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground sm:h-9 sm:min-h-0",
+                "transition-colors hover:bg-primary/90",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                "disabled:pointer-events-none disabled:opacity-50",
+              )}
+            >
+              {mutation.isPending && (
+                <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+              )}
+              {mutation.isPending ? "Creating…" : "Create project"}
+            </button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -200,218 +409,88 @@ function ProjectsFacetBadge() {
 // ---------------------------------------------------------------------------
 
 export default function ProjectsPage() {
-  // View mode — initialised after mount to avoid SSR/hydration mismatch
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [mounted, setMounted] = useState(false);
+  const router = useRouter();
+  const [createOpen, setCreateOpen] = useState(false);
 
-  useEffect(() => {
-    setViewMode(getInitialViewMode());
-    setMounted(true);
-  }, []);
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: PROJECTS_QUERY_KEY,
+    queryFn: () => listContextPacks({ limit: 50 }),
+    staleTime: 30_000,
+  });
 
-  const handleViewChange = useCallback((next: ViewMode) => {
-    setViewMode(next);
-    try {
-      window.localStorage.setItem(VIEW_MODE_KEY, next);
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, []);
+  const projects = data?.data ?? [];
 
-  // URL sync for lens filters — same hook as Library/Research/Blog screens
-  const { readFromUrl, syncToUrl } = useLensFilterUrlSync();
-
-  // Filter state — facet locked to "projects"; all other filters user-editable
-  const [filters, setFilters] = useState<LibraryFilters>(() => ({
-    ...DEFAULT_LIBRARY_FILTERS,
-    facet: PROJECTS_FACET,
-    ...(readFromUrl() ?? {}),
-  }));
-
-  const handleFiltersChange = useCallback(
-    (next: Partial<LibraryFilters>) => {
-      setFilters((prev) => {
-        // Enforce the locked facet — never let a partial update override it
-        const updated: LibraryFilters = {
-          ...prev,
-          ...next,
-          facet: PROJECTS_FACET,
-        };
-        syncToUrl({
-          lensFidelity: updated.lensFidelity,
-          lensFreshness: updated.lensFreshness,
-          lensVerification: updated.lensVerification,
-        });
-        return updated;
-      });
+  const handleCreated = useCallback(
+    (packId: string) => {
+      router.push(`/projects/${encodeURIComponent(packId)}`);
     },
-    [syncToUrl],
+    [router],
   );
 
-  // Data fetching — facet="projects" is baked into filters state
-  const {
-    artifacts,
-    isLoading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-    isError,
-    error,
-    total,
-  } = useLibraryArtifacts(filters);
-
-  const hasActiveFilters =
-    filters.types.length > 0 ||
-    filters.statuses.length > 0 ||
-    !!filters.dateFrom ||
-    !!filters.dateTo ||
-    filters.lensFidelity.length > 0 ||
-    filters.lensFreshness.length > 0 ||
-    filters.lensVerification.length > 0;
-
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {/* Page header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-1.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-            {/* Visual badge indicating "Project planning" facet — P5-05 requirement */}
-            <ProjectsFacetBadge />
-            <InfoTooltip
-              content={TOOLTIP_COPY.projects.projectWorkspace}
-              side="right"
-              label="About the Projects workspace"
-            />
-          </div>
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
           <p className="text-sm text-muted-foreground">
-            Project planning artifacts — filtered Library view
+            Context packs and resources, organised by project.
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/projects/new"
-            className={cn(
-              "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground sm:h-9 sm:min-h-0",
-              "transition-colors hover:bg-primary/90",
-              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-            )}
-          >
-            <PackagePlus aria-hidden="true" className="size-4" />
-            New context pack
-          </Link>
-          <ViewToggle
-            view={mounted ? viewMode : "grid"}
-            onChange={handleViewChange}
-          />
-        </div>
+        <button
+          type="button"
+          onClick={() => setCreateOpen(true)}
+          className={cn(
+            "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground sm:h-9 sm:min-h-0",
+            "transition-colors hover:bg-primary/90",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          )}
+        >
+          <Plus aria-hidden="true" className="size-4" />
+          New project
+        </button>
       </div>
 
-      {/* Filter bar — facet row hidden (lockedFacet="projects"), rest user-editable */}
-      <LibraryFilterBar
-        filters={filters}
-        onFiltersChange={handleFiltersChange}
-        resultCount={isLoading ? undefined : total}
-        lockedFacet={PROJECTS_FACET}
-      />
-
-      {/* Artifact list / grid */}
-      <section aria-label="Project artifacts" aria-busy={isLoading}>
-        {isError && error ? (
-          <ErrorState
-            error={error}
-            onRetry={() => setFilters((f) => ({ ...f }))}
-          />
-        ) : (
-          <>
-            <ul
-              role="list"
-              className={cn(
-                "grid gap-3",
-                viewMode === "grid"
-                  ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
-                  : "grid-cols-1",
-              )}
-            >
-              {/* Skeleton on initial load */}
-              {isLoading && (
-                <ArtifactCardSkeletonGrid
-                  count={viewMode === "grid" ? 9 : 5}
-                  variant={viewMode}
-                />
-              )}
-
-              {/* Artifact cards */}
-              {!isLoading &&
-                artifacts.map((artifact) => (
-                  <li key={artifact.id}>
-                    <ArtifactCard artifact={artifact} variant={viewMode} />
-                  </li>
-                ))}
-
-              {/* Skeleton appended during next-page fetch */}
-              {isFetchingNextPage && (
-                <ArtifactCardSkeletonGrid
-                  count={viewMode === "grid" ? 3 : 2}
-                  variant={viewMode}
-                />
-              )}
+      {/* Content */}
+      {isError && error ? (
+        <ErrorState
+          error={error instanceof Error ? error : new Error(String(error))}
+          onRetry={() => void refetch()}
+        />
+      ) : (
+        <>
+          {/* Skeleton */}
+          {isLoading && (
+            <ul role="list" className="flex flex-col gap-3" aria-label="Loading projects">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <ProjectCardSkeleton key={i} />
+              ))}
             </ul>
+          )}
 
-            {/* Empty state */}
-            {!isLoading && artifacts.length === 0 && (
-              <EmptyState hasFilters={hasActiveFilters} />
-            )}
+          {/* Project list */}
+          {!isLoading && projects.length > 0 && (
+            <ul role="list" className="flex flex-col gap-3" aria-label="Projects">
+              {projects.map((pack) => (
+                <ProjectCard key={pack.pack_id} pack={pack} />
+              ))}
+            </ul>
+          )}
 
-            {/* Load more */}
-            {hasNextPage && !isLoading && (
-              <div className="mt-4 flex justify-center">
-                <button
-                  type="button"
-                  onClick={() => fetchNextPage()}
-                  disabled={isFetchingNextPage}
-                  aria-label="Load more project artifacts"
-                  className={cn(
-                    "inline-flex min-h-[44px] items-center gap-2 rounded-md border px-4 text-sm font-medium text-foreground sm:h-8 sm:min-h-0",
-                    "transition-colors hover:bg-accent hover:text-accent-foreground",
-                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-                    "disabled:pointer-events-none disabled:opacity-50",
-                  )}
-                >
-                  {isFetchingNextPage ? (
-                    <>
-                      <svg
-                        aria-hidden="true"
-                        className="size-3.5 animate-spin"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          className="opacity-25"
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                        />
-                        <path
-                          className="opacity-75"
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                        />
-                      </svg>
-                      Loading…
-                    </>
-                  ) : (
-                    "Load more"
-                  )}
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </section>
+          {/* Empty state */}
+          {!isLoading && projects.length === 0 && (
+            <EmptyState onCreate={() => setCreateOpen(true)} />
+          )}
+        </>
+      )}
+
+      {/* Create dialog */}
+      <CreateProjectDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={handleCreated}
+      />
     </div>
   );
 }
