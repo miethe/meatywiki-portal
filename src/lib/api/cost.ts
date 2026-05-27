@@ -2,7 +2,7 @@
  * Cost Report API — typed wrapper around the cost telemetry endpoint.
  *
  * Endpoint:
- *   GET /api/cost-report?period_days=N
+ *   GET /cost-report?period_days=N
  *
  * Returns aggregate LLM cost telemetry for the requested period.
  * USD values are null when no pricing model is configured on the backend.
@@ -55,5 +55,5 @@ export const COST_REPORT_PERIODS: { label: string; value: CostReportPeriod }[] =
 // ---------------------------------------------------------------------------
 
 export async function fetchCostReport(periodDays: CostReportPeriod): Promise<CostReportDTO> {
-  return apiFetch<CostReportDTO>(`/api/cost-report?period_days=${periodDays}`);
+  return apiFetch<CostReportDTO>(`/cost-report?period_days=${periodDays}`);
 }

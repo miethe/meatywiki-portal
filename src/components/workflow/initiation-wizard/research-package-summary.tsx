@@ -246,7 +246,7 @@ async function createExternalResearchRun(
     ...(pkg.background_context ? { background_context: pkg.background_context } : {}),
   };
 
-  return apiFetch<CreateRunResponse>("/api/workflows/external-research", {
+  return apiFetch<CreateRunResponse>("/workflows/external-research", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
