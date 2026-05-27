@@ -59,7 +59,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   StickyNote,
   Archive,
@@ -73,6 +73,8 @@ import {
   CheckCircle2,
   XCircle,
   Trash2,
+  Tags,
+  Scan,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { LensBadgeSet } from "@/components/workflow/lens-badge-set";
@@ -100,6 +102,9 @@ import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 import { ProcessingHistoryTab } from "@/components/artifact/processing-history-tab";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import { useCostBreakdown } from "@/hooks/useCostBreakdown";
+import { CostHUD } from "@/components/artifact/CostHUD";
+import { ReclassifyModal } from "@/components/artifact/ReclassifyModal";
 import {
   InlineTextField,
   InlineTextarea,
@@ -107,6 +112,7 @@ import {
   InlineChipEditor,
 } from "@/components/inline-edit";
 import type { ArtifactPatchFields } from "@/lib/api/artifacts";
+import { lintArtifactScope } from "@/lib/api/artifacts";
 import { useArtifactFieldSave } from "./useArtifactFieldSave";
 import type { ArtifactDetail, ServiceModeEnvelope } from "@/types/artifact";
 import {
@@ -1527,8 +1533,12 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     artifactId: id,
     onSuccess: () => {
       setCompileSuccess(true);
+      showToast("success", "Compile job queued");
       // Invalidate artifact detail so Knowledge tab refreshes
       refetch();
+    },
+    onError: (msg) => {
+      showToast("error", msg);
     },
   });
 
@@ -1538,6 +1548,30 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     const timer = setTimeout(() => setCompileSuccess(false), 3000);
     return () => clearTimeout(timer);
   }, [compileSuccess]);
+
+  // ---- Lint Scope mutation (P4-FE-008) ----
+  const lintScopeMutation = useMutation({
+    mutationFn: () => lintArtifactScope(id),
+    onSuccess: () => {
+      showToast("success", "Lint scope job queued");
+    },
+    onError: (err) => {
+      showToast(
+        "error",
+        err instanceof Error ? err.message : "Lint scope request failed",
+      );
+    },
+  });
+
+  // ---- Reclassify modal state (P4-FE-007) ----
+  const [reclassifyOpen, setReclassifyOpen] = useState(false);
+
+  // ---- Cost breakdown (P4-FE-004) ----
+  const {
+    costBreakdown,
+    isLoading: isCostLoading,
+    error: costError,
+  } = useCostBreakdown(id);
 
   // ---- Archive / delete mutations (meatballs menu + rail actions) ----
   const archiveMutation = useArchiveArtifact();
@@ -1752,6 +1786,36 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       onClick: reviewMutation.isPending ? undefined : handleReview,
       icon: reviewMutation.isPending ? Loader2 : CheckSquare,
     },
+    // P4-FE-007: Reclassify artifact type
+    ...(!isContextPack
+      ? [
+          {
+            label: "Reclassify",
+            ariaLabel: "Change the classification type of this artifact",
+            hasEndpoint: true,
+            description: "POST /api/artifacts/:id/reclassify (P4-FE-007)",
+            onClick: () => setReclassifyOpen(true),
+            icon: Tags,
+          } satisfies ContextRailAction,
+        ]
+      : []),
+    // P4-FE-008: Lint Scope
+    ...(!isContextPack
+      ? [
+          {
+            label: lintScopeMutation.isPending ? "Running…" : "Lint Scope",
+            ariaLabel: lintScopeMutation.isPending
+              ? "Lint scope in progress"
+              : "Run a lint-scope pass on this artifact",
+            hasEndpoint: true,
+            description: "POST /api/artifacts/:id/lint-scope (P4-FE-008)",
+            onClick: lintScopeMutation.isPending
+              ? undefined
+              : () => lintScopeMutation.mutate(),
+            icon: lintScopeMutation.isPending ? Loader2 : Scan,
+          } satisfies ContextRailAction,
+        ]
+      : []),
     {
       label: "Delete",
       ariaLabel: "Permanently delete this artifact",
@@ -1763,7 +1827,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     ...(showCompileAction
       ? [
           {
-            label: isCompiling ? "Compiling..." : "Compile Now",
+            label: isCompiling ? "Compiling…" : "Compile Now",
             ariaLabel: isCompiling
               ? "Compilation in progress"
               : "Trigger compilation workflow for this artifact",
@@ -2039,6 +2103,16 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
               <ArtifactMiniGraph artifactId={detailArtifact.id} hops={2} />
             </section>
           )}
+
+          {/* LLM cost breakdown (P4-FE-004) */}
+          {!isContextPack && (
+            <CostHUD
+              costBreakdown={costBreakdown}
+              isLoading={isCostLoading}
+              error={costError}
+              className="mt-4"
+            />
+          )}
         </aside>
       </div>
 
@@ -2192,6 +2266,17 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Reclassify modal (P4-FE-007) */}
+      <ReclassifyModal
+        artifactId={detailArtifact.id}
+        currentType={detailArtifact.type}
+        open={reclassifyOpen}
+        onOpenChange={setReclassifyOpen}
+        onSuccess={() => {
+          void refetch();
+        }}
+      />
 
       {/* Delete confirmation dialog */}
       <AlertDialog

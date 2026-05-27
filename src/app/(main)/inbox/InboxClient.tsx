@@ -42,15 +42,10 @@
  * selection (P5-03 a11y requirement).
  *
  * --- Status enum notes (P5-01) ---
- * Expected backend inbox status enum: new | needs_compile | needs_destination
- * (per phase-5-inbox-reskin.md §Status mapping).
- *
- * Current ArtifactCard.status type is ArtifactStatus = "draft" | "active" |
- * "archived" | "stale" — the backend has not yet shipped the inbox-specific
- * enum on this field. Until the backend updates the ArtifactCard DTO, we
- * derive the inbox group from the existing status value using the mapping
- * below (MISMATCH-04). When the backend ships `new | needs_compile |
- * needs_destination`, remove the mapping and use InboxStatus directly.
+ * Backend inbox status enum: new | needs_compile | needs_destination
+ * (per phase-5-inbox-reskin.md §Status mapping). The backend returns these
+ * values directly on ArtifactCard.status for inbox workspace artifacts
+ * (MISMATCH-04 resolved). InboxStatus is consumed directly — no translation.
  *
  * Fallback: items with missing or unrecognised status are bucketed under
  * NEEDS COMPILE (most conservative triage action — they need human review
@@ -78,7 +73,7 @@ import { invalidateActivityCache } from "@/lib/api/artifacts";
 import InfoTooltip from "@/components/ui/info-tooltip";
 import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
-import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
+import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType, InboxStatus } from "@/types/artifact";
 import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
 // ---------------------------------------------------------------------------
@@ -89,29 +84,17 @@ import type { UrgencyLevel } from "@/components/ui/urgency-badge";
  * Three canonical inbox groups as defined in the Stitch design spec and
  * phase-5-inbox-reskin.md §"Design Reference: Inbox Stitch PNG".
  *
- * Backend target enum: "new" | "needs_compile" | "needs_destination"
- * Frontend mapping from current ArtifactStatus:
- *   "draft"    → new          (freshly captured, untouched)
- *   "active"   → needs_compile (in-progress; needs compilation to become useful)
- *   "stale"    → needs_destination (processed; needs routing to a workspace)
- *   "archived" → needs_destination (completed but may need re-routing)
- *
- * MISMATCH-04: remove mapping and use ArtifactStatus extension once backend
- * ships inbox-specific enum on the ArtifactCard DTO.
+ * Backend inbox status enum: "new" | "needs_compile" | "needs_destination"
+ * Values are consumed directly from ArtifactCard.status (MISMATCH-04 resolved).
  */
-type InboxGroup = "new" | "needs_compile" | "needs_destination";
+type InboxGroup = InboxStatus;
 
 const STATUS_TO_GROUP: Record<string, InboxGroup> = {
-  // Current ArtifactStatus values → inbox group
-  draft: "new",
-  active: "needs_compile",
-  stale: "needs_destination",
-  archived: "needs_destination",
-  // Forward-compat: backend inbox-specific enum values map 1:1
+  // Backend inbox enum values map 1:1 to groups
   new: "new",
   needs_compile: "needs_compile",
   needs_destination: "needs_destination",
-  // FE-04: forward-compat for needs_review status (maps to compile group)
+  // Forward-compat: needs_review maps to compile group (may be emitted by future classifiers)
   needs_review: "needs_compile",
 };
 

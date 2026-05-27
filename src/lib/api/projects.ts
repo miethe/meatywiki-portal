@@ -13,6 +13,11 @@ import type {
   ContextPackCreateRequest,
   ContextPackCreateResponse,
   ContextPackVersion,
+  ProjectAttachment,
+  ProjectMilestone,
+  CreateMilestoneBody,
+  UpdateMilestoneBody,
+  ProjectDecisionLink,
 } from "@/types/projects";
 
 export interface ListContextPacksParams {
@@ -70,5 +75,130 @@ export async function listContextPackVersions(
   return apiFetch<ServiceModeEnvelope<ContextPackVersion>>(
     `/projects/${encodeURIComponent(packId)}/versions${qs ? `?${qs}` : ""}`,
     { method: "GET" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Attachments API (P5-FE-003)
+// ---------------------------------------------------------------------------
+
+export interface ListProjectAttachmentsParams {
+  limit?: number;
+  cursor?: string | null;
+}
+
+export async function listProjectAttachments(
+  projectId: string,
+  params: ListProjectAttachmentsParams = {},
+): Promise<ServiceModeEnvelope<ProjectAttachment>> {
+  const { limit = 20, cursor } = params;
+  const query = new URLSearchParams();
+  query.set("limit", String(limit));
+  if (cursor) query.set("cursor", cursor);
+
+  const qs = query.toString();
+  return apiFetch<ServiceModeEnvelope<ProjectAttachment>>(
+    `/projects/${encodeURIComponent(projectId)}/attachments${qs ? `?${qs}` : ""}`,
+    { method: "GET" },
+  );
+}
+
+export async function attachArtifactToProject(
+  projectId: string,
+  artifactId: string,
+): Promise<ProjectAttachment> {
+  return apiFetch<ProjectAttachment>(
+    `/projects/${encodeURIComponent(projectId)}/attachments`,
+    {
+      method: "POST",
+      body: JSON.stringify({ artifact_id: artifactId }),
+    },
+  );
+}
+
+export async function detachArtifactFromProject(
+  projectId: string,
+  artifactId: string,
+): Promise<void> {
+  return apiFetch<void>(
+    `/projects/${encodeURIComponent(projectId)}/attachments/${encodeURIComponent(artifactId)}`,
+    { method: "DELETE" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Milestones API
+// ---------------------------------------------------------------------------
+
+export async function listMilestones(
+  projectId: string,
+): Promise<ProjectMilestone[]> {
+  return apiFetch<ProjectMilestone[]>(
+    `/projects/${encodeURIComponent(projectId)}/milestones/`,
+    { method: "GET" },
+  );
+}
+
+export async function createMilestone(
+  projectId: string,
+  body: CreateMilestoneBody,
+): Promise<ProjectMilestone> {
+  return apiFetch<ProjectMilestone>(
+    `/projects/${encodeURIComponent(projectId)}/milestones/`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+export async function updateMilestone(
+  projectId: string,
+  milestoneId: string,
+  body: UpdateMilestoneBody,
+): Promise<ProjectMilestone> {
+  return apiFetch<ProjectMilestone>(
+    `/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(milestoneId)}`,
+    { method: "PATCH", body: JSON.stringify(body) },
+  );
+}
+
+export async function deleteMilestone(
+  projectId: string,
+  milestoneId: string,
+): Promise<void> {
+  return apiFetch<void>(
+    `/projects/${encodeURIComponent(projectId)}/milestones/${encodeURIComponent(milestoneId)}`,
+    { method: "DELETE" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Decision links API
+// ---------------------------------------------------------------------------
+
+export async function listProjectDecisions(
+  projectId: string,
+): Promise<ProjectDecisionLink[]> {
+  return apiFetch<ProjectDecisionLink[]>(
+    `/projects/${encodeURIComponent(projectId)}/decisions/`,
+    { method: "GET" },
+  );
+}
+
+export async function linkDecisionToProject(
+  projectId: string,
+  decisionId: string,
+): Promise<ProjectDecisionLink> {
+  return apiFetch<ProjectDecisionLink>(
+    `/projects/${encodeURIComponent(projectId)}/decisions/`,
+    { method: "POST", body: JSON.stringify({ decision_id: decisionId }) },
+  );
+}
+
+export async function unlinkDecisionFromProject(
+  projectId: string,
+  linkId: string,
+): Promise<void> {
+  return apiFetch<void>(
+    `/projects/${encodeURIComponent(projectId)}/decisions/${encodeURIComponent(linkId)}`,
+    { method: "DELETE" },
   );
 }

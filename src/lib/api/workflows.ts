@@ -2,8 +2,9 @@
  * Workflows API — typed wrappers around workflow endpoints.
  *
  * Endpoints:
- *   GET  /api/workflows/runs     — list runs (design spec §5 cursor pagination)
- *   POST /api/workflows/synthesize — enqueue research_synthesis_v1 (P4-02)
+ *   GET  /api/workflows/runs              — list runs (design spec §5 cursor pagination)
+ *   GET  /api/workflows/resource-intensity — token usage percentile vs baseline (P4-FE-005)
+ *   POST /api/workflows/synthesize        — enqueue research_synthesis_v1 (P4-02)
  *
  * Backend: meatywiki/portal/api/workflows.py (P2-03 / P2-04 / P4-02 scope).
  *
@@ -237,4 +238,40 @@ export async function cancelWorkflow(runId: string): Promise<void> {
     `/workflows/${encodeURIComponent(runId)}/cancel`,
     { method: "POST", body: JSON.stringify({}) },
   );
+}
+
+// ---------------------------------------------------------------------------
+// Resource Intensity — GET /api/workflows/resource-intensity (P4-FE-005)
+// ---------------------------------------------------------------------------
+
+/**
+ * DTO returned by GET /api/workflows/resource-intensity.
+ *
+ * percentile_vs_baseline — current token usage as a percentile of the rolling
+ *   baseline p95, e.g. 68.5 means "68th percentile vs baseline". null when
+ *   insufficient data exists to compute the baseline.
+ *
+ * baseline_p95 — raw p95 token count from the baseline window. null when
+ *   no baseline snapshot exists yet.
+ *
+ * current_window_total_tokens — total tokens consumed in the current
+ *   observation window (always present, may be 0).
+ *
+ * period_days — length of the observation window in days.
+ */
+export interface ResourceIntensityDTO {
+  percentile_vs_baseline: number | null;
+  baseline_p95: number | null;
+  current_window_total_tokens: number;
+  period_days: number;
+}
+
+/**
+ * GET /api/workflows/resource-intensity
+ *
+ * Returns token-usage percentile telemetry for the Resource Intensity widget
+ * in the Workflows Context Rail.
+ */
+export async function getResourceIntensity(): Promise<ResourceIntensityDTO> {
+  return apiFetch<ResourceIntensityDTO>("/workflows/resource-intensity");
 }

@@ -15,6 +15,7 @@
  *
  * FE-05: Inbox Directory config section (client island).
  * FE-07: Auto-compile toggle (client island).
+ * P4-FE-010: ReconcileModal — live vault drift check dialog.
  *
  * Stitch reference: "System Settings & Configuration" (ID: 5fbbc5d4b18748c084f251638932b513)
  * Shell: Standard Archival
@@ -22,6 +23,7 @@
 
 import Link from "next/link";
 import { SettingsConfigClient } from "./settings-config-client";
+import { ReconcileSection } from "./ReconcileSection";
 
 export default function SettingsPage() {
   return (
@@ -63,36 +65,8 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Reconciler section */}
-      <section aria-labelledby="settings-reconciler-heading">
-        <h2
-          id="settings-reconciler-heading"
-          className="mb-3 text-base font-semibold"
-        >
-          Reconciler
-        </h2>
-        <div className="rounded-md border p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Vault reconciliation</p>
-              <p className="text-xs text-muted-foreground">
-                Sync Postgres overlay with vault (
-                <code className="text-xs">POST /api/admin/reconcile</code>)
-              </p>
-            </div>
-            {/* DP3-04 §2.12#3: reconcile stub — matches FR-14 intent (accept-code-canonical). */}
-            <button
-              type="button"
-              disabled
-              title="Reconcile trigger wired in P4"
-              aria-disabled="true"
-              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Run reconcile
-            </button>
-          </div>
-        </div>
-      </section>
+      {/* Reconciler section — P4-FE-010: live drift check modal */}
+      <ReconcileSection />
 
       {/* Health section */}
       <section aria-labelledby="settings-health-heading">

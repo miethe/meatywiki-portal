@@ -40,6 +40,7 @@ import type {
   ArtifactMetadataResponse,
   ArtifactStatus,
   ArtifactWorkspace,
+  CostBreakdownResponse,
   DerivativeItem,
   LensFidelity,
   LensFreshness,
@@ -315,6 +316,41 @@ export async function listArtifactsRollup(
 export async function getArtifact(id: string): Promise<ArtifactDetail> {
   return apiFetch<ArtifactDetail>(
     `/artifacts/${encodeURIComponent(id)}`,
+    { method: "GET" },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Get artifact detail with cost breakdown (P4-FE-002)
+// ---------------------------------------------------------------------------
+
+/**
+ * ArtifactDetail extended with the optional cost_breakdown field.
+ *
+ * Only present when GET /api/artifacts/:id is called with ?include=cost
+ * AND the backend has recorded cost data for this artifact.
+ */
+export interface ArtifactDetailWithCost extends ArtifactDetail {
+  cost_breakdown?: CostBreakdownResponse | null;
+}
+
+/**
+ * Fetch a single artifact by ID with cost breakdown data included.
+ *
+ * Calls GET /api/artifacts/{id}?include=cost — the backend attaches a
+ * ``cost_breakdown`` field to the ArtifactDetail response when cost records
+ * exist. When no cost data has been recorded the field is absent or null.
+ *
+ * Throws ``ApiError`` with status 404 when the artifact is not found.
+ *
+ * Backend: GET /api/artifacts/{artifact_id}?include=cost
+ * P4-FE-002.
+ */
+export async function getArtifactWithCost(
+  id: string,
+): Promise<ArtifactDetailWithCost> {
+  return apiFetch<ArtifactDetailWithCost>(
+    `/artifacts/${encodeURIComponent(id)}?include=cost`,
     { method: "GET" },
   );
 }
@@ -1071,3 +1107,56 @@ export interface ReviewRequest {
  * Portal v1.7 Phase 3 (P3-01 / P3-04).
  */
 export { getRoutingRecommendation as fetchRoutingRecommendation };
+
+// ---------------------------------------------------------------------------
+// Reclassify artifact (P4-FE-006)
+// ---------------------------------------------------------------------------
+
+/**
+ * Request body for POST /api/artifacts/{artifact_id}/reclassify.
+ *
+ * ``new_type`` is the target artifact type (e.g. "concept", "entity").
+ * ``re_extract`` when true triggers a fresh extraction pass on reclassification.
+ */
+export interface ReclassifyArtifactRequest {
+  new_type: string;
+  re_extract?: boolean;
+}
+
+/**
+ * Reclassify an artifact to a new type.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/reclassify
+ * Body: { new_type: string; re_extract?: boolean }
+ * Response: updated ArtifactDetail on success.
+ * Error: { error: { code, message } }
+ *
+ * Throws ApiError on non-2xx responses.
+ *
+ * Audit Wave 3 — P4-FE-006.
+ */
+export async function reclassifyArtifact(
+  id: string,
+  body: ReclassifyArtifactRequest,
+): Promise<ArtifactDetail> {
+  return apiFetch<ArtifactDetail>(
+    `/artifacts/${encodeURIComponent(id)}/reclassify`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
+}
+
+/**
+ * Trigger a lint-scope pass for a single artifact.
+ *
+ * Backend: POST /api/artifacts/{artifact_id}/lint-scope
+ * Response: 202 Accepted with a run_id on success.
+ * Throws ApiError on non-2xx responses.
+ *
+ * Audit Wave 3 — P4-FE-008.
+ */
+export async function lintArtifactScope(id: string): Promise<{ run_id?: string }> {
+  return apiFetch<{ run_id?: string }>(
+    `/artifacts/${encodeURIComponent(id)}/lint-scope`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
