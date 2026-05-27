@@ -132,8 +132,8 @@ export async function detachArtifactFromProject(
 
 export async function listMilestones(
   projectId: string,
-): Promise<ProjectMilestone[]> {
-  return apiFetch<ProjectMilestone[]>(
+): Promise<ServiceModeEnvelope<ProjectMilestone>> {
+  return apiFetch<ServiceModeEnvelope<ProjectMilestone>>(
     `/projects/${encodeURIComponent(projectId)}/milestones/`,
     { method: "GET" },
   );
@@ -176,8 +176,8 @@ export async function deleteMilestone(
 
 export async function listProjectDecisions(
   projectId: string,
-): Promise<ProjectDecisionLink[]> {
-  return apiFetch<ProjectDecisionLink[]>(
+): Promise<ServiceModeEnvelope<ProjectDecisionLink>> {
+  return apiFetch<ServiceModeEnvelope<ProjectDecisionLink>>(
     `/projects/${encodeURIComponent(projectId)}/decisions/`,
     { method: "GET" },
   );

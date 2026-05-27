@@ -523,11 +523,12 @@ export interface MilestonesTabProps {
 }
 
 export function MilestonesTab({ projectId }: MilestonesTabProps) {
-  const { data: milestones, isLoading, isError, error } = useQuery({
+  const { data, isLoading, isError, error } = useQuery({
     queryKey: queryKey(projectId),
     queryFn: () => listMilestones(projectId),
     staleTime: 30_000,
   });
+  const milestones = data?.data ?? [];
 
   return (
     <div className="flex flex-col gap-4">
@@ -551,7 +552,7 @@ export function MilestonesTab({ projectId }: MilestonesTabProps) {
             <span className="ml-1 text-muted-foreground">({error.message})</span>
           )}
         </div>
-      ) : !milestones || milestones.length === 0 ? (
+      ) : milestones.length === 0 ? (
         <div
           role="status"
           className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-14 text-center"

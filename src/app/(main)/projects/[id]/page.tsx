@@ -28,7 +28,7 @@
  * nav for breadcrumb.
  */
 
-import { useCallback, useState } from "react";
+import { use, useCallback, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -510,7 +510,8 @@ function ProjectDetailClient({ id }: ProjectDetailClientProps) {
 export default function ProjectDetailPage({
   params,
 }: {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }) {
-  return <ProjectDetailClient id={params.id} />;
+  const { id } = use(params);
+  return <ProjectDetailClient id={id} />;
 }

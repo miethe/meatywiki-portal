@@ -410,7 +410,7 @@ export function DecisionsTab({ projectId }: DecisionsTabProps) {
   // ---------------------------------------------------------------------------
 
   const {
-    data: links,
+    data: linksEnvelope,
     isLoading,
     isError,
     error,
@@ -420,9 +420,10 @@ export function DecisionsTab({ projectId }: DecisionsTabProps) {
     queryFn: () => listProjectDecisions(projectId),
     staleTime: 30_000,
   });
+  const links = linksEnvelope?.data ?? [];
 
   const linkedTableIds = new Set(
-    (links ?? []).map((l) => l.decision_table_id),
+    links.map((l) => l.decision_table_id),
   );
 
   // ---------------------------------------------------------------------------
@@ -524,15 +525,15 @@ export function DecisionsTab({ projectId }: DecisionsTabProps) {
           </div>
         )}
 
-        {!isLoading && !isError && (links ?? []).length === 0 && (
+        {!isLoading && !isError && links.length === 0 && (
           <div className="p-4">
             <EmptyState onLink={() => setPickerOpen(true)} />
           </div>
         )}
 
-        {!isLoading && !isError && (links ?? []).length > 0 && (
+        {!isLoading && !isError && links.length > 0 && (
           <ul role="list" className="divide-y">
-            {(links ?? []).map((link) => (
+            {links.map((link) => (
               <li key={link.id}>
                 <DecisionRow
                   link={link}
