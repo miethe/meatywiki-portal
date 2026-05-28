@@ -1,0 +1,69 @@
+/**
+ * graph.css — Dark theme CSS custom properties for the graph immersive canvas.
+ *
+ * All variables are scoped to [data-page="graph"] so they have zero effect on
+ * any other portal route. Do NOT move these to :root — isolation via the scope
+ * selector is intentional (DF-004 documents a future global dark mode token
+ * promotion path, but that is a separate task).
+ *
+ * Variable inventory:
+ *   --mw-graph-bg            Canvas background (near-black, dark page fill)
+ *   --mw-graph-surface        Elevated surface (panels, popovers, overlays)
+ *   --mw-graph-border         Subtle border between surfaces
+ *   --mw-graph-text-primary   Primary text colour (high contrast on bg/surface)
+ *   --mw-graph-text-secondary Muted / secondary text (labels, captions)
+ *   --mw-graph-accent         Interactive accent — links, focus rings, highlights
+ *
+ * Usage from any component rendered inside [data-page="graph"]:
+ *   background: var(--mw-graph-bg);
+ *   color: var(--mw-graph-text-primary);
+ *   border-color: var(--mw-graph-border);
+ *
+ * No !important — specificity is handled by the [data-page="graph"] scope
+ * selector alone. Adding !important here would make these values impossible
+ * to override from within graph-specific component styles.
+ */
+
+[data-page="graph"] {
+  --mw-graph-bg: #0d0d0f;
+  --mw-graph-surface: #1a1a1d;
+  --mw-graph-border: #2a2a2e;
+  --mw-graph-text-primary: #e8e8ea;
+  --mw-graph-text-secondary: #9a9aa4;
+  --mw-graph-accent: #7c6af7;
+
+  background-color: var(--mw-graph-bg);
+}
+
+[data-page="graph"] body {
+  background-color: var(--mw-graph-bg);
+}
+
+/**
+ * .graph-immersive-canvas — CANVAS-003
+ *
+ * Full-viewport fixed container for the sigma.js / cosmos.gl WebGL canvas.
+ * Using position: fixed (rather than absolute or 100vh height on a flex child)
+ * ensures the canvas ignores scroll position and always occupies the exact
+ * viewport rectangle, preventing any dead margin or unintended scrollbar.
+ *
+ * overflow: hidden is required so the sigma canvas element (which sigma sizes
+ * to 100% of its container) never causes the page to grow wider/taller than
+ * the viewport.
+ */
+.graph-immersive-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background-color: var(--mw-graph-bg);
+}
+
+/* MOBILE-001: Disable native touch pan/zoom on the three.js canvas so
+   OrbitControls receives all pointer events uninterrupted. Scoped to the
+   canvas element directly so sigma's own canvas is unaffected (sigma ships
+   its own touch-action handling). */
+.graph-immersive-canvas canvas {
+  touch-action: none;
+}

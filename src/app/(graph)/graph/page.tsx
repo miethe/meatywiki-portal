@@ -3,6 +3,15 @@
 /**
  * Vault Graph Page — `/graph`
  *
+ * Moved from (main)/graph/ to (graph)/graph/ as part of CANVAS-001 so
+ * this route is served by the chrome-free (graph)/layout.tsx instead of
+ * the portal shell (main)/layout.tsx.
+ *
+ * CANVAS-003 — wraps the sigma.js canvas in .graph-immersive-canvas:
+ *   position: fixed; inset: 0; width: 100vw; height: 100vh; overflow: hidden
+ * This ensures the canvas fills the exact viewport rectangle with no dead
+ * margins or unintended scrollbars.
+ *
  * P3-01: Page scaffold + graph fetch (vault-wide, all types, limit 100)
  * P3-02: Filter sidebar — artifact type facets
  * P3-03: Filter sidebar — edge type facets
@@ -26,6 +35,7 @@
  * with { ssr: false }.
  *
  * v2.1 — vault graph page (P3 Phase 3).
+ * v2.5 — moved to (graph) route group; full-viewport immersive canvas (CANVAS-001, CANVAS-003).
  */
 
 import { Suspense } from "react";
@@ -72,14 +82,26 @@ const VaultGraphPageClient = dynamic(
   },
 );
 
+/**
+ * VaultGraphPage — root page component for /graph.
+ *
+ * CANVAS-003: The outermost div uses .graph-immersive-canvas to establish a
+ * 100vw × 100vh fixed container. All sigma.js canvas rendering mounts inside
+ * this div, ensuring edge-to-edge fill with no scrollbars or dead margins.
+ *
+ * PaletteProvider and GraphAriaLive are context providers that do not render
+ * visible DOM; they are safe to place inside the canvas wrapper.
+ */
 export default function VaultGraphPage() {
   return (
-    <PaletteProvider>
-      <GraphAriaLive>
-        <Suspense>
-          <VaultGraphPageClient />
-        </Suspense>
-      </GraphAriaLive>
-    </PaletteProvider>
+    <div className="graph-immersive-canvas">
+      <PaletteProvider>
+        <GraphAriaLive>
+          <Suspense>
+            <VaultGraphPageClient />
+          </Suspense>
+        </GraphAriaLive>
+      </PaletteProvider>
+    </div>
   );
 }

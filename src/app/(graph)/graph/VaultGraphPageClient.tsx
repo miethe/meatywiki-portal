@@ -89,12 +89,15 @@ import {
   ChevronRight,
   Palette,
   Ruler,
+  Filter,
+  Wrench,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useVaultGraph, VAULT_GRAPH_NODE_CAP } from "@/hooks/useVaultGraph";
 import { useGraphFilterState } from "@/hooks/useGraphFilterState";
 import { useArtifactNeighborhood } from "@/hooks/useArtifactNeighborhood";
-import { FilterSidebar } from "@/components/graph/FilterSidebar";
+// FilterSidebar removed — replaced by FloatingPanel (OVLY-002); component file untouched
+import { FloatingPanel } from "@/components/graph/FloatingPanel";
 import { GraphFilters, GRAPH_FILTERS_DEFAULT, type GraphFiltersValues } from "@/components/graph/GraphFilters";
 import { GraphFilterChips } from "@/components/graph/GraphFilterChips";
 import type { FilterDimKey } from "@/components/graph/filterChipFormatters";
@@ -182,6 +185,34 @@ import { useAnimationBudget } from "@/hooks/useAnimationBudget";
 import InfoTooltip from "@/components/ui/info-tooltip";
 import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
+import { useToast } from "@/hooks/use-toast";
+import { fetchLayout3D, AutoDegradeError } from "@/lib/graph/layout3d";
+import type { GraphNode3D, GraphEdge3D } from "@/components/graph/GraphRenderer3D";
+import { useWebGLSupport } from "@/hooks/use-webgl-support";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip";
+
+// ---------------------------------------------------------------------------
+// REND-002/REND-003: GraphRenderer3D lazy chunk (Next.js dynamic import, ssr: false)
+//
+// 3d-force-graph uses three.js and requires a browser WebGL context.
+// Dynamic import keeps it out of the main bundle (separate chunk).
+//
+// Mutual exclusion contract (same as sigma/cosmos):
+//   GraphRenderer3D and sigma/cosmos must NEVER mount at the same time.
+//   The `key={graphRenderMode}` on each renderer mount point enforces this:
+//   when graphRenderMode changes, React fully unmounts the old renderer
+//   (triggering _destructor() / sigma.kill()) before mounting the new one.
+//   Only one WebGL context is alive at any time.
+// ---------------------------------------------------------------------------
+const GraphRenderer3DLazy = dynamic(
+  () => import("@/components/graph/GraphRenderer3D").then((m) => ({
+    default: m.GraphRenderer3D,
+  })),
+  {
+    ssr: false,
+    loading: () => <Graph3DLoadingSkeleton />,
+  },
+);
 
 // ---------------------------------------------------------------------------
 // P2-08: cosmos.gl lazy chunk (Next.js dynamic import, ssr: false)
@@ -562,51 +593,8 @@ function GraphPopover({ popover, onClose, onViewNeighborhood }: GraphPopoverProp
 }
 
 // ---------------------------------------------------------------------------
-// Zoom controls
-// P4-03: wrapping element uses role="group" + aria-label so screen readers
-//        announce the group context when focus enters it. A plain div with
-//        aria-label has no semantic meaning to AT.
-// ---------------------------------------------------------------------------
-
-interface ZoomControlsProps {
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-  onFitView: () => void;
-  onToggleFullscreen: () => void;
-}
-
-function ZoomControls({ onZoomIn, onZoomOut, onFitView, onToggleFullscreen }: ZoomControlsProps) {
-  return (
-    <div
-      role="group"
-      aria-label="Graph zoom controls"
-      className="absolute bottom-3 right-3 z-20 flex flex-col gap-1"
-    >
-      {(
-        [
-          { fn: onZoomIn, label: "Zoom in", icon: <ZoomIn aria-hidden="true" className="size-3.5" /> },
-          { fn: onZoomOut, label: "Zoom out", icon: <ZoomOut aria-hidden="true" className="size-3.5" /> },
-          { fn: onFitView, label: "Fit graph to view", icon: <Crosshair aria-hidden="true" className="size-3.5" /> },
-          { fn: onToggleFullscreen, label: "Toggle fullscreen", icon: <Maximize2 aria-hidden="true" className="size-3.5" /> },
-        ] as const
-      ).map(({ fn, label, icon }) => (
-        <button
-          key={label}
-          type="button"
-          aria-label={label}
-          onClick={fn}
-          className={cn(
-            "flex size-7 items-center justify-center rounded-md border bg-background shadow-sm",
-            "text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          )}
-        >
-          {icon}
-        </button>
-      ))}
-    </div>
-  );
-}
+// ZoomControls local component removed — migrated to OVLY-004 FloatingPanel (actions, top-right).
+// Zoom buttons are now rendered inline inside the FloatingPanel body.
 
 // ---------------------------------------------------------------------------
 // Encoding toolbar — color mode + size mode toggles (P2-09)
@@ -710,6 +698,36 @@ function GraphCanvasSkeleton() {
           />
         </div>
         <p className="text-sm text-muted-foreground">Loading vault graph…</p>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// REND-003: 3D loading overlay — shown while /api/graph/layout-3d is in-flight
+// ---------------------------------------------------------------------------
+
+function Graph3DLoadingSkeleton() {
+  return (
+    <div
+      aria-busy="true"
+      aria-label="Loading 3D graph layout"
+      className="flex h-full items-center justify-center"
+      style={{ background: "var(--mw-graph-bg, #0d0d0f)" }}
+    >
+      <div className="flex flex-col items-center gap-4">
+        {/* Spinning wireframe cube approximation via border animation */}
+        <div className="relative size-16">
+          <div className="absolute inset-0 animate-spin rounded-md border-2 border-[var(--mw-graph-accent,#7c6af7)] border-dashed opacity-70" />
+          <div className="absolute inset-2 animate-ping rounded-md border border-[var(--mw-graph-accent,#7c6af7)] opacity-30" />
+          <Network
+            aria-hidden="true"
+            className="absolute inset-0 m-auto size-7 text-[var(--mw-graph-accent,#7c6af7)] opacity-60"
+          />
+        </div>
+        <p className="text-sm text-[var(--mw-graph-text-secondary,#9a9aa4)]">
+          Computing 3D layout…
+        </p>
       </div>
     </div>
   );
@@ -2359,7 +2377,7 @@ export function VaultGraphPageClient() {
       }
     });
     return () => { cancelled = true; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   }, [totalNodeCount]); // re-evaluate when totalNodeCount resolves from server
 
   // Effective render mode accounting for user opt-in override.
@@ -2396,6 +2414,148 @@ export function VaultGraphPageClient() {
       setGraphMode("static");
     }
   }, [prefersReducedMotion, graphMode]);
+
+  // -------------------------------------------------------------------------
+  // REND-003: 2D / 3D render mode toggle
+  //
+  // Decision: YAGNI — single-user app, no Zustand slice needed. Local state
+  // in VaultGraphPageClient is the simplest correct approach.
+  //
+  // graphRenderMode governs which renderer is active:
+  //   '2d' → sigma (or cosmos for N>15K) — existing 2D path
+  //   '3d' → GraphRenderer3D (three.js via 3d-force-graph)
+  //
+  // On 2D→3D switch:
+  //   1. Call POST /api/graph/layout-3d with a snapshot_id derived from current filters
+  //   2. Show 3D loading overlay while in-flight
+  //   3. On success: inject positions into GraphRenderer3D via graphData3D state
+  //   4. On 422 auto_degrade: abort switch, dispatch warning toast (REND-004)
+  //
+  // State preserved across toggle:
+  //   - active filter selections (graphFilterValues — URL-backed, unchanged)
+  //   - selected node IDs (selectedNodeIds state — unchanged)
+  //
+  // State reset on each toggle:
+  //   - camera/zoom (3D initialises to default camera; 2D sigma re-mounts fresh)
+  //
+  // WebGL isolation: both renderer mount points carry key={graphRenderMode} so
+  // React fully unmounts the outgoing renderer before mounting the incoming one.
+  // -------------------------------------------------------------------------
+  const [graphRenderMode, setGraphRenderMode] = useState<"2d" | "3d">("2d");
+  const [is3DLoading, setIs3DLoading] = useState(false);
+  const [graphData3D, setGraphData3D] = useState<{
+    nodes: GraphNode3D[];
+    links: GraphEdge3D[];
+  } | null>(null);
+
+  // MOBILE-002: WebGL2 / device capability check — disables 3D toggle when unsupported.
+  const webGLSupport = useWebGLSupport();
+
+  // A11Y-001: announce auto-degrade once when the hook resolves to unsupported.
+  // `webGLSupport.supported` starts true (SSR default), then may flip false after
+  // hydration. We only announce when it transitions to false so we don't spam on
+  // capable devices. The dependency array intentionally omits `announce` — it is
+  // a stable callback from useCallback in GraphAriaLive.
+  useEffect(() => {
+    if (!webGLSupport.supported) {
+      announce("3D mode unavailable on this device.");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [webGLSupport.supported]);
+
+  const { add: addToast } = useToast();
+
+  /**
+   * Derive a snapshot_id from current filter state.
+   * The backend uses this to identify which graph snapshot to layout.
+   * We build a deterministic string from the server-side filter dims.
+   */
+  function deriveSnapshotId(): string {
+    const parts = [
+      graphFilterValues.ws.join(","),
+      graphFilterValues.types.join(","),
+      graphFilterValues.edges.join(","),
+      graphFilterValues.freshness.join(","),
+      graphFilterValues.project.join(","),
+      graphFilterValues.domain.join(","),
+      graphFilterValues.date_from ?? "",
+      graphFilterValues.date_to ?? "",
+    ];
+    return parts.join("|");
+  }
+
+  /**
+   * REND-003: Toggle between 2D and 3D render modes.
+   *
+   * 2D→3D: fetch layout, inject positions, switch renderer.
+   * 3D→2D: immediately switch back; sigma re-mounts with existing graph.
+   */
+  const handleToggleRenderMode = useCallback(async () => {
+    if (graphRenderMode === "3d") {
+      // 3D → 2D: instant switch
+      setGraphRenderMode("2d");
+      setGraphData3D(null);
+      // A11Y-001: announce mode switch to screen readers
+      announce("Switched to 2D view.");
+      return;
+    }
+
+    // A11Y-001: announce that 3D is loading (before the async fetch)
+    announce("Switching to 3D view.");
+
+    // 2D → 3D: fetch server layout
+    setIs3DLoading(true);
+    try {
+      const snapshotId = deriveSnapshotId();
+      const layout = await fetchLayout3D(snapshotId);
+
+      // Build 3D node list: merge VaultGraphNode display data with positions.
+      // Nodes missing from the layout response default to origin.
+      const positionMap = new Map(layout.positions.map((p) => [p.node_id, p]));
+
+      const nodes3D: GraphNode3D[] = displayNodes.map((n) => {
+        const pos = positionMap.get(n.id);
+        return {
+          id: n.id,
+          title: n.title,
+          fidelity_level: n.fidelity_level ?? undefined,
+          x: pos?.x ?? 0,
+          y: pos?.y ?? 0,
+          z: pos?.z ?? 0,
+        };
+      });
+
+      const links3D: GraphEdge3D[] = displayEdges.map((e) => ({
+        source: e.source_id,
+        target: e.target_id,
+        edge_type: e.edge_type,
+        confidence: e.confidence ?? undefined,
+      }));
+
+      setGraphData3D({ nodes: nodes3D, links: links3D });
+      setGraphRenderMode("3d");
+    } catch (err) {
+      // REND-004: 422 auto_degrade → warn toast, stay in 2D
+      if (err instanceof AutoDegradeError) {
+        addToast({
+          type: "warning",
+          message: "Graph is too large for 3D mode (>15,000 nodes). Staying in 2D.",
+          duration: 5000,
+        });
+        // graphRenderMode stays '2d' — no state change needed
+      } else {
+        addToast({
+          type: "error",
+          message: "Failed to load 3D layout. Please try again.",
+          duration: 6000,
+        });
+        console.error("[REND-003] layout-3d error:", err);
+      }
+    } finally {
+      setIs3DLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graphRenderMode, displayNodes, displayEdges, graphFilterValues, addToast]);
 
   // Auto-snapshot: capture layout to layoutCache after 5s idle in dynamic→static
   const idleSnapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -3703,39 +3863,257 @@ export function VaultGraphPageClient() {
       )}
 
       {/* ------------------------------------------------------------------ */}
-      {/* Three-column body: filter | canvas | legend                         */}
+      {/* Canvas body — full-width; floating overlays sit above via portal   */}
       {/* ------------------------------------------------------------------ */}
-      <div className="flex flex-1 min-h-0 gap-4 items-stretch">
-        {/* Left filter sidebar (P3-02, P3-03) — hidden on mobile */}
-        {!isNeighborhoodMode && (
-          <FilterSidebar
-            activeFilterCount={activeFilterCount}
-            open={sidebarOpen}
-            onOpenChange={setSidebarOpen}
-            searchValue={graphFilterValues.q}
-            onSearchChange={(q) => setGraphFilter({ q })}
-            onClearAll={handleOverlayClearAll}
-            onApplyPreset={(partial) => setGraphFilter(partial)}
+
+      {/* OVLY-004: Actions floating panel (top-right) — zoom, export, share */}
+      {!isLoading && !isNeighborhoodLoading && displayNodes.length > 0 && (
+        <FloatingPanel
+          id="actions"
+          anchor="top-right"
+          shortcutKey="a"
+          title="Actions"
+          collapsedIcon={<Wrench className="size-5" />}
+        >
+          <div className="flex flex-col gap-3">
+            {/* Zoom controls */}
+            <div className="flex flex-col gap-1" role="group" aria-label="Zoom controls">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--mw-graph-text-secondary)] select-none">
+                Zoom
+              </span>
+              <div className="flex gap-1">
+                {(
+                  [
+                    { fn: handleZoomIn, label: "Zoom in", icon: <ZoomIn aria-hidden="true" className="size-3.5" /> },
+                    { fn: handleZoomOut, label: "Zoom out", icon: <ZoomOut aria-hidden="true" className="size-3.5" /> },
+                    { fn: handleFitView, label: "Fit graph to view", icon: <Crosshair aria-hidden="true" className="size-3.5" /> },
+                    { fn: handleToggleFullscreen, label: "Toggle fullscreen", icon: <Maximize2 aria-hidden="true" className="size-3.5" /> },
+                  ] as const
+                ).map(({ fn, label, icon }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    aria-label={label}
+                    onClick={fn}
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-md",
+                      "border border-[var(--mw-graph-border)]",
+                      "text-[var(--mw-graph-text-secondary)]",
+                      "transition-colors hover:bg-[var(--mw-graph-border)] hover:text-[var(--mw-graph-text-primary)]",
+                      "focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--mw-graph-accent)]",
+                    )}
+                  >
+                    {icon}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Export */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--mw-graph-text-secondary)] select-none">
+                Export
+              </span>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  aria-label={isExporting ? "Exporting…" : "Export graph as PNG"}
+                  onClick={handleExportPng}
+                  disabled={isExporting}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium",
+                    "border border-[var(--mw-graph-border)]",
+                    "text-[var(--mw-graph-text-secondary)]",
+                    "transition-colors hover:bg-[var(--mw-graph-border)] hover:text-[var(--mw-graph-text-primary)]",
+                    "focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--mw-graph-accent)]",
+                    "disabled:pointer-events-none disabled:opacity-50",
+                  )}
+                >
+                  <Download aria-hidden="true" className="size-3" />
+                  PNG
+                </button>
+                <button
+                  type="button"
+                  aria-label={isExporting ? "Exporting…" : "Export graph as SVG"}
+                  onClick={handleExportSvg}
+                  disabled={isExporting}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium",
+                    "border border-[var(--mw-graph-border)]",
+                    "text-[var(--mw-graph-text-secondary)]",
+                    "transition-colors hover:bg-[var(--mw-graph-border)] hover:text-[var(--mw-graph-text-primary)]",
+                    "focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--mw-graph-accent)]",
+                    "disabled:pointer-events-none disabled:opacity-50",
+                  )}
+                >
+                  <Download aria-hidden="true" className="size-3" />
+                  SVG
+                </button>
+              </div>
+            </div>
+
+            {/* Share */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--mw-graph-text-secondary)] select-none">
+                Share
+              </span>
+              <button
+                type="button"
+                aria-label="Share this graph view"
+                onClick={() => setShareModalOpen(true)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium",
+                  "border border-[var(--mw-graph-border)]",
+                  "text-[var(--mw-graph-text-secondary)]",
+                  "transition-colors hover:bg-[var(--mw-graph-border)] hover:text-[var(--mw-graph-text-primary)]",
+                  "focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--mw-graph-accent)]",
+                )}
+              >
+                <Share2 aria-hidden="true" className="size-3" />
+                Share link
+              </button>
+            </div>
+
+            {/* REND-003: 2D / 3D render mode toggle
+                MOBILE-002: disabled + tooltip when WebGL2 / device unsupported */}
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--mw-graph-text-secondary)] select-none">
+                Renderer
+              </span>
+              {/* TooltipProvider scoped here — graph layout.tsx does not include one */}
+              <TooltipProvider delayDuration={300}>
+                <Tooltip open={!webGLSupport.supported ? undefined : false}>
+                  {/* Wrap in a span when disabled so the tooltip trigger still receives
+                      pointer events (the button itself has pointer-events-none when disabled) */}
+                  <TooltipTrigger asChild>
+                    <span
+                      tabIndex={!webGLSupport.supported ? 0 : undefined}
+                      aria-label={!webGLSupport.supported ? webGLSupport.reason : undefined}
+                      className="inline-flex"
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={graphRenderMode === "3d"}
+                        aria-label={
+                          !webGLSupport.supported
+                            ? "3D view (unavailable on this device)"
+                            : is3DLoading
+                            ? "Loading 3D layout…"
+                            : graphRenderMode === "3d"
+                            ? "Switch to 2D view"
+                            : "Switch to 3D view"
+                        }
+                        aria-disabled={!webGLSupport.supported || undefined}
+                        onClick={() => {
+                          if (!webGLSupport.supported) return;
+                          void handleToggleRenderMode();
+                        }}
+                        disabled={is3DLoading || !webGLSupport.supported}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium",
+                          "border",
+                          "transition-colors",
+                          "focus:outline-none focus-visible:ring-1 focus-visible:ring-[var(--mw-graph-accent)]",
+                          "disabled:pointer-events-none disabled:opacity-50",
+                          graphRenderMode === "3d"
+                            ? "border-[var(--mw-graph-accent)] bg-[var(--mw-graph-accent)]/15 text-[var(--mw-graph-accent)]"
+                            : "border-[var(--mw-graph-border)] text-[var(--mw-graph-text-secondary)] hover:bg-[var(--mw-graph-border)] hover:text-[var(--mw-graph-text-primary)]",
+                        )}
+                      >
+                        {is3DLoading ? (
+                          <>
+                            <svg
+                              aria-hidden="true"
+                              className="size-3 animate-spin"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                            >
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                            </svg>
+                            Loading…
+                          </>
+                        ) : graphRenderMode === "3d" ? (
+                          <>
+                            <Layers aria-hidden="true" className="size-3" />
+                            2D view
+                          </>
+                        ) : (
+                          <>
+                            <Network aria-hidden="true" className="size-3" />
+                            3D view
+                          </>
+                        )}
+                      </button>
+                    </span>
+                  </TooltipTrigger>
+                  {!webGLSupport.supported && (
+                    <TooltipContent side="bottom" className="max-w-[220px] text-xs">
+                      {webGLSupport.reason ?? "3D mode is not available on this device."}
+                    </TooltipContent>
+                  )}
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          </div>
+        </FloatingPanel>
+      )}
+
+      {/* OVLY-002: Filters floating panel — desktop only (mobile uses GraphFilterSheet below) */}
+      {!isNeighborhoodMode && (
+        <div className="hidden md:block">
+          <FloatingPanel
+            id="filters"
+            anchor="top-left"
+            defaultOpen={sidebarOpen}
+            shortcutKey="f"
+            title="Filters"
+            collapsedIcon={<Filter className="size-5" />}
           >
+            {/* Active-filter count badge rendered in panel body header */}
+            {activeFilterCount > 0 && (
+              <div className="mb-2 flex items-center gap-1.5">
+                <span
+                  aria-label={`${activeFilterCount} active filter${activeFilterCount === 1 ? "" : "s"}`}
+                  className="inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 bg-primary/15 text-primary text-[10px] font-semibold leading-none"
+                >
+                  {activeFilterCount}
+                </span>
+                <span className="text-[10px] text-[var(--mw-graph-text-secondary)]">
+                  active filter{activeFilterCount === 1 ? "" : "s"}
+                </span>
+              </div>
+            )}
             {/* P3-03: subtle loading indicator during debounce/refetch window */}
             {isFilterPending && (
               <div
                 aria-live="polite"
                 aria-label="Updating graph…"
-                className="px-3 py-1.5 text-[10px] text-muted-foreground animate-pulse"
+                className="mb-1 text-[10px] text-[var(--mw-graph-text-secondary)] animate-pulse"
               >
                 Updating…
               </div>
             )}
-            <GraphFilters
-              values={graphFilterValues}
-              onChange={(next) => setGraphFilter(next)}
-              // Facet options: API spec v2.2 VaultGraphResponse does not include
-              // facet aggregates. Options are derived client-side from loaded nodes.
-              options={filterOptions}
-            />
-          </FilterSidebar>
-        )}
+            <FilterPanelContent
+              searchValue={graphFilterValues.q}
+              onSearchChange={(q) => setGraphFilter({ q })}
+              activeFilterCount={activeFilterCount}
+              onClearAll={handleOverlayClearAll}
+              onApplyPreset={(partial) => setGraphFilter(partial)}
+            >
+              <GraphFilters
+                values={graphFilterValues}
+                onChange={(next) => setGraphFilter(next)}
+                // Facet options: API spec v2.2 VaultGraphResponse does not include
+                // facet aggregates. Options are derived client-side from loaded nodes.
+                options={filterOptions}
+              />
+            </FilterPanelContent>
+          </FloatingPanel>
+        </div>
+      )}
+
+      <div className="flex flex-1 min-h-0 items-stretch">
 
         {/* Main canvas area */}
         <section
@@ -3746,6 +4124,8 @@ export function VaultGraphPageClient() {
           }
           aria-busy={isLoading || isNeighborhoodLoading}
           className="flex flex-1 min-w-0 flex-col gap-3"
+          data-renderer={graphRenderMode}
+          data-graph-mode={graphMode}
         >
           {/* P3-07: Filter chip strip — above toolbar, visible when any filter is active */}
           {!isNeighborhoodMode && (
@@ -4010,13 +4390,47 @@ export function VaultGraphPageClient() {
                * ---------------------------------------------------------------- */}
               {!isLoading && !isNeighborhoodLoading && !isError && !sigmaContextLost && (
                 <>
-                  {activeRenderer === "cosmos" && !isNeighborhoodMode && displayNodes.length > 0 ? (
+                  {/* REND-003: 3D renderer branch — active when graphRenderMode === '3d'.
+                   * key={graphRenderMode} ensures React unmounts the 3D renderer fully
+                   * (and releases its WebGL context) when switching back to 2D. */}
+                  {graphRenderMode === "3d" && graphData3D ? (
+                    <div
+                      key="renderer-3d"
+                      data-renderer="3d"
+                      data-selected-node-ids={[...selectedNodeIds].join(",")}
+                      className={cn(
+                        "relative flex-1 min-h-[400px] rounded-lg border overflow-hidden",
+                        mobileFiltersOpen && "opacity-50 pointer-events-none",
+                      )}
+                      style={{ background: "var(--mw-graph-bg, #0d0d0f)" }}
+                      aria-label={`3D knowledge graph with ${graphData3D.nodes.length.toLocaleString()} nodes.`}
+                    >
+                      <GraphRenderer3DLazy
+                        graphData={graphData3D}
+                        selectedNodeIds={selectedNodeIds}
+                        onSelectionChange={(ids) =>
+                          setSelectedNodeIds(new Set(ids))
+                        }
+                      />
+                    </div>
+                  ) : graphRenderMode === "3d" && is3DLoading ? (
+                    <div
+                      key="renderer-3d-loading"
+                      className="relative flex-1 min-h-[400px] rounded-lg border overflow-hidden"
+                      style={{ background: "var(--mw-graph-bg, #0d0d0f)" }}
+                    >
+                      <Graph3DLoadingSkeleton />
+                    </div>
+                  ) : activeRenderer === "cosmos" && !isNeighborhoodMode && displayNodes.length > 0 ? (
                     // ----------------------------------------------------------------
                     // cosmos.gl branch — lazy chunk (P2-08)
                     // CosmosGraphWrapper is dynamically imported above; webpack will
                     // place @cosmos.gl/graph in a separate split chunk.
+                    // key={graphRenderMode} ensures cosmos is unmounted when switching
+                    // to 3D (so its WebGL context is released before 3D mounts).
                     // ----------------------------------------------------------------
                     <div
+                      key={`renderer-cosmos-${graphRenderMode}`}
                       className={cn(
                         "relative flex-1 min-h-[400px] rounded-lg border bg-slate-900 overflow-hidden",
                         // P5-02: dim canvas while mobile filter sheet is open
@@ -4072,10 +4486,12 @@ export function VaultGraphPageClient() {
                          * remain in the normal Tab order and are NOT intercepted.
                          */}
                         <div
+                          key={`renderer-sigma-${graphRenderMode}`}
                           ref={canvasContainerRef}
                           role="application"
                           data-testid="graph-canvas"
                           data-tour="graph-canvas"
+                          data-selected-node-ids={[...selectedNodeIds].join(",")}
                           aria-label={`Knowledge graph — ${displayNodes.length} nodes visible. Tab to cycle nodes by degree, arrow keys to traverse neighbors, Space to open popover, Enter for detail, Escape to dismiss. Shift+drag to select multiple nodes.${selectedNodeIds.size > 0 ? ` ${selectedNodeIds.size} nodes selected.` : ""}`}
                           tabIndex={0}
                           onKeyDown={handleKeyDown}
@@ -4210,12 +4626,7 @@ export function VaultGraphPageClient() {
                             onClearAll={handleOverlayClearAll}
                           />
 
-                          <ZoomControls
-                            onZoomIn={handleZoomIn}
-                            onZoomOut={handleZoomOut}
-                            onFitView={handleFitView}
-                            onToggleFullscreen={handleToggleFullscreen}
-                          />
+                          {/* ZoomControls migrated to OVLY-004 FloatingPanel (actions, top-right) */}
 
                           {/* Tooltip (P3-06) */}
                           {tooltip && !popover && <GraphTooltip tooltip={tooltip} />}
@@ -4273,20 +4684,24 @@ export function VaultGraphPageClient() {
           </p>
         </section>
 
-        {/* Right legend panel (P3-06, P2-09) */}
-        <aside
-          data-tour="graph-semantic-neighbors"
-          aria-label="Graph legend"
-          className="hidden xl:flex xl:w-[220px] xl:shrink-0 xl:flex-col xl:gap-4"
-        >
-          <GraphLegend
-            defaultExpanded
-            colorMode={colorMode}
-            sizeMode={sizeMode}
-            className="sticky top-0"
-          />
-        </aside>
       </div>
+
+      {/* OVLY-003: Legend floating panel — available at all desktop sizes */}
+      <FloatingPanel
+        id="legend"
+        anchor="bottom-left"
+        defaultOpen={false}
+        shortcutKey="l"
+        title="Legend"
+        collapsedIcon={<Palette className="size-5" />}
+      >
+        <GraphLegend
+          defaultExpanded={false}
+          colorMode={colorMode}
+          sizeMode={sizeMode}
+          className="bg-transparent"
+        />
+      </FloatingPanel>
     </div>
   );
 }

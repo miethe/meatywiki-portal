@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Graph Immersive Redesign (Portal v2.5)
+
+Full-viewport immersive dark canvas with floating translucent overlay panels, 2D/3D toggle powered by server-precomputed three.js layout, touch gesture support, and WCAG 2.1 AA accessibility.
+
+- **Full-viewport immersive canvas** — graph fills 100% viewport with no nav chrome; all controls float as collapsible translucent overlays (filters top-left, legend bottom-left, actions top-right).
+- **2D/3D toggle with server-precomputed layout** — switch between sigma.js 2D and `3d-force-graph` three.js 3D via FloatingPanel control; server-precomputed spring layout (networkx `spring_layout(dim=3)`) sent on `/api/graph/layout-3d` endpoint; no browser force simulation for 3D mode.
+- **3D navigation in immersive mode** — WASD + arrow keys for translation; mouse orbit/pan/zoom via OrbitControls; node hover + click + multi-select in 3D; camera auto-focuses on selected nodes.
+- **Touch gesture support** — pinch zoom works on iOS Safari and Android Chrome; single-finger drag pans in both modes; two-finger drag orbits in 3D.
+- **Auto-degrade for low-power devices** — detects WebGL2 unavailability and low hardware concurrency (`navigator.hardwareConcurrency < 4`); disables 3D toggle with explanatory tooltip; shows toast on failed 3D load.
+- **Dark theme foundation** — immersive canvas uses `--mw-graph-*` CSS custom property set scoped to `[data-page="graph"]`; ready for future app-wide dark mode promotion.
+- **FloatingPanel accessibility** — `role="dialog"` on expanded panels; focus trap with Escape-to-close; `aria-expanded` on toggles; `aria-live` announcements for mode switches; full keyboard navigation; WCAG 2.1 AA contrast and focus indicators.
+- **E2E test coverage** — Playwright suite covers overlay toggle, 2D/3D mode switching, node selection in 3D, filter state transfer on toggle, auto-degrade, and dark theme isolation.
+
 ### Graph Explorer Overhaul (Portal v2.2)
 
 Sigma.js v3 + cosmos.gl renderer, deterministic keyset-cursor loading, 16-dimension filter panel, grouping with cluster halos, mobile + WCAG 2.1 AA support. Pairs with backend Portal v2.2 (rich GraphNode/GraphEdge DTOs, `/api/graph/semantic-neighbors`, `graph_changed` SSE).

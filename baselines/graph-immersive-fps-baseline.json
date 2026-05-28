@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-28T00:00:00.000Z",
+  "device_profile": "test-runner",
+  "placeholder": true,
+  "scenarios": [
+    { "node_count": 1000, "edge_count": 3000, "p50_fps": 60, "p95_fps": 58, "mode": "3d" },
+    { "node_count": 5000, "edge_count": 15000, "p50_fps": 60, "p95_fps": 48, "mode": "3d" },
+    { "node_count": 10000, "edge_count": 30000, "p50_fps": 60, "p95_fps": 32, "mode": "3d" }
+  ]
+}

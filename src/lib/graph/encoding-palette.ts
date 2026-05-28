@@ -12,20 +12,12 @@
  */
 
 import {
-  resolveNodeSize,
-  resolveNodeOpacity,
-  hasUncertaintyRing,
-  resolveEdgeSize,
-  isSemanticEdge,
-  type RING_SIZE_SCALE,
-} from "./encoding";
-import {
   resolveArtifactTypeColor,
   resolveWorkspaceColor,
   resolveEdgeTypeColor,
   type ColorPalette,
 } from "./palette";
-import type { NodeColorMode, NodeSizeMode } from "@/types/graph";
+import type { NodeColorMode } from "@/types/graph";
 
 // ---------------------------------------------------------------------------
 // Palette-aware color resolution (pure functions accepting palette)

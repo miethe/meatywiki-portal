@@ -7,3 +7,4 @@
 - [DP4-02a ADR-DPI-001 gap closure](project_dp4_02a_adr_dpi_001.md) — All 11 gap cells closed; only Review Queue Stage Tracker was open when task ran (ffeb269)
 - [DP4-02c Research Home bento](project_dp4_02c_bento.md) — 4 bento components in src/components/research/; all 5 backend endpoints missing (v1.6 skeletons)
 - [DP4-02d Synthesis Builder wizard](project_dp4_02d_synthesis_wizard.md) — 2-step wizard (d3a15ae); type/depth/tone/constraints collected but not yet consumed by backend (SynthesizeParams has fields, banner shown)
+- [Portal v2.5 OVLY-002/003/004 FloatingPanel migrations](project_v25_ovly_002_004.md) — Filters (top-left, F), Legend (bottom-left, L), Actions (top-right, A) migrated; ZoomControls inlined; FilterSidebar import removed
