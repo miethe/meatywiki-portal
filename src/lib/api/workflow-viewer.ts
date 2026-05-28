@@ -224,6 +224,116 @@ export async function uploadExternalResultFile(
 }
 
 // ---------------------------------------------------------------------------
+// Synthesis — POST /api/workflows/:run_id/external-research/synthesize (P4-01)
+// ---------------------------------------------------------------------------
+
+/**
+ * DTO mirroring backend SynthesisEnqueueResponse.
+ * Returned with HTTP 202 when synthesis is successfully enqueued.
+ */
+export interface SynthesisEnqueueResponse {
+  run_id: string;
+  synthesis_artifact_id: string | null;
+  /** "enqueued" | "already_synthesized" */
+  status: string;
+  enqueued_at: string;
+}
+
+/** POST /api/workflows/:run_id/external-research/synthesize */
+export async function enqueueSynthesis(runId: string): Promise<SynthesisEnqueueResponse> {
+  return apiFetch<SynthesisEnqueueResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/synthesize`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Draft — POST /api/workflows/:run_id/external-research/draft (P4-02)
+// ---------------------------------------------------------------------------
+
+/** Draft format options — mirrors backend DraftRequest.draft_formats enum */
+export type DraftFormat = "brief" | "topic_note" | "blog" | "prd";
+
+/**
+ * DTO mirroring backend DraftEnqueueResponse.
+ * Returned with HTTP 202 when draft generation is successfully enqueued.
+ */
+export interface DraftEnqueueResponse {
+  run_id: string;
+  draft_artifact_ids: string[];
+  /** "enqueued" | "already_drafted" */
+  status: string;
+  enqueued_at: string;
+  formats: string[];
+}
+
+/** POST /api/workflows/:run_id/external-research/draft */
+export async function enqueueDraft(
+  runId: string,
+  draftFormats: DraftFormat[],
+): Promise<DraftEnqueueResponse> {
+  return apiFetch<DraftEnqueueResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/draft`,
+    { method: "POST", body: JSON.stringify({ draft_formats: draftFormats }) },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Review — POST/PATCH /api/workflows/:run_id/external-research/review (P4-03)
+// ---------------------------------------------------------------------------
+
+/** A single citation coverage warning for a draft artifact. */
+export interface CitationWarning {
+  draft_artifact_id: string;
+  message: string;
+}
+
+/**
+ * DTO mirroring backend ReviewGatesResponse.
+ * Returned by POST /api/workflows/:run_id/external-research/review.
+ */
+export interface ReviewGatesResponse {
+  run_id: string;
+  /** "advisory" | "strict" */
+  mode: string;
+  passed: boolean;
+  warnings: CitationWarning[];
+  /** "passed" | "failed" */
+  review_status: string;
+}
+
+/**
+ * DTO mirroring backend FileBackResponse.
+ * Returned by PATCH /api/workflows/:run_id/external-research/review.
+ */
+export interface FileBackResponse {
+  run_id: string;
+  final_artifact_id: string;
+  /** "filed_back" | "already_filed_back" */
+  status: string;
+  lineage: string[];
+}
+
+/** POST /api/workflows/:run_id/external-research/review */
+export async function runReviewGates(
+  runId: string,
+  mode: "advisory" | "strict" = "advisory",
+): Promise<ReviewGatesResponse> {
+  return apiFetch<ReviewGatesResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/review`,
+    { method: "POST", body: JSON.stringify({ mode }) },
+  );
+}
+
+/** PATCH /api/workflows/:run_id/external-research/review — triggers file-back */
+export async function fileBackResearch(runId: string): Promise<FileBackResponse> {
+  return apiFetch<FileBackResponse>(
+    `/workflows/${encodeURIComponent(runId)}/external-research/review`,
+    { method: "PATCH", body: JSON.stringify({ action: "file_back" }) },
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Audit log — GET /api/workflows/:run_id/audit-log (P7-03)
 // ---------------------------------------------------------------------------
 

@@ -2,16 +2,18 @@
 
 /**
  * ResearchStagePanel — research-specific stage body panels for
- * `external_research_v1` workflow runs (portal-v2.1 P4-02).
+ * `external_research_v1` workflow runs (portal-v2.1 P4-01–P4-03).
  *
- * Renders context-sensitive panel bodies for 4 Phase 1 stage groups:
- *   intake/assemble  → package summary card (topic, question, corpus list)
- *   analyze_routes   → route cards (venue name, score, rationale)
+ * Renders context-sensitive panel bodies for all stage groups:
+ *   intake/assemble      → package summary card (topic, question, corpus list)
+ *   analyze_routes       → route cards (venue name, score, rationale)
  *   generate_prompt_package → prompt bundle preview, copy/download
  *   export/await/upload/validate → task status, action buttons, upload form
+ *   synthesis*           → synthesis status, plan artifact link, synthesized artifacts (P4-01)
+ *   draft*               → format picker, Generate Drafts CTA, draft artifact links (P4-02)
+ *   review* / file_back* → citation checklist, source-coverage, file-back CTA (P4-03)
  *
- * All other stage names (synthesis, draft, file_back, review — deferred to
- * Phase 2–3) return null so the parent StageContextPanel shows generic content.
+ * Unknown stage names return null so the parent StageContextPanel shows generic content.
  *
  * FR-V3 (portal-v2.1 research workflow realignment).
  */
@@ -23,9 +25,18 @@ import {
   patchExternalTask,
   uploadExternalResult,
   uploadExternalResultFile,
+  enqueueSynthesis,
+  enqueueDraft,
+  runReviewGates,
+  fileBackResearch,
   type ExternalResearchTaskRow,
   type PromptPackageResponse,
   type UploadResultResponse,
+  type SynthesisEnqueueResponse,
+  type DraftEnqueueResponse,
+  type DraftFormat,
+  type ReviewGatesResponse,
+  type FileBackResponse,
 } from "@/lib/api/workflow-viewer";
 import type { TimelineStage } from "@/types/workflow-viewer";
 import type { WorkflowRun } from "@/types/artifact";
@@ -866,6 +877,817 @@ function ValidateResultPanel({ workflowRun }: { workflowRun: WorkflowRun }) {
 }
 
 // ---------------------------------------------------------------------------
+// Panel G — synthesize_results / synthesis (P4-01)
+// ---------------------------------------------------------------------------
+
+function SynthesisPanel({
+  runId,
+  workflowRun,
+}: {
+  runId: string;
+  workflowRun: WorkflowRun;
+}) {
+  const meta = workflowRun.metadata ?? {};
+  // Plan artifact from metadata (set at run-creation time)
+  const planArtifactId = (meta.plan_artifact_id as string | undefined) ?? null;
+  // Synthesis artifact id — may be populated from metadata after SSE update
+  const synthArtifactIdFromMeta = (meta.synthesis_artifact_id as string | undefined) ?? null;
+
+  const [enqueueResult, setEnqueueResult] = useState<SynthesisEnqueueResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Determine current synthesis status
+  const runStatus = workflowRun.status;
+  const isSynthesizing = runStatus === "running";
+  const isSynthesisComplete =
+    !!synthArtifactIdFromMeta ||
+    enqueueResult?.synthesis_artifact_id != null ||
+    runStatus === "complete";
+
+  // Created artifacts from the run — synthesized artifacts are listed here
+  const createdArtifacts = workflowRun.created_artifacts ?? [];
+
+  const handleEnqueue = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await enqueueSynthesis(runId);
+      setEnqueueResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to enqueue synthesis");
+    } finally {
+      setLoading(false);
+    }
+  }, [runId]);
+
+  const synthArtifactId =
+    enqueueResult?.synthesis_artifact_id ?? synthArtifactIdFromMeta;
+
+  const synthStatusLabel = (() => {
+    if (enqueueResult?.status === "already_synthesized") return "Already Synthesized";
+    if (enqueueResult?.status === "enqueued") return "Enqueued";
+    if (isSynthesisComplete) return "Complete";
+    if (isSynthesizing) return "In Progress";
+    return "Pending";
+  })();
+
+  const synthStatusCls = (() => {
+    if (isSynthesisComplete || enqueueResult?.status === "already_synthesized")
+      return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300";
+    if (isSynthesizing || enqueueResult?.status === "enqueued")
+      return "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
+    return "bg-muted text-muted-foreground";
+  })();
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Status banner */}
+      <div>
+        <SectionHeading>Synthesis Status</SectionHeading>
+        <div className="flex items-center gap-3">
+          <span
+            role="status"
+            aria-label={`Synthesis status: ${synthStatusLabel}`}
+            className={cn(
+              "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold",
+              synthStatusCls,
+            )}
+          >
+            {isSynthesizing && !enqueueResult && (
+              <svg
+                aria-hidden="true"
+                className="mr-1 size-3 animate-spin"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle
+                  className="opacity-25"
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  strokeWidth="4"
+                />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                />
+              </svg>
+            )}
+            {synthStatusLabel}
+          </span>
+          {enqueueResult?.enqueued_at && (
+            <span className="text-xs text-muted-foreground">
+              {new Date(enqueueResult.enqueued_at).toLocaleString()}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Plan artifact link */}
+      {planArtifactId && (
+        <div>
+          <SectionHeading>Synthesis Plan</SectionHeading>
+          <p className="text-sm text-foreground/80">
+            Plan artifact:{" "}
+            <a
+              href={`/artifacts/${encodeURIComponent(planArtifactId)}`}
+              className="font-mono text-xs text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring outline-none rounded"
+              aria-label={`View plan artifact ${planArtifactId}`}
+            >
+              {planArtifactId}
+            </a>
+          </p>
+        </div>
+      )}
+
+      {/* Synthesis artifact link */}
+      {synthArtifactId && (
+        <div>
+          <SectionHeading>Synthesis Artifact</SectionHeading>
+          <a
+            href={`/artifacts/${encodeURIComponent(synthArtifactId)}`}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-3 py-2 text-sm",
+              "font-mono text-foreground/80 hover:bg-muted transition-colors",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            )}
+            aria-label={`View synthesis artifact ${synthArtifactId}`}
+          >
+            <svg
+              aria-hidden="true"
+              className="size-3.5 text-emerald-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            {synthArtifactId}
+          </a>
+        </div>
+      )}
+
+      {/* Created artifacts list */}
+      {createdArtifacts.length > 0 && (
+        <div>
+          <SectionHeading>Synthesized Artifacts</SectionHeading>
+          <ul
+            className="flex flex-col gap-1.5"
+            role="list"
+            aria-label="Synthesized artifacts"
+          >
+            {createdArtifacts.map((art) => (
+              <li key={art.artifact_id} className="flex items-center gap-2">
+                <a
+                  href={`/artifacts/${encodeURIComponent(art.artifact_id)}`}
+                  className={cn(
+                    "flex-1 rounded-md border border-border bg-muted/20 px-3 py-1.5 text-sm",
+                    "hover:bg-muted transition-colors",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  )}
+                  aria-label={`View artifact ${art.title ?? art.artifact_id}`}
+                >
+                  <span className="font-medium text-foreground">
+                    {art.title ?? art.artifact_id}
+                  </span>
+                  <span className="ml-2 font-mono text-[10px] text-muted-foreground">
+                    {art.artifact_id}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-400"
+        >
+          <p className="font-semibold">Synthesis failed</p>
+          <p className="mt-0.5">{error}</p>
+        </div>
+      )}
+
+      {/* Enqueue CTA — only shown when not yet started */}
+      {!isSynthesizing && !isSynthesisComplete && !enqueueResult && (
+        <div className="flex items-center gap-2">
+          <ActionButton
+            onClick={() => void handleEnqueue()}
+            loading={loading}
+            disabled={loading}
+            variant="primary"
+          >
+            Start Synthesis
+          </ActionButton>
+        </div>
+      )}
+
+      {/* Retry CTA — shown when enqueue errored */}
+      {error && !loading && (
+        <div className="flex items-center gap-2">
+          <ActionButton
+            onClick={() => void handleEnqueue()}
+            loading={loading}
+            variant="secondary"
+          >
+            Retry
+          </ActionButton>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Panel H — draft (P4-02)
+// ---------------------------------------------------------------------------
+
+const DRAFT_FORMAT_OPTIONS: { value: DraftFormat; label: string; description: string }[] = [
+  { value: "brief", label: "Brief", description: "Short executive summary" },
+  { value: "topic_note", label: "Topic Note", description: "Structured wiki-style note" },
+  { value: "blog", label: "Blog Post", description: "Editorial narrative post" },
+  { value: "prd", label: "PRD", description: "Product requirements document" },
+];
+
+function DraftPanel({ runId, workflowRun }: { runId: string; workflowRun: WorkflowRun }) {
+  const meta = workflowRun.metadata ?? {};
+  // Existing draft artifact IDs from metadata (populated after backend draft)
+  const existingDraftIds = (meta.draft_artifact_ids as string[] | undefined) ?? [];
+
+  const [selectedFormats, setSelectedFormats] = useState<Set<DraftFormat>>(new Set());
+  const [generating, setGenerating] = useState(false);
+  const [draftResult, setDraftResult] = useState<DraftEnqueueResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const hasDrafts = existingDraftIds.length > 0 || (draftResult?.draft_artifact_ids.length ?? 0) > 0;
+  const displayDraftIds =
+    draftResult?.draft_artifact_ids.length
+      ? draftResult.draft_artifact_ids
+      : existingDraftIds;
+
+  function toggleFormat(fmt: DraftFormat) {
+    setSelectedFormats((prev) => {
+      const next = new Set(prev);
+      if (next.has(fmt)) {
+        next.delete(fmt);
+      } else {
+        next.add(fmt);
+      }
+      return next;
+    });
+  }
+
+  async function handleGenerate() {
+    if (selectedFormats.size === 0) return;
+    setGenerating(true);
+    setError(null);
+    try {
+      const res = await enqueueDraft(runId, [...selectedFormats]);
+      setDraftResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Draft generation failed");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  function handleRegenerate() {
+    setDraftResult(null);
+    setError(null);
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <SectionHeading>Draft Formats</SectionHeading>
+
+      {/* Format picker */}
+      <fieldset
+        disabled={generating}
+        aria-label="Select draft formats"
+        className="flex flex-col gap-2"
+      >
+        <legend className="sr-only">Select one or more draft formats to generate</legend>
+        {DRAFT_FORMAT_OPTIONS.map((opt) => {
+          const checked = selectedFormats.has(opt.value);
+          return (
+            <label
+              key={opt.value}
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 transition-colors",
+                "focus-within:ring-2 focus-within:ring-ring",
+                checked
+                  ? "border-primary/50 bg-primary/5"
+                  : "border-border bg-muted/20 hover:bg-muted/40",
+                generating && "opacity-50 cursor-not-allowed",
+              )}
+            >
+              <input
+                type="checkbox"
+                value={opt.value}
+                checked={checked}
+                onChange={() => toggleFormat(opt.value)}
+                disabled={generating}
+                className="mt-0.5 rounded border-border accent-primary"
+                aria-describedby={`format-desc-${opt.value}`}
+              />
+              <div>
+                <span className="text-sm font-semibold text-foreground">{opt.label}</span>
+                <p
+                  id={`format-desc-${opt.value}`}
+                  className="text-xs text-muted-foreground"
+                >
+                  {opt.description}
+                </p>
+              </div>
+            </label>
+          );
+        })}
+      </fieldset>
+
+      {/* Latency estimate */}
+      {selectedFormats.size > 0 && !generating && !hasDrafts && (
+        <p className="text-xs text-muted-foreground" aria-live="polite">
+          Generating {selectedFormats.size} draft{selectedFormats.size > 1 ? "s" : ""} —
+          usually takes &lt;15s per format.
+        </p>
+      )}
+
+      {/* Loading state */}
+      {generating && (
+        <div
+          className="flex items-center gap-2 text-sm text-muted-foreground"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <svg
+            aria-hidden="true"
+            className="size-4 animate-spin text-primary"
+            fill="none"
+            viewBox="0 0 24 24"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+            />
+          </svg>
+          Generating drafts… Usually &lt;15s per format.
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-400"
+        >
+          <p className="font-semibold">Draft generation failed</p>
+          <p className="mt-0.5">{error}</p>
+        </div>
+      )}
+
+      {/* CTA row */}
+      {!hasDrafts && (
+        <div className="flex items-center gap-2">
+          <ActionButton
+            onClick={() => void handleGenerate()}
+            loading={generating}
+            disabled={generating || selectedFormats.size === 0}
+            variant="primary"
+          >
+            Generate Drafts
+          </ActionButton>
+          {selectedFormats.size === 0 && !generating && (
+            <span className="text-xs text-muted-foreground" aria-live="polite">
+              Select at least one format above
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Draft artifacts list */}
+      {displayDraftIds.length > 0 && (
+        <div>
+          <SectionHeading>Generated Drafts</SectionHeading>
+          <ul
+            className="flex flex-col gap-2"
+            role="list"
+            aria-label="Generated draft artifacts"
+          >
+            {displayDraftIds.map((id, idx) => {
+              const fmt = draftResult?.formats[idx] ?? existingDraftIds[idx] ? undefined : undefined;
+              return (
+                <li key={id}>
+                  <a
+                    href={`/artifacts/${encodeURIComponent(id)}`}
+                    className={cn(
+                      "flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2",
+                      "hover:bg-muted transition-colors",
+                      "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    )}
+                    aria-label={`View draft artifact ${id}`}
+                  >
+                    <svg
+                      aria-hidden="true"
+                      className="size-3.5 shrink-0 text-violet-500"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    {fmt && (
+                      <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                        {fmt}
+                      </span>
+                    )}
+                    <span className="font-mono text-xs text-foreground/80 truncate">{id}</span>
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Regenerate */}
+          <div className="mt-3">
+            <ActionButton
+              onClick={handleRegenerate}
+              disabled={generating}
+              variant="secondary"
+            >
+              Regenerate with Different Formats
+            </ActionButton>
+          </div>
+        </div>
+      )}
+
+      {/* Success status */}
+      {draftResult && draftResult.status === "already_drafted" && (
+        <div
+          role="status"
+          className="rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-400"
+        >
+          Drafts already existed for the selected formats. Existing artifacts shown above.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Panel I — review / file_back (P4-03)
+// ---------------------------------------------------------------------------
+
+function ReviewPanel({ runId }: { runId: string }) {
+  const [mode, setMode] = useState<"advisory" | "strict">("advisory");
+  const [reviewing, setReviewing] = useState(false);
+  const [filingBack, setFilingBack] = useState(false);
+  const [reviewResult, setReviewResult] = useState<ReviewGatesResponse | null>(null);
+  const [fileBackResult, setFileBackResult] = useState<FileBackResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const canFileBack = reviewResult
+    ? mode === "advisory" || reviewResult.passed
+    : false;
+
+  async function handleRunReview() {
+    setReviewing(true);
+    setError(null);
+    try {
+      const res = await runReviewGates(runId, mode);
+      setReviewResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Review evaluation failed");
+    } finally {
+      setReviewing(false);
+    }
+  }
+
+  async function handleFileBack() {
+    if (!canFileBack) return;
+    setFilingBack(true);
+    setError(null);
+    try {
+      const res = await fileBackResearch(runId);
+      setFileBackResult(res);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "File-back failed");
+    } finally {
+      setFilingBack(false);
+    }
+  }
+
+  const totalWarnings = reviewResult?.warnings.length ?? 0;
+  const reviewPassed = reviewResult?.passed ?? false;
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Strict mode toggle */}
+      <div className="flex items-center justify-between">
+        <SectionHeading>Citation Review</SectionHeading>
+        <label className="flex cursor-pointer items-center gap-2 text-xs" aria-label="Enable strict mode">
+          <span className="text-muted-foreground select-none">Strict mode</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={mode === "strict"}
+            onClick={() => {
+              setMode((m) => (m === "advisory" ? "strict" : "advisory"));
+              // Reset results when toggling mode
+              setReviewResult(null);
+              setError(null);
+            }}
+            className={cn(
+              "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              mode === "strict" ? "bg-primary" : "bg-muted-foreground/30",
+            )}
+          >
+            <span
+              className={cn(
+                "inline-block size-3.5 rounded-full bg-white shadow transition-transform",
+                mode === "strict" ? "translate-x-4" : "translate-x-0.5",
+              )}
+              aria-hidden="true"
+            />
+          </button>
+        </label>
+      </div>
+
+      {mode === "strict" && (
+        <p className="text-xs text-amber-700 dark:text-amber-400 -mt-2">
+          Strict mode: file-back is blocked if any citation warning is found.
+        </p>
+      )}
+
+      {/* Run review CTA */}
+      {!reviewResult && (
+        <ActionButton
+          onClick={() => void handleRunReview()}
+          loading={reviewing}
+          disabled={reviewing}
+          variant="primary"
+        >
+          Run Citation Review
+        </ActionButton>
+      )}
+
+      {/* Pass / fail banner */}
+      {reviewResult && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={cn(
+            "rounded-md border p-3 text-sm font-semibold",
+            reviewPassed
+              ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300"
+              : "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 text-red-700 dark:text-red-400",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {reviewPassed ? (
+              <svg
+                aria-hidden="true"
+                className="size-4 text-emerald-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            ) : (
+              <svg
+                aria-hidden="true"
+                className="size-4 text-red-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            )}
+            {reviewPassed
+              ? `Review ${reviewResult.mode === "strict" ? "Passed (strict)" : "Passed (advisory)"}`
+              : "Review Failed — citation warnings detected"}
+          </div>
+          {totalWarnings > 0 && (
+            <p className="mt-1 text-xs font-normal opacity-80">
+              {totalWarnings} citation warning{totalWarnings !== 1 ? "s" : ""} found
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Source coverage indicator */}
+      {reviewResult && (
+        <div>
+          <SectionHeading>Source Coverage</SectionHeading>
+          <div className="flex items-center gap-3">
+            <div
+              className="flex-1 h-2 rounded-full bg-muted overflow-hidden"
+              role="progressbar"
+              aria-valuenow={reviewPassed ? 100 : Math.max(0, 100 - totalWarnings * 15)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Source coverage"
+            >
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all",
+                  reviewPassed ? "bg-emerald-500" : totalWarnings > 2 ? "bg-red-500" : "bg-amber-400",
+                )}
+                style={{
+                  width: `${reviewPassed ? 100 : Math.max(10, 100 - totalWarnings * 15)}%`,
+                }}
+              />
+            </div>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {reviewPassed ? "100%" : `${Math.max(0, 100 - totalWarnings * 15)}%`}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Citation checklist */}
+      {reviewResult && reviewResult.warnings.length > 0 && (
+        <div>
+          <SectionHeading>Citation Warnings</SectionHeading>
+          <ul
+            className="flex flex-col gap-1.5"
+            role="list"
+            aria-label="Citation warnings"
+          >
+            {reviewResult.warnings.map((w, i) => (
+              <li
+                key={i}
+                className={cn(
+                  "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
+                  "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30",
+                )}
+              >
+                <span
+                  aria-label="Warning"
+                  className="mt-0.5 shrink-0 text-amber-500"
+                  aria-hidden="true"
+                >
+                  ⚠
+                </span>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-amber-700 dark:text-amber-400">{w.message}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    Artifact: {w.draft_artifact_id}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Re-run review */}
+      {reviewResult && !fileBackResult && (
+        <ActionButton
+          onClick={() => {
+            setReviewResult(null);
+            setError(null);
+          }}
+          disabled={reviewing || filingBack}
+          variant="secondary"
+        >
+          Re-run Review
+        </ActionButton>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 text-sm text-red-700 dark:text-red-400"
+        >
+          <p className="font-semibold">Action failed</p>
+          <p className="mt-0.5">{error}</p>
+        </div>
+      )}
+
+      {/* File-back CTA */}
+      {reviewResult && !fileBackResult && (
+        <div className="flex items-center gap-2">
+          <ActionButton
+            onClick={() => void handleFileBack()}
+            loading={filingBack}
+            disabled={!canFileBack || filingBack || reviewing}
+            variant="primary"
+          >
+            Pass Review &amp; File Back
+          </ActionButton>
+          {!canFileBack && mode === "strict" && (
+            <p
+              className="text-xs text-muted-foreground"
+              role="note"
+              aria-label="File-back is disabled due to strict mode citation failures"
+            >
+              Blocked: strict mode requires all checks to pass
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* File-back success */}
+      {fileBackResult && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-col gap-3 rounded-md border border-emerald-200 bg-emerald-50 dark:border-emerald-900 dark:bg-emerald-950/30 p-4"
+        >
+          <p className="text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+            {fileBackResult.status === "already_filed_back"
+              ? "Already Filed Back"
+              : "Filed Back Successfully"}
+          </p>
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-muted-foreground">Final artifact:</p>
+            <a
+              href={`/artifacts/${encodeURIComponent(fileBackResult.final_artifact_id)}`}
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-2 text-sm",
+                "font-mono text-foreground/80 hover:bg-muted transition-colors",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                "w-fit",
+              )}
+              aria-label={`View filed-back artifact ${fileBackResult.final_artifact_id}`}
+            >
+              <svg
+                aria-hidden="true"
+                className="size-3.5 text-emerald-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              {fileBackResult.final_artifact_id}
+            </a>
+          </div>
+          {fileBackResult.lineage.length > 0 && (
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer hover:text-foreground">
+                Lineage ({fileBackResult.lineage.length} ancestors)
+              </summary>
+              <ul className="mt-1.5 flex flex-col gap-0.5 pl-3">
+                {fileBackResult.lineage.map((id) => (
+                  <li key={id} className="font-mono text-[10px]">
+                    {id}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Stage group routing
 // ---------------------------------------------------------------------------
 
@@ -875,6 +1697,21 @@ const PROMPT_STAGES = new Set(["generate_prompt_package"]);
 const TASK_STAGES = new Set(["export_or_launch_task", "await_result"]);
 const UPLOAD_STAGES = new Set(["upload_or_import_result"]);
 const VALIDATE_STAGES = new Set(["validate_result"]);
+
+/** Returns true when the stage name contains "synthesis" (e.g. "synthesize_results", "synthesis"). */
+export function isSynthesisStage(name: string): boolean {
+  return name.includes("synthesis") || name.includes("synthesize");
+}
+
+/** Returns true when the stage name contains "draft". */
+export function isDraftStage(name: string): boolean {
+  return name.includes("draft");
+}
+
+/** Returns true when the stage name contains "review" or "file_back". */
+export function isReviewStage(name: string): boolean {
+  return name.includes("review") || name.includes("file_back");
+}
 
 // ---------------------------------------------------------------------------
 // Public export
@@ -902,9 +1739,17 @@ export function ResearchStagePanel({
     body = <UploadResultPanel runId={workflowRun.id} />;
   } else if (VALIDATE_STAGES.has(stageName)) {
     body = <ValidateResultPanel workflowRun={workflowRun} />;
+  } else if (isSynthesisStage(stageName)) {
+    // P4-01 — synthesis stage body
+    body = <SynthesisPanel runId={workflowRun.id} workflowRun={workflowRun} />;
+  } else if (isDraftStage(stageName)) {
+    // P4-02 — draft stage body
+    body = <DraftPanel runId={workflowRun.id} workflowRun={workflowRun} />;
+  } else if (isReviewStage(stageName)) {
+    // P4-03 — review / file-back stage body
+    body = <ReviewPanel runId={workflowRun.id} />;
   } else {
-    // Deferred stages (synthesis, draft, file_back, review) and any future
-    // unknown stages — return null to let parent show generic content.
+    // Unknown stages — return null to let parent show generic content.
     return null;
   }
 

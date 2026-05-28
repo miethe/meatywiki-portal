@@ -42,7 +42,7 @@ import { useWorkflowTimeline } from "@/hooks/useWorkflowTimeline";
 import { useRunHistory } from "@/hooks/useRunHistory";
 import { TimelinePanel } from "./timeline-panel";
 import { StageContextPanel } from "./stage-context-panel";
-import { ResearchStagePanel } from "./research-stage-panel";
+import { ResearchStagePanel, isSynthesisStage, isDraftStage, isReviewStage } from "./research-stage-panel";
 import { ArtifactLineageGraph } from "./artifact-lineage-graph";
 import { RunHistoryList } from "./run-history-list";
 import { OperatorActionsBlock } from "./operator-actions-block";
@@ -442,14 +442,17 @@ function WorkflowOutputsPanel({ events, currentRun }: WorkflowOutputsPanelProps)
 // Stage context panel — conditionally mounts ResearchStagePanel for
 // external_research_v1 runs; generic StageContextPanel otherwise.
 //
-// ResearchStagePanel returns null for deferred/unknown stage names (synthesis,
-// draft, file_back, review — Phase 2–3). We determine whether to use the
-// research panel by checking the stage name against the known Phase 1 set —
-// this mirrors ResearchStagePanel's internal routing without double-rendering.
+// P4-04: Broadened the gate from Phase-1-only stage names to include
+// synthesis/draft/review (P4-01–P4-03) via predicates exported from
+// ResearchStagePanel. Non-research workflows (template_id != external_research_v1)
+// are never affected — the outer templateId guard short-circuits first.
 // ---------------------------------------------------------------------------
 
-/** Phase 1 research stage names that ResearchStagePanel handles. */
-const RESEARCH_STAGE_NAMES = new Set([
+/** Phase 1 + Phase 4 research stage names that ResearchStagePanel handles.
+ * Phase 1: static set of known stage names.
+ * Phase 4 (P4-01–P4-03): synthesis/draft/review detected via predicates
+ * exported from ResearchStagePanel itself so this file stays in sync. */
+const RESEARCH_PHASE1_STAGE_NAMES = new Set([
   "collect_intent",
   "assemble_package",
   "analyze_routes",
@@ -459,6 +462,16 @@ const RESEARCH_STAGE_NAMES = new Set([
   "upload_or_import_result",
   "validate_result",
 ]);
+
+/** Returns true if this stage name is handled by ResearchStagePanel (any phase). */
+function isResearchStageName(name: string): boolean {
+  return (
+    RESEARCH_PHASE1_STAGE_NAMES.has(name) ||
+    isSynthesisStage(name) ||
+    isDraftStage(name) ||
+    isReviewStage(name)
+  );
+}
 
 interface StageContextPanelMaybeResearchProps {
   stage: TimelineStage | null;
@@ -471,13 +484,14 @@ function StageContextPanelMaybeResearch({
   templateId,
   currentRun,
 }: StageContextPanelMaybeResearchProps) {
-  // Use ResearchStagePanel only for external_research_v1 + a known Phase 1
-  // stage name + an available currentRun. All other cases get the generic panel.
+  // Use ResearchStagePanel for external_research_v1 + any stage handled by
+  // ResearchStagePanel (Phase 1 names + synthesis/draft/review) + available run.
+  // All other templates always fall through to the generic panel (no regression).
   const useResearch =
     templateId === "external_research_v1" &&
     stage !== null &&
     currentRun !== null &&
-    RESEARCH_STAGE_NAMES.has(stage.name);
+    isResearchStageName(stage.name);
 
   if (useResearch && stage && currentRun) {
     return (

@@ -15,6 +15,10 @@
  *         - Synthesis Narrative (skeleton pull-quote + 3-col breakdown)
  *         - Stale Artifacts panel (P7-01 — LIVE, wired to backend)
  *         - Active Research Runs (P5-01/P5-02/P5-03 — LIVE, polling + draft support)
+ *         - ── P5-05 new sections ──
+ *         - Completed Research Runs (P5-05 — LIVE, wired to GET /api/research/runs)
+ *         - Research Workspaces (P5-05 — LIVE, workspace picker + artifacts)
+ *         - Saved Packages (P5-05 — LIVE, wired to GET /api/research/packages)
  *       Right ContextRail (xl+):
  *         - Workspace Health gauge (skeleton circle)
  *         - Recent Syntheses section (skeleton rows)
@@ -28,6 +32,8 @@
  * P5-03: Draft re-entry — clicking a draft run in ActiveResearchRuns opens the
  *        research wizard at Step 3 pre-populated with saved draft data.
  *        Fetch: GET /api/workflows/{run_id} → WorkflowRunDetail.metadata
+ * P5-05: Research Home consolidation — CompletedResearchRuns, ResearchWorkspaces,
+ *        SavedPackages sections added below ActiveResearchRuns.
  *
  * OQ-2 resolution: APIs deferred (Topics, Synthesis, Workspace Health).
  *   Freshness (P7-01) and Contradictions (P7-02) endpoints are live.
@@ -48,6 +54,9 @@ import { SynthesisNarrative } from "@/components/research/SynthesisNarrative";
 import { WorkspaceHealthGauge } from "@/components/research/WorkspaceHealthGauge";
 import { StaleArtifactsPanel } from "@/components/research/StaleArtifactsPanel";
 import { ActiveResearchRuns } from "@/components/research/ActiveResearchRuns";
+import { CompletedResearchRuns } from "@/components/research/CompletedResearchRuns";
+import { ResearchWorkspaces } from "@/components/research/ResearchWorkspaces";
+import { SavedPackages } from "@/components/research/SavedPackages";
 import InfoTooltip from "@/components/ui/info-tooltip";
 import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
@@ -285,6 +294,35 @@ function buildMinimalRouteCards(
 }
 
 // ---------------------------------------------------------------------------
+// Section divider + heading (P5-05 consolidation sections)
+// ---------------------------------------------------------------------------
+
+/**
+ * Section heading with a top divider.
+ * Used to visually separate the three new Research Home sections from the
+ * existing research widgets above them.
+ */
+function SectionHeading({
+  children,
+  id,
+}: {
+  children: React.ReactNode;
+  id?: string;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div aria-hidden="true" className="h-px bg-border" />
+      <h2
+        id={id}
+        className="text-base font-semibold text-foreground"
+      >
+        {children}
+      </h2>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page component
 // ---------------------------------------------------------------------------
 
@@ -470,6 +508,58 @@ export default function ResearchHomePage() {
               onDraftReEntry={(run) => { void handleDraftReEntry(run); }}
             />
           </div>
+
+          {/* ============================================================ */}
+          {/* P5-05 Research Home consolidation sections                    */}
+          {/* Three new sections stacked below ActiveResearchRuns.          */}
+          {/* Each section is independently loaded and paginated.          */}
+          {/* ============================================================ */}
+
+          {/* ------------------------------------------------------------ */}
+          {/* Completed Research Runs — P5-05                              */}
+          {/* GET /api/research/runs?status=completed                      */}
+          {/* Cards: date range, template, summary, artifacts count.       */}
+          {/* Click → /workflows/[runId]                                   */}
+          {/* ------------------------------------------------------------ */}
+          <div>
+            <SectionHeading id="completed-runs-heading">
+              Completed Research Runs
+            </SectionHeading>
+            <div className="mt-3">
+              <CompletedResearchRuns />
+            </div>
+          </div>
+
+          {/* ------------------------------------------------------------ */}
+          {/* Research Workspaces — P5-05                                  */}
+          {/* Workspace chip picker → GET /api/research/artifacts          */}
+          {/* Lists research-origin artifacts for the selected workspace.  */}
+          {/* Click artifact → /artifacts/[id]                             */}
+          {/* ------------------------------------------------------------ */}
+          <div>
+            <SectionHeading id="research-workspaces-heading">
+              Research Workspaces
+            </SectionHeading>
+            <div className="mt-3">
+              <ResearchWorkspaces />
+            </div>
+          </div>
+
+          {/* ------------------------------------------------------------ */}
+          {/* Saved Packages — P5-05                                       */}
+          {/* GET /api/research/packages                                   */}
+          {/* Cards: package name, artifact count, created date.           */}
+          {/* Click → /artifacts/[id]                                      */}
+          {/* ------------------------------------------------------------ */}
+          <div>
+            <SectionHeading id="saved-packages-heading">
+              Saved Packages
+            </SectionHeading>
+            <div className="mt-3">
+              <SavedPackages />
+            </div>
+          </div>
+
         </div>
 
         {/* ---------------------------------------------------------------- */}
