@@ -19,11 +19,19 @@
  *   - ToastProvider + ToastRenderer
  *   - PwaProviders (service worker registration)
  *
+ * Providers established HERE (because this route bypasses (main)/shell-client.tsx,
+ * which is where the portal shell normally mounts them):
+ *   - TooltipProvider — required by any Radix Tooltip / InfoTooltip rendered in
+ *     the graph page and its child overlays (GraphFilters, GraphGroupingSelector,
+ *     etc.). Without a route-level provider these throw
+ *     "`Tooltip` must be used within `TooltipProvider`" on load.
+ *
  * CANVAS-001 — graph route layout teardown (v2.5 Phase 2).
  */
 
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth/session";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import "./graph.css";
 
 export default async function GraphLayout({
@@ -39,7 +47,7 @@ export default async function GraphLayout({
 
   return (
     <div data-page="graph" className="graph-layout-root">
-      {children}
+      <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
     </div>
   );
 }

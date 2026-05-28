@@ -3980,7 +3980,9 @@ export function VaultGraphPageClient() {
               <span className="text-[10px] font-medium uppercase tracking-wider text-[var(--mw-graph-text-secondary)] select-none">
                 Renderer
               </span>
-              {/* TooltipProvider scoped here — graph layout.tsx does not include one */}
+              {/* Nested TooltipProvider — (graph)/layout.tsx now supplies a
+                  route-level provider; this nested one is kept for its local
+                  delayDuration override on the WebGL-support warning tooltip. */}
               <TooltipProvider delayDuration={300}>
                 <Tooltip open={!webGLSupport.supported ? undefined : false}>
                   {/* Wrap in a span when disabled so the tooltip trigger still receives
