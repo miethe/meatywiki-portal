@@ -24,11 +24,17 @@
  * above provides a best-effort visual derived from available state. If even
  * that is absent, a single "Stage: {status}" badge row is shown per spec.
  *
+ * ## Live event overlay
+ *
+ * When `liveEvents` is provided (from `useCompileEvents`), the static
+ * inference is overridden by real SSE data: started → "current",
+ * completed → "completed", failed → "failed".
+ *
  * ## Accessibility
  *
  * - Each pill is keyboard-focusable (tabIndex=0).
  * - Stage status is communicated via aria-label (not color alone).
- * - Color indicators: completed=emerald, current=sky (animated ring), pending=slate.
+ * - Color indicators: completed=emerald, current=sky (animated ring), pending=slate, failed=red.
  *
  * Stitch reference: portal-v1.5-handoff-chain-integration.md §3.2, §4.1
  * P4-04 (Handoff Chain + Activity Timeline).
@@ -36,12 +42,19 @@
 
 import { cn } from "@/lib/utils";
 import type { ArtifactDetail } from "@/types/artifact";
+import type { WorkflowStageEventDTO } from "@/types/compileEvents";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 // ---------------------------------------------------------------------------
 // Stage definitions — engine compile pipeline (canonical order)
 // ---------------------------------------------------------------------------
 
-export type StageStatus = "completed" | "current" | "pending";
+export type StageStatus = "completed" | "current" | "pending" | "failed";
 
 export interface StageInfo {
   id: string;
@@ -57,6 +70,16 @@ const ENGINE_STAGES: StageInfo[] = [
   { id: "file_back", label: "File-Back",  shortLabel: "File"     },
   { id: "lint",      label: "Lint",       shortLabel: "Lint"     },
 ];
+
+// ---------------------------------------------------------------------------
+// Stage detail (tooltip payload)
+// ---------------------------------------------------------------------------
+
+export interface StageDetail {
+  durationMs?: number;
+  summary?: string;
+  errorDetail?: string;
+}
 
 // ---------------------------------------------------------------------------
 // Stage status inference from artifact fields
@@ -157,6 +180,102 @@ function resolveChain(artifact: ArtifactDetail): ChainResolution {
 }
 
 // ---------------------------------------------------------------------------
+// Live event overlay
+// ---------------------------------------------------------------------------
+
+interface MergeResult {
+  statuses: Record<string, StageStatus>;
+  stageDetails: Record<string, StageDetail>;
+}
+
+/**
+ * Merges SSE live events on top of the static resolved chain.
+ *
+ * - "ingest" is SSE-invisible (no events emitted); stays static.
+ * - "terminal" events are skipped — they are not engine stages.
+ * - For each engine stage: last started event → "current";
+ *   completed event → "completed"; failed event → "failed".
+ * - Duration is computed from the first "started" and first "completed"
+ *   timestamps for the same stage.
+ * - payload.output_summary → StageDetail.summary
+ * - payload.error_detail   → StageDetail.errorDetail
+ */
+function mergeWithLiveEvents(
+  chain: ResolvedChain,
+  liveEvents: WorkflowStageEventDTO[],
+): MergeResult {
+  // Copy base statuses from static chain
+  const statuses: Record<string, StageStatus> = { ...chain.statuses };
+  const stageDetails: Record<string, StageDetail> = {};
+
+  if (!liveEvents || liveEvents.length === 0) {
+    return { statuses, stageDetails };
+  }
+
+  // Group events by stage (skip terminal and ingest — ingest is never emitted)
+  const byStage: Record<string, WorkflowStageEventDTO[]> = {};
+  for (const event of liveEvents) {
+    if (event.stage === "terminal" || event.stage === "ingest") continue;
+    const stageId = event.stage;
+    if (!byStage[stageId]) {
+      byStage[stageId] = [];
+    }
+    byStage[stageId].push(event);
+  }
+
+  for (const stageId of Object.keys(byStage)) {
+    const events = byStage[stageId];
+    const startedEvent = events.find((e) => e.status === "started");
+    const completedEvent = events.find((e) => e.status === "completed");
+    const failedEvent = events.find((e) => e.status === "failed");
+
+    // Determine new status: failed > completed > current (started) > keep static
+    if (failedEvent) {
+      statuses[stageId] = "failed";
+    } else if (completedEvent) {
+      statuses[stageId] = "completed";
+    } else if (startedEvent) {
+      statuses[stageId] = "current";
+    }
+
+    // Build StageDetail
+    const detail: StageDetail = {};
+
+    // Duration: from started → completed timestamps
+    if (startedEvent && completedEvent) {
+      const startMs = new Date(startedEvent.created_at).getTime();
+      const endMs = new Date(completedEvent.created_at).getTime();
+      const duration = endMs - startMs;
+      if (!isNaN(duration) && duration >= 0) {
+        detail.durationMs = duration;
+      }
+    }
+
+    // Summary from completed or failed payload
+    const payloadSource = completedEvent ?? failedEvent ?? startedEvent;
+    if (payloadSource) {
+      const payload = payloadSource.payload;
+      if (typeof payload["output_summary"] === "string" && payload["output_summary"]) {
+        detail.summary = payload["output_summary"] as string;
+      }
+      if (typeof payload["error_detail"] === "string" && payload["error_detail"]) {
+        detail.errorDetail = payload["error_detail"] as string;
+      }
+    }
+
+    if (
+      detail.durationMs !== undefined ||
+      detail.summary !== undefined ||
+      detail.errorDetail !== undefined
+    ) {
+      stageDetails[stageId] = detail;
+    }
+  }
+
+  return { statuses, stageDetails };
+}
+
+// ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
 
@@ -170,32 +289,58 @@ const STATUS_PILL_CLASSES: Record<StageStatus, string> = {
   pending:
     "bg-muted/50 border-border text-muted-foreground/60 " +
     "dark:bg-muted/30",
+  failed:
+    "bg-red-100 border-red-300 text-red-800 " +
+    "dark:bg-red-900/30 dark:border-red-700/60 dark:text-red-300",
 };
 
 const STATUS_DOT_CLASSES: Record<StageStatus, string> = {
   completed: "bg-emerald-500 dark:bg-emerald-400",
   current:   "bg-sky-500 dark:bg-sky-400 animate-pulse",
   pending:   "bg-slate-300 dark:bg-slate-600",
+  failed:    "bg-red-500 dark:bg-red-400",
 };
 
 interface StagePillProps {
   stage: StageInfo;
   status: StageStatus;
+  detail?: StageDetail;
+  onClick?: () => void;
 }
 
-function StagePill({ stage, status }: StagePillProps) {
-  const ariaLabel = `${stage.label}: ${status}`;
+function formatDuration(ms: number): string {
+  if (ms >= 1000) {
+    return `${(ms / 1000).toFixed(1)}s`;
+  }
+  return `${ms}ms`;
+}
 
-  return (
+function truncate(str: string, maxLen: number): string {
+  if (str.length <= maxLen) return str;
+  return str.slice(0, maxLen) + "…";
+}
+
+function StagePill({ stage, status, detail, onClick }: StagePillProps) {
+  const ariaLabel = `${stage.label}: ${status}`;
+  const hasDetail =
+    detail !== undefined &&
+    (detail.durationMs !== undefined ||
+      detail.summary !== undefined ||
+      detail.errorDetail !== undefined);
+
+  const pillElement = (
     <span
       tabIndex={0}
-      role="listitem"
+      role={onClick ? "button" : "listitem"}
       aria-label={ariaLabel}
+      onClick={onClick}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") onClick(); } : undefined}
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1",
         "text-[11px] font-medium leading-none transition-colors",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
         STATUS_PILL_CLASSES[status],
+        onClick && "cursor-pointer",
       )}
     >
       {/* Status dot */}
@@ -206,6 +351,43 @@ function StagePill({ stage, status }: StagePillProps) {
       <span className="hidden sm:inline">{stage.label}</span>
       <span className="sm:hidden">{stage.shortLabel}</span>
     </span>
+  );
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {pillElement}
+      </TooltipTrigger>
+      <TooltipContent>
+        <div className="flex flex-col gap-1 text-xs">
+          <span className="font-semibold">
+            {stage.label}{" "}
+            <span className="font-normal capitalize text-muted-foreground">
+              — {status}
+            </span>
+          </span>
+          {hasDetail ? (
+            <>
+              {detail!.durationMs !== undefined && (
+                <span>Duration: {formatDuration(detail!.durationMs)}</span>
+              )}
+              {detail!.summary && (
+                <span>{truncate(detail!.summary, 80)}</span>
+              )}
+              {detail!.errorDetail && (
+                <span className="text-red-500 dark:text-red-400">
+                  {truncate(detail!.errorDetail, 80)}
+                </span>
+              )}
+            </>
+          ) : (
+            <span className="text-muted-foreground">
+              Click to view processing history
+            </span>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -223,6 +405,10 @@ function Connector() {
 export interface HandoffChainRibbonProps {
   artifact: ArtifactDetail;
   className?: string;
+  /** Live SSE events from useCompileEvents — when present, overrides static inference. */
+  liveEvents?: WorkflowStageEventDTO[];
+  /** Called when a stage pill is clicked — receives the stage ID. */
+  onStageClick?: (stageId: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,8 +421,16 @@ export interface HandoffChainRibbonProps {
  * Renders between `<ArtifactTitleBlock>` and the tabs/body split (P4-04 layout).
  * Infers stage progress from artifact lifecycle state when explicit chain data
  * is unavailable. Graceful fallback to a single status badge.
+ *
+ * When `liveEvents` is provided the static inference is overlaid with real-time
+ * SSE data so in-flight stages animate live.
  */
-export function HandoffChainRibbon({ artifact, className }: HandoffChainRibbonProps) {
+export function HandoffChainRibbon({
+  artifact,
+  className,
+  liveEvents,
+  onStageClick,
+}: HandoffChainRibbonProps) {
   const chain = resolveChain(artifact);
 
   if (chain.type === "fallback") {
@@ -265,32 +459,45 @@ export function HandoffChainRibbon({ artifact, className }: HandoffChainRibbonPr
     );
   }
 
+  // Merge live events on top of static chain (only when events present)
+  const { statuses, stageDetails } =
+    liveEvents && liveEvents.length > 0
+      ? mergeWithLiveEvents(chain, liveEvents)
+      : { statuses: chain.statuses, stageDetails: {} as Record<string, StageDetail> };
+
   return (
-    <div
-      aria-label="Artifact workflow stages"
-      className={cn(
-        "flex items-center gap-0 overflow-hidden rounded-lg border bg-muted/20 px-3 py-3",
-        className,
-      )}
-    >
-      <span
-        aria-hidden="true"
-        className="mr-3 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70"
+    <TooltipProvider>
+      <div
+        aria-label="Artifact workflow stages"
+        className={cn(
+          "flex items-center gap-0 overflow-hidden rounded-lg border bg-muted/20 px-3 py-3",
+          className,
+        )}
       >
-        Pipeline
-      </span>
-      <ol
-        role="list"
-        aria-label="Engine workflow stages"
-        className="flex items-center"
-      >
-        {ENGINE_STAGES.map((stage, idx) => (
-          <li key={stage.id} className="flex items-center">
-            <StagePill stage={stage} status={chain.statuses[stage.id] ?? "pending"} />
-            {idx < ENGINE_STAGES.length - 1 && <Connector />}
-          </li>
-        ))}
-      </ol>
-    </div>
+        <span
+          aria-hidden="true"
+          className="mr-3 shrink-0 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70"
+        >
+          Pipeline
+        </span>
+        <ol
+          role="list"
+          aria-label="Engine workflow stages"
+          className="flex items-center"
+        >
+          {ENGINE_STAGES.map((stage, idx) => (
+            <li key={stage.id} className="flex items-center">
+              <StagePill
+                stage={stage}
+                status={statuses[stage.id] ?? "pending"}
+                detail={stageDetails[stage.id]}
+                onClick={onStageClick ? () => onStageClick(stage.id) : undefined}
+              />
+              {idx < ENGINE_STAGES.length - 1 && <Connector />}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </TooltipProvider>
   );
 }

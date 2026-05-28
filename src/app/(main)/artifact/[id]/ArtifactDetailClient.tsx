@@ -102,6 +102,7 @@ import { HandoffChainRibbon } from "@/components/artifact/handoff-chain-ribbon";
 import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 import { ProcessingHistoryTab } from "@/components/artifact/processing-history-tab";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
+import { useCompileEvents } from "@/hooks/useCompileEvents";
 import { useCostBreakdown } from "@/hooks/useCostBreakdown";
 import { CostHUD } from "@/components/artifact/CostHUD";
 import { ReclassifyModal } from "@/components/artifact/ReclassifyModal";
@@ -1542,6 +1543,17 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     },
   });
 
+  // Live SSE events for HandoffChainRibbon — enabled when the user has triggered
+  // compile or when the artifact has an inbox-phase status (needs_compile).
+  const sseEnabled =
+    isCompiling ||
+    effectiveArtifact?.status === "needs_compile" ||
+    effectiveArtifact?.status === "new";
+  const { events: compileEvents } = useCompileEvents({
+    artifactId: id,
+    enabled: sseEnabled,
+  });
+
   // Auto-clear success message after 3s
   useEffect(() => {
     if (!compileSuccess) return;
@@ -1891,7 +1903,11 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
         {/* the locked top region. pr-1 keeps cards clear of the scrollbar.  */}
         <div className="flex h-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" data-tour="artifact-detail-body">
           {/* Handoff Chain ribbon (P4-04) */}
-          <HandoffChainRibbon artifact={detailArtifact} />
+          <HandoffChainRibbon
+            artifact={detailArtifact}
+            liveEvents={compileEvents}
+            onStageClick={() => setActiveTab("Processing")}
+          />
 
           {/* Inline-editable metadata section (P2-06) */}
           <EditableMetadataSection
