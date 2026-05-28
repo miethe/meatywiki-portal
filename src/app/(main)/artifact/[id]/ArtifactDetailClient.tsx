@@ -103,6 +103,7 @@ import { ActivityTimeline } from "@/components/artifact/activity-timeline";
 import { ProcessingHistoryTab } from "@/components/artifact/processing-history-tab";
 import { useCompileArtifact } from "@/hooks/useCompileArtifact";
 import { useCompileEvents } from "@/hooks/useCompileEvents";
+import { useProcessingHistory } from "@/hooks/use-processing-history";
 import { useCostBreakdown } from "@/hooks/useCostBreakdown";
 import { CostHUD } from "@/components/artifact/CostHUD";
 import { ReclassifyModal } from "@/components/artifact/ReclassifyModal";
@@ -1554,6 +1555,9 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     enabled: sseEnabled,
   });
 
+  // Historical stage events — latest run, for ribbon when not actively compiling.
+  const { events: historicalEvents } = useProcessingHistory(id);
+
   // Auto-clear success message after 3s
   useEffect(() => {
     if (!compileSuccess) return;
@@ -1905,8 +1909,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
           {/* Handoff Chain ribbon (P4-04) */}
           <HandoffChainRibbon
             artifact={detailArtifact}
+            historicalEvents={historicalEvents}
             liveEvents={compileEvents}
             onStageClick={() => setActiveTab("Processing")}
+            onRunLint={
+              lintScopeMutation.isPending
+                ? undefined
+                : () => lintScopeMutation.mutate()
+            }
           />
 
           {/* Inline-editable metadata section (P2-06) */}

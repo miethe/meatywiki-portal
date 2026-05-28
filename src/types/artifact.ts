@@ -285,6 +285,21 @@ export interface ArtifactCard {
    */
   automation_source?: string | null;
   agent_origin?: string | null;
+  /**
+   * Backend-computed intervention category for inbox grouping.
+   *
+   * Assigned by the portal classifier and returned on each ArtifactCard
+   * response. Supercedes status-based inbox grouping (the old approach
+   * inferred action from lifecycle status, which caused compiled artifacts
+   * to appear in "needs_compile").
+   *
+   *   needs_fix     — artifact has compile/lint failures requiring attention
+   *   needs_compile — artifact has not been compiled yet
+   *   needs_review  — artifact awaits human review / approval
+   *   ready         — no action required (normally excluded from inbox)
+   *   null          — unknown; fall back to needs_compile in the inbox UI
+   */
+  intervention_category?: "needs_fix" | "needs_compile" | "needs_review" | "ready" | null;
 }
 
 // ---------------------------------------------------------------------------

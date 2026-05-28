@@ -126,29 +126,36 @@ function workspaceToFacet(workspace: string): ArtifactFacet | null {
 /**
  * Inbox group keys that map to contextual CTA labels (P5-02).
  * Matches InboxGroup type in InboxClient.tsx.
+ *
+ * Updated to intervention_category-based groups:
+ *   needs_fix     — artifact has failures; CTA = "Recompile"
+ *   needs_compile — not yet compiled; CTA = "Compile"
+ *   needs_review  — awaits human review; CTA = "Review"
+ *
+ * Legacy values (new, needs_destination) kept for backward compat in case
+ * some callers still pass them.
  */
-export type InboxGroup = "new" | "needs_compile" | "needs_destination";
+export type InboxGroup =
+  | "needs_fix"
+  | "needs_compile"
+  | "needs_review"
+  // Legacy — kept for backward compat
+  | "new"
+  | "needs_destination";
 
 /**
  * CTA labels per inbox group (P5-02 / P2-05 / F-10).
- *
- * P2-05 changes:
- *   - needs_compile: "Start Compilation" → "Compile" (matches CompileButton label
- *     in InboxClient.tsx and the general product verb used throughout the UI).
- *   - needs_destination: "Review Needed" removed as a CTA label. This was a
- *     status description masquerading as an action verb. The group header
- *     ("NEEDS DESTINATION") already conveys the status; the CTA should be a
- *     verb the user can act on. Changed to "Route" — a neutral destination-routing
- *     verb that does not imply a specific action until routing UI is wired.
- *   - new: "Draft" unchanged — reasonable placeholder until Draft-editing is wired.
  *
  * Note: when `ctaSlot` is provided the caller overrides this label entirely (e.g.
  * InboxItemWithCompile passes a real <CompileButton>). These labels only drive the
  * fallback stub button.
  */
 const INBOX_CTA_LABELS: Record<InboxGroup, string> = {
-  new: "Draft",
+  needs_fix:     "Recompile",
   needs_compile: "Compile",
+  needs_review:  "Review",
+  // Legacy
+  new:              "Draft",
   needs_destination: "Route",
 };
 

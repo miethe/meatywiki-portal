@@ -73,47 +73,52 @@ import { invalidateActivityCache } from "@/lib/api/artifacts";
 import InfoTooltip from "@/components/ui/info-tooltip";
 import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
-import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType, InboxStatus } from "@/types/artifact";
+import type { ServiceModeEnvelope, ArtifactCard as ArtifactCardType } from "@/types/artifact";
 import type { UrgencyLevel } from "@/components/ui/urgency-badge";
 
 // ---------------------------------------------------------------------------
-// Inbox status grouping (P5-01)
+// Inbox grouping by intervention_category (event-driven, not lifecycle status)
 // ---------------------------------------------------------------------------
 
 /**
- * Three canonical inbox groups as defined in the Stitch design spec and
- * phase-5-inbox-reskin.md §"Design Reference: Inbox Stitch PNG".
+ * Three action-oriented inbox groups derived from the backend-computed
+ * `intervention_category` field on each ArtifactCard.
  *
- * Backend inbox status enum: "new" | "needs_compile" | "needs_destination"
- * Values are consumed directly from ArtifactCard.status (MISMATCH-04 resolved).
+ * Ordered by urgency: Needs Fixes (most urgent) → Needs Compile → Needs Review.
+ *
+ * "ready" artifacts are excluded (backend should not return them in the inbox
+ * endpoint, but we guard against it anyway). Null / unknown values fall back
+ * to "needs_compile" as the safest conservative triage action.
+ *
+ * The old status-based STATUS_TO_GROUP and InboxStatus dependency are removed.
+ * intervention_category is the authoritative source for inbox grouping.
  */
-type InboxGroup = InboxStatus;
+type InboxGroup = "needs_fix" | "needs_compile" | "needs_review";
 
-const STATUS_TO_GROUP: Record<string, InboxGroup> = {
-  // Backend inbox enum values map 1:1 to groups
-  new: "new",
+const CATEGORY_TO_GROUP: Record<string, InboxGroup> = {
+  needs_fix:     "needs_fix",
   needs_compile: "needs_compile",
-  needs_destination: "needs_destination",
-  // Forward-compat: needs_review maps to compile group (may be emitted by future classifiers)
-  needs_review: "needs_compile",
+  needs_review:  "needs_review",
+  // Legacy status tokens — forward-compat bridge for items not yet re-classified
+  new:           "needs_compile",
+  // "ready" is excluded from inbox; guard maps it to needs_compile if it leaks through
+  ready:         "needs_compile",
 };
 
-const GROUP_ORDER: InboxGroup[] = ["new", "needs_compile", "needs_destination"];
+/** Urgency-ordered group render order (most urgent first). */
+const GROUP_ORDER: InboxGroup[] = ["needs_fix", "needs_compile", "needs_review"];
 
 const GROUP_LABELS: Record<InboxGroup, string> = {
-  new: "NEW",
+  needs_fix:     "NEEDS FIXES",
   needs_compile: "NEEDS COMPILE",
-  needs_destination: "NEEDS DESTINATION",
+  needs_review:  "NEEDS REVIEW",
 };
 
 // P1-06 (v2.3 onboarding): tooltip copy keys for each section header.
-// Defined as a constant to avoid constructing JSX in the module body;
-// the actual <InfoTooltip> elements are created inline in the render loop
-// using these content strings pulled from the finalized TOOLTIP_COPY.inbox keys.
 const GROUP_TOOLTIP_CONTENT: Record<InboxGroup, string> = {
-  new: TOOLTIP_COPY.inbox.sectionNew,
+  needs_fix:     TOOLTIP_COPY.inbox.sectionNeedsCompile, // reuse closest available copy
   needs_compile: TOOLTIP_COPY.inbox.sectionNeedsCompile,
-  needs_destination: TOOLTIP_COPY.inbox.sectionNeedsDestination,
+  needs_review:  TOOLTIP_COPY.inbox.sectionNeedsDestination, // closest available copy
 };
 
 /** Derive urgency for the whole group based on whether any item is >24h old.
@@ -136,19 +141,28 @@ function deriveGroupUrgency(
   return hasWarn ? "warn" : "normal";
 }
 
-/** Partition artifacts into the three inbox groups. Items with missing /
- *  unrecognised status fall back to "needs_compile" (documented above).
+/**
+ * Partition artifacts into inbox groups using `intervention_category`.
+ *
+ * Primary key: artifact.intervention_category (backend-computed).
+ * Fallback: artifact.status via CATEGORY_TO_GROUP bridge (for items not yet
+ * assigned an intervention_category by the backend).
+ * "ready" artifacts and unknown values → "needs_compile" (safe default).
  */
 function groupArtifacts(
   artifacts: ArtifactCardType[],
 ): Record<InboxGroup, ArtifactCardType[]> {
   const groups: Record<InboxGroup, ArtifactCardType[]> = {
-    new: [],
+    needs_fix:     [],
     needs_compile: [],
-    needs_destination: [],
+    needs_review:  [],
   };
   for (const artifact of artifacts) {
-    const group: InboxGroup = STATUS_TO_GROUP[artifact.status] ?? "needs_compile";
+    // Prefer intervention_category; fall back to status-based bridge
+    const categoryKey = artifact.intervention_category ?? artifact.status;
+    // "ready" should not appear in inbox — exclude it rather than misfiling
+    if (categoryKey === "ready") continue;
+    const group: InboxGroup = CATEGORY_TO_GROUP[categoryKey] ?? "needs_compile";
     groups[group].push(artifact);
   }
   return groups;
@@ -693,9 +707,9 @@ export function InboxClient({ initialData }: InboxClientProps) {
     }
     // Find the first artifact across groups in GROUP_ORDER order
     const firstArtifact =
-      groups["new"][0] ??
+      groups["needs_fix"][0] ??
       groups["needs_compile"][0] ??
-      groups["needs_destination"][0] ??
+      groups["needs_review"][0] ??
       null;
     if (firstArtifact) {
       setSelectedItem(firstArtifact);
@@ -809,8 +823,9 @@ export function InboxClient({ initialData }: InboxClientProps) {
                 // the triage structure even when a group is empty.
                 const urgency = items.length > 0 ? deriveGroupUrgency(items) : "normal";
                 const tourAttr =
-                  groupKey === "new" ? "inbox-new-section"
+                  groupKey === "needs_fix" ? "inbox-needs-fix-section"
                   : groupKey === "needs_compile" ? "inbox-needs-compile-section"
+                  : groupKey === "needs_review" ? "inbox-needs-review-section"
                   : undefined;
                 return (
                   <div key={groupKey} {...(tourAttr ? { "data-tour": tourAttr } : {})}>
@@ -836,7 +851,7 @@ export function InboxClient({ initialData }: InboxClientProps) {
                     // approach that surfaces the urgencyBadge copy exactly once
                     // per page load, satisfying AC-4 (PRD §P1-06 count = 7).
                     rightInfo={
-                      groupKey === "new" ? (
+                      groupKey === "needs_fix" ? (
                         <InfoTooltip
                           content={TOOLTIP_COPY.inbox.urgencyBadge}
                           icon="info"
@@ -862,13 +877,15 @@ export function InboxClient({ initialData }: InboxClientProps) {
                         {items.map((artifact, index) => {
                           const { level, minutesAgo } = deriveItemUrgency(artifact);
                           return (
-                            <li key={artifact.id} {...(groupKey === "new" && index === 0 ? { "data-tour": "inbox-urgency-badge" } : {})}>
+                            <li key={artifact.id} {...(groupKey === "needs_fix" && index === 0 ? { "data-tour": "inbox-urgency-badge" } : {})}>
                               {/*
-                               * FE-04: needs_compile group gets InboxItemWithCompile
-                               * (includes compile button + per-item error state).
+                               * FE-04: needs_compile and needs_fix groups get
+                               * InboxItemWithCompile (includes compile button +
+                               * per-item error state). needs_fix items also benefit
+                               * from a re-compile action after fixing issues.
                                * All other groups get the plain SelectableCardWrapper.
                                */}
-                              {groupKey === "needs_compile" ? (
+                              {groupKey === "needs_compile" || groupKey === "needs_fix" ? (
                                 <InboxItemWithCompile
                                   artifact={artifact}
                                   inboxGroup={groupKey}
