@@ -51,6 +51,18 @@ Any action that modifies vault content (compile, ingest, promote, lint) must go 
 ### Sibling @miethe/ui dependency
 `@miethe/ui` is wired via `"file:../skillmeat/skillmeat/web/packages/ui"` — a `file:` protocol path to the pre-built `dist/` in the sibling skillmeat monorepo. It is NOT published to npm. The package must be rebuilt (`pnpm build` inside the ui package) whenever upstream changes; CI must have the skillmeat repo checked out as a sibling. Added in P6-02 (v1.6) to provide `ContentPane`, `rehype-sanitize` helpers, and other shared components for the content-viewer gate.
 
+## Concurrent Work & Worktree Isolation
+
+This repo is a shared checkout with a single working tree. When subagents implement changes as part of parallel or background jobs, they must work in a **dedicated git worktree**, not the shared tree. A concurrent job's `git checkout`, branch switch, or `git reset --hard` will silently destroy uncommitted edits in the shared tree.
+
+**Before editing in a parallel context:**
+- Create a dedicated worktree off the intended base branch: `git worktree add -b <feature-branch> <path> main`
+- Implement and commit changes in the isolated worktree
+- No other concurrent job will destroy work committed to git
+- After merge, the worktree can be removed: `git worktree remove <path>`
+
+**If uncommitted work is destroyed** by a concurrent reset, recover by saving the diff and re-applying it in a fresh worktree off main, then fast-forward the shared tree.
+
 ## Authoritative Documents
 
 Read these (in the sibling backend repo) before implementing any P3 task:

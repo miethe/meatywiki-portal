@@ -3743,7 +3743,7 @@ export function VaultGraphPageClient() {
       {/* ------------------------------------------------------------------ */}
       {/* Breadcrumb + page header (P3-01)                                    */}
       {/* ------------------------------------------------------------------ */}
-      <header className="flex flex-wrap items-start justify-between gap-3 shrink-0">
+      <header className="flex flex-wrap items-start justify-between gap-3 shrink-0 relative z-[60]">
         {/* Breadcrumb */}
         <nav aria-label="Breadcrumb" className="w-full">
           <ol className="flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -3874,6 +3874,7 @@ export function VaultGraphPageClient() {
           shortcutKey="a"
           title="Actions"
           collapsedIcon={<Wrench className="size-5" />}
+          wrapperClassName="top-24"
         >
           <div className="flex flex-col gap-3">
             {/* Zoom controls */}
@@ -4071,6 +4072,7 @@ export function VaultGraphPageClient() {
             shortcutKey="f"
             title="Filters"
             collapsedIcon={<Filter className="size-5" />}
+            wrapperClassName="top-24"
           >
             {/* Active-filter count badge rendered in panel body header */}
             {activeFilterCount > 0 && (

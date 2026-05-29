@@ -65,6 +65,12 @@ export interface FloatingPanelProps {
   shortcutKey?: string;
   /** Displayed in the panel header. Also used as aria-label for the region. */
   title?: string;
+  /**
+   * Additional classes applied to the outermost fixed-position wrapper div.
+   * Use to override anchor offset (e.g. "top-24" to clear a floating header)
+   * or to add supplemental layout tweaks without touching the base styles.
+   */
+  wrapperClassName?: string;
   children: React.ReactNode;
 }
 
@@ -139,6 +145,7 @@ export function FloatingPanel({
   collapsedIcon,
   shortcutKey,
   title,
+  wrapperClassName,
   children,
 }: FloatingPanelProps) {
   const [mounted, setMounted] = useState(false);
@@ -283,6 +290,7 @@ export function FloatingPanel({
         "fixed z-50",
         anchorClasses,
         open ? "pointer-events-auto" : "pointer-events-none",
+        wrapperClassName,
       )}
       // Prevent accidental propagation of non-shortcut keys from child inputs
       // reaching the window listener above
