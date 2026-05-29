@@ -69,6 +69,8 @@ import { useCompileArtifact } from "@/hooks/useCompileArtifact";
 import { useCompileEvents } from "@/hooks/useCompileEvents";
 import { useInboxPending } from "@/hooks/useInboxPending";
 import { PendingApprovalPanel } from "@/components/inbox/PendingApprovalPanel";
+import { InboxBatchCompileHeader } from "@/components/inbox/InboxBatchCompileHeader";
+import { useCompileBatch } from "@/hooks/useCompileBatch";
 import { invalidateActivityCache } from "@/lib/api/artifacts";
 import InfoTooltip from "@/components/ui/info-tooltip";
 import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
@@ -434,6 +436,10 @@ interface InboxItemWithCompileProps {
   isSelected: boolean;
   onSelect: (artifact: ArtifactCardType) => void;
   onCompileSuccess: (artifactId: string) => void;
+  /** P2-01: called with epoch-ms when compile POST returns 202 */
+  onCompileStart?: (artifactId: string, startTimeMs: number) => void;
+  /** P2-01: called when SSE terminal event arrives */
+  onCompileTerminal?: (artifactId: string, isSuccess: boolean) => void;
 }
 
 function InboxItemWithCompile({
@@ -444,6 +450,8 @@ function InboxItemWithCompile({
   isSelected,
   onSelect,
   onCompileSuccess,
+  onCompileStart,
+  onCompileTerminal,
 }: InboxItemWithCompileProps) {
   // P3-02: SSE streaming state — enabled after 202 ACK from compile POST.
   const [sseEnabled, setSseEnabled] = useState(false);
@@ -459,12 +467,14 @@ function InboxItemWithCompile({
   useEffect(() => {
     if (terminal?.status === "success") {
       onCompileSuccess(artifact.id);
+      onCompileTerminal?.(artifact.id, true);
     }
     if (terminal?.status === "error" && terminal.error) {
       setSseError(terminal.error);
       setSseEnabled(false);
+      onCompileTerminal?.(artifact.id, false);
     }
-  }, [terminal, artifact.id, onCompileSuccess]);
+  }, [terminal, artifact.id, onCompileSuccess, onCompileTerminal]);
 
   // P3-06: Item-level compile error (from HTTP POST, not SSE).
   const [httpError, setHttpError] = useState<string | null>(null);
@@ -493,12 +503,14 @@ function InboxItemWithCompile({
 
   // --- Compile Button ---
   // After 202 ACK: enable SSE, show stage indicator, disable button.
+  // P2-01: notify InboxClient of compile start for batch grouping.
   const handleCompileSuccess202 = useCallback(() => {
     setSseEnabled(true);
     setStageIndicatorVisible(true);
     setHttpError(null);
     setSseError(null);
-  }, []);
+    onCompileStart?.(artifact.id, Date.now());
+  }, [artifact.id, onCompileStart]);
 
   const { compile, isCompiling } = useCompileArtifact({
     artifactId: artifact.id,
@@ -629,6 +641,17 @@ interface InboxClientProps {
 }
 
 // ---------------------------------------------------------------------------
+// Batch compile state helpers (P2-01)
+// ---------------------------------------------------------------------------
+
+/** Per-artifact compile state tracked at InboxClient level for batch grouping. */
+interface ArtifactCompileState {
+  startTimeMs: number;
+  isTerminal: boolean;
+  isSuccess: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Main client component
 // ---------------------------------------------------------------------------
 
@@ -645,6 +668,49 @@ export function InboxClient({ initialData }: InboxClientProps) {
   // group. The row stays in needs_compile with CompileButton's own isCompiling
   // feedback until SSE/poll delivers a terminal event (future phase).
   const compilingIdsRef = useRef<Set<string>>(new Set<string>());
+
+  // P2-01: per-artifact compile state for batch grouping.
+  const [compileStateMap, setCompileStateMap] = useState<
+    Map<string, ArtifactCompileState>
+  >(new Map());
+
+  const handleBatchCompileStart = useCallback(
+    (artifactId: string, startTimeMs: number) => {
+      setCompileStateMap((prev) => {
+        const next = new Map(prev);
+        next.set(artifactId, { startTimeMs, isTerminal: false, isSuccess: false });
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleBatchCompileTerminal = useCallback(
+    (artifactId: string, isSuccess: boolean) => {
+      setCompileStateMap((prev) => {
+        const existing = prev.get(artifactId);
+        if (!existing) return prev;
+        const next = new Map(prev);
+        next.set(artifactId, { ...existing, isTerminal: true, isSuccess });
+        return next;
+      });
+    },
+    [],
+  );
+
+  // Derive batch entries from compileStateMap for useCompileBatch.
+  const batchEntries = useMemo(
+    () =>
+      Array.from(compileStateMap.entries()).map(([artifactId, state]) => ({
+        artifactId,
+        startTimeMs: state.startTimeMs,
+        isTerminal: state.isTerminal,
+        isSuccess: state.isSuccess,
+      })),
+    [compileStateMap],
+  );
+
+  const { batch, isBatch } = useCompileBatch({ entries: batchEntries });
 
   const { artifacts, hasMore, isLoading, error, loadMore, processedItems, refreshProcessed, removeArtifact } =
     useInboxArtifacts({ initialData, includeProcessed: true });
@@ -869,6 +935,43 @@ export function InboxClient({ initialData }: InboxClientProps) {
                         Nothing here
                       </p>
                     ) : (
+                      /*
+                       * P2-01: When ≥2 artifacts in this group are compiling
+                       * concurrently (within BATCH_WINDOW_MS), wrap them in the
+                       * InboxBatchCompileHeader disclosure. The batch only covers
+                       * the needs_compile group — the batch state map tracks items
+                       * that called onCompileStart, which can only come from
+                       * InboxItemWithCompile rows.
+                       *
+                       * Single-artifact / no-batch: render the existing ul without
+                       * any batch chrome (isBatch is false → batch is null).
+                       */
+                      isBatch && batch && (groupKey === "needs_compile" || groupKey === "needs_fix") ? (
+                        <InboxBatchCompileHeader batch={batch}>
+                          {items.map((artifact, index) => {
+                            const { level, minutesAgo } = deriveItemUrgency(artifact);
+                            return (
+                              <div
+                                key={artifact.id}
+                                role="listitem"
+                                {...(groupKey === "needs_fix" && index === 0 ? { "data-tour": "inbox-urgency-badge" } : {})}
+                              >
+                                <InboxItemWithCompile
+                                  artifact={artifact}
+                                  inboxGroup={groupKey}
+                                  urgencyLevel={level}
+                                  urgencyMinutesAgo={minutesAgo}
+                                  isSelected={selectedItem?.id === artifact.id}
+                                  onSelect={handleSelectItem}
+                                  onCompileSuccess={handleCompileSuccess}
+                                  onCompileStart={handleBatchCompileStart}
+                                  onCompileTerminal={handleBatchCompileTerminal}
+                                />
+                              </div>
+                            );
+                          })}
+                        </InboxBatchCompileHeader>
+                      ) : (
                       <ul
                         role="list"
                         aria-label={`${GROUP_LABELS[groupKey]} artifacts`}
@@ -894,6 +997,8 @@ export function InboxClient({ initialData }: InboxClientProps) {
                                   isSelected={selectedItem?.id === artifact.id}
                                   onSelect={handleSelectItem}
                                   onCompileSuccess={handleCompileSuccess}
+                                  onCompileStart={handleBatchCompileStart}
+                                  onCompileTerminal={handleBatchCompileTerminal}
                                 />
                               ) : (
                                 <SelectableCardWrapper
@@ -909,6 +1014,7 @@ export function InboxClient({ initialData }: InboxClientProps) {
                           );
                         })}
                       </ul>
+                      )
                     )}
                   </StatusGroupSection>
                   </div>
