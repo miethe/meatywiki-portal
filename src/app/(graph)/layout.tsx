@@ -46,7 +46,7 @@ export default async function GraphLayout({
   }
 
   return (
-    <div data-page="graph" className="graph-layout-root">
+    <div data-page="graph" className="graph-layout-root dark text-foreground">
       <TooltipProvider delayDuration={300}>{children}</TooltipProvider>
     </div>
   );
