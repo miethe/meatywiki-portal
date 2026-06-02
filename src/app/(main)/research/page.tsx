@@ -43,8 +43,10 @@
  */
 
 import { useCallback, useState } from "react";
+import Link from "next/link";
 import { ChevronDown, FlaskConical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { TypeBadge } from "@/components/ui/type-badge";
 import { ContextRail } from "@/components/layout/ContextRail";
 import { ResearchWorkspaceEmpty } from "@/components/research/ResearchWorkspaceEmpty";
 import { PriorityTopicsGrid } from "@/components/research/PriorityTopicsGrid";
@@ -62,6 +64,8 @@ import { TOOLTIP_COPY } from "@/lib/copy/tooltips";
 import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 import { InitiationWizardDialog } from "@/components/workflow/initiation-wizard";
 import { getWorkflowRunDetail } from "@/lib/api/research";
+import { useRecentSyntheses } from "@/hooks/useRecentSyntheses";
+import { useTopics } from "@/hooks/useTopics";
 import type { ResearchRun } from "@/types/research-runs";
 import type { ExternalResearchPackageFields } from "@/hooks/useWorkflowWizardState";
 import type { RouteCard, RoutePreference } from "@/types/workflows/research";
@@ -80,35 +84,70 @@ function Shimmer({ className }: { className?: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// WorkspaceSelector — skeleton dropdown (not yet wired)
+// WorkspaceSelector — topic scope dropdown (GET /api/topics via useTopics)
 // ---------------------------------------------------------------------------
 
+interface WorkspaceSelectorProps {
+  /** Currently selected topic ID; null = "All Entities". */
+  selectedTopicId: string | null;
+  onChange: (topicId: string | null) => void;
+}
+
 /**
- * Skeleton workspace selector dropdown.
- * Displays "All Entities" label. Not interactive until topic scope API ships.
+ * Topic scope selector for the Research Home header.
  *
- * TODO: wire GET /api/topics to populate dropdown options.
- *       Replace with a real <Select> component bound to topic scope state.
+ * Wired to GET /api/topics via the useTopics hook (mirrors TopicScopeDropdown
+ * on the sibling research pages surface). The selected topic feeds the
+ * dependent bento panels (New Evidence) so they re-scope to the chosen topic.
+ *
+ * Renders a compact pill-styled <select> matching the header chrome. Stays
+ * graceful when the topic list is empty or the request fails — selection
+ * defaults to "All Entities" and remains usable.
  */
-function WorkspaceSelector() {
+function WorkspaceSelector({ selectedTopicId, onChange }: WorkspaceSelectorProps) {
+  const { topics, isLoading, isError } = useTopics();
+
   return (
-    <button
-      type="button"
-      disabled
-      aria-label="Workspace selector — All Entities (planned)"
-      aria-disabled="true"
-      aria-haspopup="listbox"
-      title="Topic scope selector — coming soon"
-      className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-md border bg-card px-3",
-        "text-xs font-medium text-muted-foreground",
-        "cursor-default opacity-70",
-        "focus:outline-none",
-      )}
-    >
-      All Entities
-      <ChevronDown aria-hidden="true" className="size-3.5" />
-    </button>
+    <div className="relative inline-flex">
+      <select
+        aria-label="Topic scope selector"
+        value={selectedTopicId ?? ""}
+        onChange={(e) => {
+          const v = e.target.value;
+          onChange(v === "" ? null : v);
+        }}
+        disabled={isLoading}
+        className={cn(
+          "h-8 appearance-none rounded-md border bg-card pl-3 pr-7",
+          "text-xs font-medium text-muted-foreground",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          "disabled:cursor-not-allowed disabled:opacity-70",
+        )}
+      >
+        {isLoading ? (
+          <option value="">Loading topics…</option>
+        ) : (
+          <>
+            <option value="">All Entities</option>
+            {isError ? (
+              <option value="" disabled>
+                — failed to load topics —
+              </option>
+            ) : (
+              topics.map((topic) => (
+                <option key={topic.id} value={topic.id}>
+                  {topic.title}
+                </option>
+              ))
+            )}
+          </>
+        )}
+      </select>
+      <ChevronDown
+        aria-hidden="true"
+        className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+      />
+    </div>
   );
 }
 
@@ -117,20 +156,99 @@ function WorkspaceSelector() {
 // ---------------------------------------------------------------------------
 
 /**
- * Skeleton rows for "Recent Syntheses" rail section.
+ * Recent Syntheses rail section — live list from GET /api/research/recent-syntheses.
  *
- * TODO: wire GET /api/research/recent-syntheses to populate real rows.
+ * Renders compact rows (type badge + linked title + updated date) with
+ * loading / empty / error states consistent with the sibling research
+ * surface components (NewEvidenceColumn / EvidencePulsePanel).
  */
-function RecentSynthesesSkeleton() {
+function RecentSynthesesPanel() {
+  const { syntheses, isLoading, isError, error } = useRecentSyntheses({ limit: 6 });
+
+  if (isLoading) {
+    return (
+      <div aria-busy="true" aria-label="Recent syntheses loading" className="flex flex-col gap-2">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} aria-hidden="true" className="flex flex-col gap-1">
+            <Shimmer className="h-3.5 w-4/5" />
+            <Shimmer className="h-3 w-1/2" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground"
+      >
+        <p className="font-medium text-destructive">Failed to load recent syntheses.</p>
+        {error?.message && (
+          <p className="mt-0.5 text-[10px] opacity-70">{error.message}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (syntheses.length === 0) {
+    return (
+      <div
+        role="status"
+        aria-label="No recent syntheses"
+        className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground"
+      >
+        No recent syntheses yet.
+      </div>
+    );
+  }
+
   return (
-    <div aria-busy="true" aria-label="Recent syntheses loading" className="flex flex-col gap-2">
-      {Array.from({ length: 4 }, (_, i) => (
-        <div key={i} aria-hidden="true" className="flex flex-col gap-1">
-          <Shimmer className="h-3.5 w-4/5" />
-          <Shimmer className="h-3 w-1/2" />
-        </div>
-      ))}
-    </div>
+    <ul
+      role="list"
+      aria-label={`Recent syntheses — ${syntheses.length} item${syntheses.length !== 1 ? "s" : ""}`}
+      className="flex flex-col gap-2"
+    >
+      {syntheses.map((item) => {
+        const updatedLabel = item.updated
+          ? new Date(item.updated).toLocaleDateString(undefined, {
+              month: "short",
+              day: "numeric",
+            })
+          : null;
+        return (
+          <li
+            key={item.id}
+            className="flex items-center gap-2 border-b border-border/50 pb-2 last:border-b-0 last:pb-0"
+          >
+            {item.subtype && (
+              <span className="shrink-0">
+                <TypeBadge type={item.subtype} />
+              </span>
+            )}
+            <Link
+              href={`/artifact/${item.id}`}
+              className={cn(
+                "min-w-0 flex-1 truncate text-sm font-medium text-foreground leading-snug",
+                "hover:underline underline-offset-2",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+              )}
+            >
+              {item.title}
+            </Link>
+            {updatedLabel && (
+              <time
+                dateTime={item.updated ?? undefined}
+                className="shrink-0 text-[10px] tabular-nums text-muted-foreground"
+              >
+                {updatedLabel}
+              </time>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -176,8 +294,7 @@ const RESEARCH_HOME_RAIL_TABS = [
     label: "Syntheses",
     renderContent: () => (
       <div className="flex flex-col gap-3 pt-2">
-        {/* TODO: wire GET /api/research/recent-syntheses */}
-        <RecentSynthesesSkeleton />
+        <RecentSynthesesPanel />
       </div>
     ),
   },
@@ -328,6 +445,12 @@ function SectionHeading({
 
 export default function ResearchHomePage() {
   // --------------------------------------------------------------------------
+  // Topic scope state — feeds the header selector + dependent bento panels.
+  // null = "All Entities" (no topic filter).
+  // --------------------------------------------------------------------------
+  const [selectedTopicId, setSelectedTopicId] = useState<string | null>(null);
+
+  // --------------------------------------------------------------------------
   // Draft re-entry state (P5-03)
   // --------------------------------------------------------------------------
 
@@ -407,11 +530,10 @@ export default function ResearchHomePage() {
         </div>
 
         <div className="flex items-center gap-2">
-          {/*
-           * TODO: wire GET /api/topics to populate dropdown options.
-           * Replace WorkspaceSelector with a real Select bound to topic scope.
-           */}
-          <WorkspaceSelector />
+          <WorkspaceSelector
+            selectedTopicId={selectedTopicId}
+            onChange={setSelectedTopicId}
+          />
 
           {/*
            * P1-01: "Start Research" CTA — opens research wizard pre-configured
@@ -466,12 +588,9 @@ export default function ResearchHomePage() {
            * Collapses to single column below 768px.
            */}
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            {/* New Evidence — skeleton rows */}
-            {/*
-             * TODO: wire GET /api/research/evidence-pulse/new.
-             * NewEvidenceColumn renders skeleton items with timestamp shimmers.
-             */}
-            <NewEvidenceColumn />
+            {/* New Evidence — live via GET /api/research/evidence-pulse/new. */}
+            {/* Scoped to the header topic selector when one is chosen.        */}
+            <NewEvidenceColumn topicId={selectedTopicId ?? undefined} />
 
             {/* Contradictions panel — P7-02: LIVE (wired to backend)          */}
             {/* GET /api/artifacts/research/contradictions                      */}

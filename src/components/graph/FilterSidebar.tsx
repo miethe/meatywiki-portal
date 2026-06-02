@@ -23,7 +23,7 @@
  * v2.2 — vault graph filter overhaul (P3-01).
  */
 
-import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { SlidersHorizontal, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FilterPanelContent } from "./FilterPanelContent";
@@ -289,16 +289,16 @@ export function FilterSidebar({
         "self-stretch",
         className,
       )}
-      style={{
-        // CSS width transition: 280px ↔ 48px at 200ms easeInOutCubic
-        // Using inline style for the timing function because Tailwind doesn't
-        // expose arbitrary cubic-bezier in transition-timing-function utilities.
-        width: open ? "280px" : "48px",
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore — valid CSS property; TS doesn't model all vendor/spec keys
-        transition: "width 200ms cubic-bezier(0.65, 0, 0.35, 1)",
-        minWidth: open ? "280px" : "48px",
-      }}
+      style={
+        {
+          // CSS width transition: 280px ↔ 48px at 200ms easeInOutCubic
+          // Using inline style for the timing function because Tailwind doesn't
+          // expose arbitrary cubic-bezier in transition-timing-function utilities.
+          width: open ? "280px" : "48px",
+          transition: "width 200ms cubic-bezier(0.65, 0, 0.35, 1)",
+          minWidth: open ? "280px" : "48px",
+        } as CSSProperties
+      }
     >
       {open ? (
         // ── Open (expanded) panel ──────────────────────────────────────────

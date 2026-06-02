@@ -13,8 +13,6 @@
  * The reducer is pure — no async logic. All network calls live in the named
  * action helpers (submitPackage, handoff) which dispatch before/after each
  * fetch. See §4 "Side-effect boundary" in the design doc.
- *
- * P4-02 scaffold. TODO bodies are filled in by P4-03/04/05.
  */
 
 import React, { createContext, useCallback, useContext, useReducer } from "react";
@@ -415,7 +413,7 @@ function reducer<TFields extends Record<string, unknown>>(
 }
 
 // ---------------------------------------------------------------------------
-// API helpers (TODO: move to src/lib/api/external-research.ts in P4-03)
+// API helpers
 // ---------------------------------------------------------------------------
 
 /** POST /api/workflows/external-research/routing-analysis */
@@ -519,7 +517,6 @@ async function createExternalResearch(
     background: fields.background || undefined,
   };
 
-  // TODO P4-03: wire to real endpoint using apiFetch
   return apiFetch<CreateRunResponse>("/workflows/external-research", {
     method: "POST",
     body: JSON.stringify(body),

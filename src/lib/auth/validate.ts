@@ -76,8 +76,11 @@ export async function validateTokenWithBackend(
           detail?: string;
         };
         reason = body.error ?? body.detail ?? reason;
-      } catch {
-        // ignore parse error
+      } catch (err) {
+        console.warn(
+          "[auth] Failed to parse 401 error detail:",
+          err instanceof Error ? err.message : String(err),
+        );
       }
       return { valid: false, reason };
     }
