@@ -67,7 +67,7 @@ const DOMAIN_OPTIONS: { slug: string; label: string }[] = [
   { slug: "philosophy", label: "Philosophy" },
 ];
 
-const DESIRED_OUTPUT_OPTIONS: { value: DesiredOutput | "comparison" | "evidence_summary" | "custom"; label: string }[] = [
+const DESIRED_OUTPUT_OPTIONS: { value: DesiredOutput; label: string }[] = [
   { value: "briefing", label: "Briefing" },
   { value: "comparison", label: "Comparison" },
   { value: "evidence_summary", label: "Evidence Summary" },
@@ -366,9 +366,14 @@ export function ResearchPackageBuilder() {
         if (result.hasFieldErrors) {
           setUploadState("error");
           setUploadFieldErrors(result.fieldErrors);
-          setUploadErrorMessage(null);
+          setUploadErrorMessage(
+            result.message ??
+              (result.fieldErrors.length === 0
+                ? "Package validation failed — file does not match the research package schema."
+                : null),
+          );
         } else {
-          applyUploadedParams(result.data as unknown as Record<string, unknown>);
+          applyUploadedParams(result.data.params as unknown as Record<string, unknown>);
           setUploadState("success");
           setUploadFieldErrors([]);
         }

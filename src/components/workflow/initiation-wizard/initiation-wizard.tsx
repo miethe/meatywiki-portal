@@ -144,6 +144,9 @@ function ResearchInitiationWizardInner({
   }, [actions, state.run_response, router, onClose]);
 
   const isLoading = state.is_fetching_routes || state.is_submitting;
+  const step1Valid =
+    (state.package_fields.topic as string).trim().length > 0 &&
+    (state.package_fields.research_question as string).trim().length > 0;
 
   return (
     <div
@@ -199,7 +202,7 @@ function ResearchInitiationWizardInner({
             <WizardButton
               variant="primary"
               onClick={() => void handleNext()}
-              disabled={isLoading}
+              disabled={isLoading || (state.current_step === 1 && !step1Valid)}
               aria-label="Advance to next step"
             >
               {state.is_fetching_routes ? "Analysing…" : "Next →"}
