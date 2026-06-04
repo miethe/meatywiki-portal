@@ -223,6 +223,8 @@ export interface PackageUploadResult {
   fieldErrors: PackageUploadFieldError[];
   /** True when backend returned 422 (validation failure). */
   hasFieldErrors: boolean;
+  /** Top-level backend error message for 422s without field detail. */
+  message: string | null;
 }
 
 /**
@@ -249,26 +251,43 @@ export async function uploadResearchPackage(
   const response = await fetch(url, { method: "POST", body: form });
 
   if (response.status === 422) {
-    // Parse Pydantic validation error shape: { detail: [{ loc, msg, type }] }
+    // Backend 422 detail is a DICT: { code, message, errors?: PydanticErrorList }
+    // rather than the default FastAPI array shape.
     let fieldErrors: PackageUploadFieldError[] = [];
+    let topLevelMessage: string | null = null;
     try {
       const raw = (await response.json()) as {
-        detail?: { loc?: (string | number)[]; msg?: string }[];
+        detail?:
+          | { loc?: (string | number)[]; msg?: string }[]
+          | { code?: string; message?: string; errors?: { loc?: (string | number)[]; msg?: string }[] };
       };
       if (Array.isArray(raw.detail)) {
+        // (a) Standard FastAPI array shape
         fieldErrors = raw.detail.map((err) => ({
           field: (err.loc ?? []).filter((s) => s !== "body").join("."),
           message: err.msg ?? "Validation error",
         }));
+      } else if (raw.detail !== null && typeof raw.detail === "object") {
+        // (b) Dict shape from the package-upload endpoint
+        const detail = raw.detail as { code?: string; message?: string; errors?: { loc?: (string | number)[]; msg?: string }[] };
+        if (detail.message) topLevelMessage = detail.message;
+        if (Array.isArray(detail.errors)) {
+          fieldErrors = detail.errors.map((err) => ({
+            field: (err.loc ?? []).filter((s) => s !== "body").join("."),
+            message: err.msg ?? "Validation error",
+          }));
+        }
       }
+      // (c) Unparseable → both stay at defaults (empty array, null message)
     } catch {
-      // keep empty fieldErrors
+      // keep empty fieldErrors and null message
     }
     // Return an empty-but-typed data object; callers check hasFieldErrors.
     return {
-      data: { topic: "", research_question: "" },
+      data: { params: { topic: "", research_question: "" }, filename: "", size_bytes: 0 },
       fieldErrors,
       hasFieldErrors: true,
+      message: topLevelMessage,
     };
   }
 
@@ -277,7 +296,7 @@ export async function uploadResearchPackage(
   }
 
   const data = (await response.json()) as PackageUploadResponse;
-  return { data, fieldErrors: [], hasFieldErrors: false };
+  return { data, fieldErrors: [], hasFieldErrors: false, message: null };
 }
 
 /**

@@ -46,7 +46,14 @@ export type RoutePreference =
  * Expected output artifact type produced by the research run.
  * Mirrors: DesiredOutput (StrEnum)
  */
-export type DesiredOutput = "briefing" | "topic_note" | "blog" | "prd";
+export type DesiredOutput =
+  | "briefing"
+  | "topic_note"
+  | "blog"
+  | "prd"
+  | "comparison"
+  | "evidence_summary"
+  | "custom";
 
 /**
  * Controls how the generated prompt instructs the venue to handle citations.
@@ -148,12 +155,10 @@ export interface CreateExternalResearchBody {
 }
 
 /**
- * Response from POST /api/workflows/external-research/package-upload (v2.4).
- *
- * Returns the parsed ExternalResearchParams fields on success (HTTP 200).
- * On validation failure, returns HTTP 422 with field-level errors.
+ * Flat ExternalResearchParams fields returned inside a successful package-upload response.
+ * Mirrors the ExternalResearchParams model in meatywiki/portal/templates.py.
  */
-export interface PackageUploadResponse {
+export interface ExternalResearchPackageParams {
   topic: string;
   research_question: string;
   project?: string[];
@@ -171,6 +176,18 @@ export interface PackageUploadResponse {
   cost_sensitivity?: CostSensitivity;
   reuse_likelihood?: ReuseLikelihood;
   background?: string;
+}
+
+/**
+ * Response from POST /api/workflows/external-research/package-upload (v2.4).
+ *
+ * Backend wraps parsed params in a { params, filename, size_bytes } envelope.
+ * On validation failure, returns HTTP 422 with field-level errors.
+ */
+export interface PackageUploadResponse {
+  params: ExternalResearchPackageParams;
+  filename: string;
+  size_bytes: number;
 }
 
 /**
