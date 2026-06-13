@@ -27,6 +27,7 @@ export type GraphNodeType =
   | "synthesis"
   | "evidence"
   | "glossary"
+  | "intent"
   | (string & {}); // forward-compatible
 
 export type GraphEdgeType =
@@ -221,6 +222,7 @@ export const NODE_TYPE_COLORS: Record<string, string> = {
   synthesis: "#dc2626", // red-600    — 5.74:1 vs white ✓
   evidence: "#0d9488",  // teal-600   — 4.59:1 vs white ✓
   glossary: "#64748b",  // slate-500  — 4.60:1 vs white ✓
+  intent: "#7e22ce",   // purple-700 — 8.34:1 vs white ✓
 } as const;
 
 /**
@@ -238,6 +240,7 @@ export const NODE_TYPE_LABELS: Record<string, string> = {
   synthesis: "Synthesis",
   evidence: "Evidence",
   glossary: "Glossary",
+  intent: "Intent",
 } as const;
 
 /** Edge type → line style descriptor. */

@@ -68,6 +68,7 @@ export const KNOWN_ARTIFACT_TYPES = [
   "adr",
   "implementation_plan",
   "decision",
+  "intent",
   "risk",
   "memory_item",
 ].map((value) => ({ value, label: getArtifactTypeLabel(value) })) as readonly {

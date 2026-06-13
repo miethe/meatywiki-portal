@@ -133,6 +133,16 @@ function DecisionsIcon() {
   );
 }
 
+function IntentsIcon() {
+  return (
+    <svg aria-hidden="true" className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 17a5 5 0 100-10 5 5 0 000 10z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 13a1 1 0 100-2 1 1 0 000 2z" />
+    </svg>
+  );
+}
+
 function GraphIcon() {
   return (
     <svg aria-hidden="true" className="size-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -153,6 +163,7 @@ function getNavSections(): NavSection[] {
         { label: "Blog", href: "/blog", icon: <BlogIcon /> },
         { label: "Projects", href: "/projects", icon: <ProjectsIcon /> },
         { label: "Decisions", href: "/decisions", icon: <DecisionsIcon /> },
+        { label: "Intents", href: "/intents", icon: <IntentsIcon /> },
         { label: "Graph", href: "/graph", ariaLabel: "Knowledge graph", icon: <GraphIcon /> },
       ],
     },

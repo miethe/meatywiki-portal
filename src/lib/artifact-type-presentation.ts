@@ -194,6 +194,12 @@ export const ARTIFACT_TYPE_PRESENTATION: Record<string, ArtifactTypePresentation
       "border-lime-300 bg-lime-100 text-lime-900 dark:border-lime-700 dark:bg-lime-950/50 dark:text-lime-200",
     accentColor: "#65a30d",
   },
+  intent: {
+    label: "Intent",
+    badgeClassName:
+      "border-violet-300 bg-violet-100 text-violet-900 dark:border-violet-700 dark:bg-violet-950/50 dark:text-violet-200",
+    accentColor: "#7c3aed",
+  },
 };
 
 function titleCaseArtifactType(type: string): string {

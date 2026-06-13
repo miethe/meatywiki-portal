@@ -206,6 +206,72 @@ function makeContradictionPair(
 }
 
 // ---------------------------------------------------------------------------
+// Intent stub (Intent Entity v1 — B1)
+// ---------------------------------------------------------------------------
+
+interface IntentDTOStub {
+  id: string;
+  title: string;
+  artifact_type: string;
+  subtype: string | null;
+  status: string;
+  workspace: string;
+  file_path: string;
+  created_at: string;
+  updated_at: string;
+  frontmatter: Record<string, unknown>;
+}
+
+const INTENT_STUB_INTENT_ID = "intent_plan-core-platform";
+
+const intentActiveStub: IntentDTOStub = {
+  id: "intent_01INTENT000000000000001",
+  title: "Core Platform Planning",
+  artifact_type: "intent",
+  subtype: null,
+  status: "active",
+  workspace: "projects",
+  file_path: "projects/intents/core-platform-planning-v1.1.0.md",
+  created_at: "2026-05-01T00:00:00Z",
+  updated_at: "2026-06-01T00:00:00Z",
+  frontmatter: {
+    intent_id: INTENT_STUB_INTENT_ID,
+    intent_version: "1.1.0",
+    layer: "project",
+    intent_status: "active",
+    status: "active",
+    owner: "nick",
+    scope: "Core platform architecture",
+    horizon: "Q3-2026",
+    tags: ["platform", "architecture"],
+  },
+};
+
+const intentSupersededStub: IntentDTOStub = {
+  id: "intent_01INTENT000000000000000",
+  title: "Core Platform Planning",
+  artifact_type: "intent",
+  subtype: null,
+  status: "superseded",
+  workspace: "projects",
+  file_path: "projects/intents/core-platform-planning-v1.0.0.md",
+  created_at: "2026-04-01T00:00:00Z",
+  updated_at: "2026-05-01T00:00:00Z",
+  frontmatter: {
+    intent_id: INTENT_STUB_INTENT_ID,
+    intent_version: "1.0.0",
+    layer: "project",
+    intent_status: "active",
+    status: "superseded",
+    owner: "nick",
+    scope: "Core platform architecture",
+    horizon: "Q3-2026",
+    tags: ["platform"],
+    superseded_by: "intent_01INTENT000000000000001",
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -784,6 +850,57 @@ export const handlers = [
   // Override per-test with mockCompileSuccess() / mockCompileFailure().
   // ------------------------------------------------------------------
   ...compileEventsHandlers,
+
+  // ------------------------------------------------------------------
+  // Intents (Intent Entity v1 — B1)
+  // ------------------------------------------------------------------
+
+  // List intents (GET /api/intents)
+  http.get(`${API_BASE}/api/intents`, () => {
+    return HttpResponse.json({
+      data: [intentActiveStub, intentSupersededStub],
+      cursor: null,
+      etag: "",
+    });
+  }),
+
+  // Get single intent (GET /api/intents/:artId)
+  http.get(`${API_BASE}/api/intents/:artId`, ({ params }) => {
+    const artId = params["artId"] as string;
+    // Return superseded stub if the id matches; otherwise the active one.
+    const stub =
+      artId === intentSupersededStub.id ? intentSupersededStub : intentActiveStub;
+    return HttpResponse.json(stub);
+  }),
+
+  // List intent versions (GET /api/intents/:artId/versions)
+  http.get(`${API_BASE}/api/intents/:artId/versions`, () => {
+    return HttpResponse.json({
+      data: [intentActiveStub, intentSupersededStub],
+      cursor: null,
+      etag: "",
+    });
+  }),
+
+  // Create intent (POST /api/intents)
+  http.post(`${API_BASE}/api/intents`, async ({ request }) => {
+    const body = (await request.json()) as { title?: string };
+    return HttpResponse.json(
+      {
+        artifact_id: "intent_01INTENT000000000000002",
+        message: `Intent '${body.title ?? "Untitled"}' created.`,
+      },
+      { status: 201 },
+    );
+  }),
+
+  // Revise intent (POST /api/intents/:artId/revise)
+  http.post(`${API_BASE}/api/intents/:artId/revise`, ({ params }) => {
+    return HttpResponse.json({
+      artifact_id: params["artId"] as string,
+      message: "Intent revised.",
+    });
+  }),
 
   // ------------------------------------------------------------------
   // Research — contradictions (GET /api/artifacts/research/contradictions)

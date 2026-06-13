@@ -56,7 +56,7 @@
  * aria-disabled; copy button with aria-live announcement.
  */
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -151,6 +151,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getContextPack, listContextPackVersions } from "@/lib/api/projects";
 import type { ContextPack, ContextPackVersion } from "@/types/projects";
+import { listIntentVersions } from "@/lib/api/intents";
+import type { IntentDTO, IntentFrontmatter } from "@/types/intents";
 import dynamic from "next/dynamic";
 
 const ArtifactMiniGraph = dynamic(
@@ -181,6 +183,13 @@ function isContextPackArtifact(artifact: ArtifactDetail): boolean {
     artifact as ArtifactDetail & { artifact_type?: string | null }
   ).artifact_type;
   return artifact.type === "context_pack" || artifactType === "context_pack";
+}
+
+function isIntentArtifact(artifact: ArtifactDetail): boolean {
+  const artifactType = (
+    artifact as ArtifactDetail & { artifact_type?: string | null }
+  ).artifact_type;
+  return artifact.type === "intent" || artifactType === "intent";
 }
 
 function formatContextPackDate(value?: string | null): string {
@@ -1022,6 +1031,222 @@ function ContextPackDetailView({
 }
 
 // ---------------------------------------------------------------------------
+// Intent detail view (Intent Entity v1 — B1)
+// ---------------------------------------------------------------------------
+
+interface IntentDetailViewProps {
+  artifactId: string;
+  versions: IntentDTO[];
+  isLoading: boolean;
+  error: Error | null;
+  onRetry: () => void;
+}
+
+function formatIntentDate(value?: string | null): string {
+  if (!value) return "Not recorded";
+  return new Date(value).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function IntentDetailView({
+  artifactId: _artifactId, // eslint-disable-line @typescript-eslint/no-unused-vars
+  versions,
+  isLoading,
+  error,
+  onRetry,
+}: IntentDetailViewProps) {
+  if (isLoading) {
+    return (
+      <div
+        aria-busy="true"
+        aria-label="Loading intent versions"
+        className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]"
+      >
+        <div className="rounded-md border bg-card p-5">
+          <div className="flex animate-pulse flex-col gap-3">
+            <div className="h-4 w-32 rounded bg-muted" />
+            <div className="h-6 w-2/3 rounded bg-muted" />
+            <div className="h-4 w-full rounded bg-muted" />
+            <div className="h-4 w-3/4 rounded bg-muted" />
+          </div>
+        </div>
+        <div className="rounded-md border bg-card p-4">
+          <div className="flex animate-pulse flex-col gap-3">
+            <div className="h-4 w-28 rounded bg-muted" />
+            <div className="h-12 rounded bg-muted" />
+            <div className="h-12 rounded bg-muted" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div
+        role="alert"
+        className="rounded-md border border-destructive/30 bg-destructive/5 px-6 py-8 text-center"
+      >
+        <p className="text-sm font-semibold text-destructive">
+          Failed to load intent versions
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{error.message}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className={cn(
+            "mt-4 inline-flex h-8 items-center rounded-md border border-destructive/40 px-3 text-xs font-medium text-destructive",
+            "transition-colors hover:bg-destructive/10",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  // The active version is the first in the newest-first list (or undefined if empty).
+  const activeVersion = versions[0];
+  const fm = activeVersion
+    ? (activeVersion.frontmatter as IntentFrontmatter)
+    : null;
+
+  // Definition list entries for the active version summary.
+  const summaryEntries: Array<{ label: string; value: string | null | undefined }> = [
+    { label: "Layer", value: fm?.layer },
+    { label: "Status", value: fm?.intent_status },
+    { label: "Owner", value: fm?.owner },
+    { label: "Scope", value: fm?.scope },
+    { label: "Horizon", value: fm?.horizon },
+    { label: "Project ref", value: fm?.project_ref },
+  ];
+  const definedEntries = summaryEntries.filter((e) => Boolean(e.value));
+
+  return (
+    <div
+      aria-label="Intent detail"
+      className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]"
+    >
+      {/* Active version summary */}
+      <section className="min-w-0 rounded-md border bg-card p-5">
+        <div className="flex flex-col gap-4">
+          <div>
+            <p className="text-xs font-medium uppercase text-muted-foreground">
+              Intent
+            </p>
+            <h2 className="mt-1 text-lg font-semibold text-foreground">
+              {activeVersion?.title ?? "—"}
+            </h2>
+            {fm?.intent_version && (
+              <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                v{fm.intent_version}
+              </p>
+            )}
+          </div>
+
+          {definedEntries.length > 0 && (
+            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs">
+              {definedEntries.map(({ label, value }) => (
+                <React.Fragment key={label}>
+                  <dt className="font-medium text-muted-foreground">
+                    {label}
+                  </dt>
+                  <dd className="text-foreground">
+                    {value}
+                  </dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          )}
+
+          {!activeVersion && (
+            <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+              No intent data available.
+            </p>
+          )}
+        </div>
+      </section>
+
+      {/* Version history aside */}
+      <aside
+        aria-labelledby="intent-versions-heading"
+        className="rounded-md border bg-card p-4"
+      >
+        <h3
+          id="intent-versions-heading"
+          className="text-sm font-semibold text-foreground"
+        >
+          Version history
+        </h3>
+        {versions.length === 0 ? (
+          <p className="mt-3 rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+            No versions recorded.
+          </p>
+        ) : (
+          <ol
+            className="mt-3 flex flex-col gap-2"
+            aria-label="Intent versions"
+          >
+            {versions.map((version) => {
+              const vfm = version.frontmatter as IntentFrontmatter;
+              const semver = vfm.intent_version ?? "—";
+              const isSuperseded =
+                vfm.status === "superseded" ||
+                (!vfm.status && version.status === "superseded");
+              return (
+                <li
+                  key={version.id}
+                  className="rounded-md border bg-background px-3 py-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono text-xs font-semibold text-foreground">
+                      v{semver}
+                    </span>
+                    <span
+                      className={cn(
+                        "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
+                        isSuperseded
+                          ? "bg-muted text-muted-foreground"
+                          : "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                      )}
+                      aria-label={`Version status: ${isSuperseded ? "superseded" : "active"}`}
+                    >
+                      {isSuperseded ? "superseded" : "active"}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <p
+                      className={cn(
+                        "truncate text-xs leading-5",
+                        isSuperseded
+                          ? "text-muted-foreground"
+                          : "text-foreground",
+                      )}
+                    >
+                      {version.title}
+                    </p>
+                    <time
+                      dateTime={version.updated_at}
+                      className="shrink-0 text-[11px] text-muted-foreground"
+                    >
+                      {formatIntentDate(version.updated_at)}
+                    </time>
+                  </div>
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Loading skeleton
 // ---------------------------------------------------------------------------
 
@@ -1510,6 +1735,15 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const isContextPack = effectiveArtifact
     ? isContextPackArtifact(effectiveArtifact)
     : false;
+  const shouldFetchIntentVersions = artifact ? isIntentArtifact(artifact) : false;
+  const intentVersionsQuery = useQuery<ServiceModeEnvelope<IntentDTO>, Error>({
+    queryKey: ["intents", id, "versions"],
+    queryFn: () => listIntentVersions(id, { limit: 50 }),
+    enabled: shouldFetchIntentVersions,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const isIntent = effectiveArtifact ? isIntentArtifact(effectiveArtifact) : false;
 
   // ---- Toast notifications (P2-06) ----
   const {
@@ -1766,6 +2000,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
   const artifactStatus = detailArtifact.status as string;
   const showCompileAction =
     !isContextPack &&
+    !isIntent &&
     (artifactStatus === "needs_review" || artifactStatus === "inbox");
 
   // Build rail actions dynamically so Compile Now can have a real onClick
@@ -1803,7 +2038,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
       icon: reviewMutation.isPending ? Loader2 : CheckSquare,
     },
     // P4-FE-007: Reclassify artifact type
-    ...(!isContextPack
+    ...(!isContextPack && !isIntent
       ? [
           {
             label: "Reclassify",
@@ -1816,7 +2051,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
         ]
       : []),
     // P4-FE-008: Lint Scope
-    ...(!isContextPack
+    ...(!isContextPack && !isIntent
       ? [
           {
             label: lintScopeMutation.isPending ? "Running…" : "Lint Scope",
@@ -1906,24 +2141,30 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
         {/* Main content column — scrolls independently of the rail and of   */}
         {/* the locked top region. pr-1 keeps cards clear of the scrollbar.  */}
         <div className="flex h-full min-w-0 flex-1 flex-col gap-4 overflow-y-auto pr-1" data-tour="artifact-detail-body">
-          {/* Handoff Chain ribbon (P4-04) */}
-          <HandoffChainRibbon
-            artifact={detailArtifact}
-            historicalEvents={historicalEvents}
-            liveEvents={compileEvents}
-            onStageClick={() => setActiveTab("Processing")}
-            onRunLint={
-              lintScopeMutation.isPending
-                ? undefined
-                : () => lintScopeMutation.mutate()
-            }
-          />
+          {/* Handoff Chain ribbon (P4-04) — not shown for intent artifacts */}
+          {!isIntent && (
+            <HandoffChainRibbon
+              artifact={detailArtifact}
+              historicalEvents={historicalEvents}
+              liveEvents={compileEvents}
+              onStageClick={() => setActiveTab("Processing")}
+              onRunLint={
+                lintScopeMutation.isPending
+                  ? undefined
+                  : () => lintScopeMutation.mutate()
+              }
+            />
+          )}
 
-          {/* Inline-editable metadata section (P2-06) */}
-          <EditableMetadataSection
-            artifact={detailArtifact}
-            onSave={handleFieldSave}
-          />
+          {/* Inline-editable metadata section (P2-06) — not shown for context
+              packs or intent artifacts (intent fields are managed via the intent
+              revision API and would be silently dropped on a generic PATCH) */}
+          {!isContextPack && !isIntent && (
+            <EditableMetadataSection
+              artifact={detailArtifact}
+              onSave={handleFieldSave}
+            />
+          )}
 
           {isContextPack ? (
             <ContextPackDetailView
@@ -1940,6 +2181,14 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
                 void contextPackQuery.refetch();
                 void contextPackVersionsQuery.refetch();
               }}
+            />
+          ) : isIntent ? (
+            <IntentDetailView
+              artifactId={id}
+              versions={intentVersionsQuery.data?.data ?? []}
+              isLoading={intentVersionsQuery.isLoading}
+              error={intentVersionsQuery.error ?? null}
+              onRetry={() => void intentVersionsQuery.refetch()}
             />
           ) : (
             <>
