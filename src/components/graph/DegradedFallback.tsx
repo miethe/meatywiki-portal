@@ -364,8 +364,8 @@ export function GraphDataTable({ nodes, totalNodes, onSelectNode }: GraphDataTab
     if (sortState.dir === "none") return nodes;
 
     const sorted = [...nodes].sort((a, b) => {
-      let aVal: any;
-      let bVal: any;
+      let aVal: string | number;
+      let bVal: string | number;
 
       switch (sortState.col) {
         case "title":

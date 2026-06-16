@@ -908,51 +908,6 @@ function applyBoundaryNudgeTick(graph: Graph, canvasAspect: number): boolean {
   return moved;
 }
 
-/**
- * Recenter the layout's centroid to (0, 0) and stretch x so the graph's
- * bounding-box aspect ratio matches `canvasAspect`
- * (= clientWidth / clientHeight). Stretch is skipped when within ±15 %
- * of 1.0 to avoid distorting clusters on portrait viewports.
- *
- * Safe to call on the same graphology graph the FA2 worker uses — the
- * worker writes through to that attribute store, so mutating x/y here is
- * visible to FA2 on its next tick.
- *
- * @deprecated Superseded by shapeGraphToRectangle (see follow-up).
- */
-function rectangularizeAndRecenter(graph: Graph, canvasAspect: number): void {
-  const bounds = computeGraphBounds(graph);
-  if (!bounds) return;
-  const graphW = bounds.maxX - bounds.minX || 1;
-  const graphH = bounds.maxY - bounds.minY || 1;
-  const graphAspect = graphW / graphH;
-  const cx = (bounds.minX + bounds.maxX) / 2;
-  const cy = (bounds.minY + bounds.maxY) / 2;
-  const rawStretch = canvasAspect > 0 ? canvasAspect / graphAspect : 1;
-  const xStretch = Math.abs(rawStretch - 1) < 0.15 ? 1 : rawStretch;
-  graph.forEachNode((id, attrs) => {
-    const x = typeof attrs.x === "number" ? attrs.x : 0;
-    const y = typeof attrs.y === "number" ? attrs.y : 0;
-    graph.setNodeAttribute(id, "x", (x - cx) * xStretch);
-    graph.setNodeAttribute(id, "y", y - cy);
-  });
-}
-
-/** Recenter centroid to (0, 0). No stretch. Used on dynamic-toggle. */
-function recenterGraph(graph: Graph): void {
-  const bounds = computeGraphBounds(graph);
-  if (!bounds) return;
-  const cx = (bounds.minX + bounds.maxX) / 2;
-  const cy = (bounds.minY + bounds.maxY) / 2;
-  if (Math.abs(cx) < 1e-6 && Math.abs(cy) < 1e-6) return;
-  graph.forEachNode((id, attrs) => {
-    const x = typeof attrs.x === "number" ? attrs.x : 0;
-    const y = typeof attrs.y === "number" ? attrs.y : 0;
-    graph.setNodeAttribute(id, "x", x - cx);
-    graph.setNodeAttribute(id, "y", y - cy);
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Sigma inner component — FA2 layout + event registration
 // ---------------------------------------------------------------------------

@@ -290,7 +290,7 @@ export function ReclassifyModal({
                 Re-extract content
               </label>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Run a fresh extraction pass using the new type's schema.
+                Run a fresh extraction pass using the new type&apos;s schema.
               </p>
             </div>
           </div>
