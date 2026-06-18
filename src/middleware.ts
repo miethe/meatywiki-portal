@@ -14,14 +14,15 @@
  *   requests pass through without a session cookie.
  * - The authenticated→/ redirect for auth routes is also skipped so that
  *   /login remains directly reachable (no redirect loop).
- * - Mirrors the same flag check used in src/lib/auth/validate.ts.
+ * - NOTE: this only lifts the Edge gate. Server-side layouts also gate via
+ *   getSession() → redirect("/login"); that path honors the flag in session.ts.
  *
  * EDGE RUNTIME NOTE: Next.js Edge middleware does NOT read process.env at
- * runtime the way Node.js route handlers do. The reference to
- * `process.env.PORTAL_DISABLE_AUTH` below is INLINED AT BUILD TIME by the
- * Next.js bundler. The flag must be present in the environment (e.g. via
- * .env.local) when `pnpm build` runs. A rebuild is required for any change
- * to this flag to take effect in middleware.
+ * runtime, and it only receives NEXT_PUBLIC_* env vars at build time — plain
+ * PORTAL_DISABLE_AUTH is `undefined` here. So the flag is read via
+ * NEXT_PUBLIC_PORTAL_DISABLE_AUTH, which the Edge bundler inlines at
+ * `pnpm build`. Keep it in sync with PORTAL_DISABLE_AUTH in .env.local; a
+ * rebuild is required for any change to take effect in middleware.
  *
  * Matcher excludes:
  * - /api/* routes (handled by route handlers)
@@ -34,11 +35,15 @@ import type { NextRequest } from "next/server";
 import { SESSION_COOKIE_NAME } from "@/lib/auth/cookies";
 
 /**
- * Build-time constant: true when PORTAL_DISABLE_AUTH=1 was set in the
- * environment during `pnpm build`. Inlined by the Edge bundler; a rebuild
- * is required for changes to take effect.
+ * Build-time constant: true when NEXT_PUBLIC_PORTAL_DISABLE_AUTH=1 at
+ * `pnpm build`. Edge middleware only receives NEXT_PUBLIC_* env vars — plain
+ * PORTAL_DISABLE_AUTH resolves to `undefined` in the Edge bundle (neither
+ * .env.local nor next.config `env` reach it), so the flag is mirrored to a
+ * public var purely for this gate decision. Node-runtime gates (validate.ts,
+ * getSession) keep reading PORTAL_DISABLE_AUTH directly at request time.
+ * Inlined by the Edge bundler — a rebuild is required for changes to take effect.
  */
-const AUTH_DISABLED = process.env.PORTAL_DISABLE_AUTH === "1";
+const AUTH_DISABLED = process.env.NEXT_PUBLIC_PORTAL_DISABLE_AUTH === "1";
 
 /** Routes that require authentication (pattern prefix). */
 const MAIN_ROUTES = [

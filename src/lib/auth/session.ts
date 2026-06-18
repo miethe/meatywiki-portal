@@ -30,6 +30,16 @@ export interface Session {
  */
 export async function getSession(): Promise<Session | null> {
   const cookieStore = await cookies();
+
+  // Auth-disabled mode: return a synthetic local session so server-side gates
+  // (layouts calling redirect("/login")) do not fire. cookies() is read ABOVE
+  // first so the route stays dynamic (avoids a static-prerender crash on pages
+  // that fetch live data). Node runtime reads process.env at request time — no
+  // build-time inline needed here (unlike the Edge middleware).
+  if (process.env.PORTAL_DISABLE_AUTH === "1") {
+    return { token: "" };
+  }
+
   const tokenCookie = cookieStore.get(SESSION_COOKIE_NAME);
 
   if (!tokenCookie?.value) {
