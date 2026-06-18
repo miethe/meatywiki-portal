@@ -955,7 +955,7 @@ export default function WorkflowOpsDashboard() {
                 />
               ))}
             </div>
-          ) : data?.in_progress_queue.length === 0 ? (
+          ) : !data || data.in_progress_queue.length === 0 ? (
             <div
               role="status"
               className="flex flex-col items-center gap-2.5 rounded-lg border border-dashed border-slate-700 py-10 text-center"
@@ -977,7 +977,7 @@ export default function WorkflowOpsDashboard() {
               aria-label="In-progress workflow runs"
               className="grid gap-3 sm:grid-cols-2"
             >
-              {data!.in_progress_queue.map((run) => (
+              {data.in_progress_queue.map((run) => (
                 <div key={run.id} role="listitem">
                   <QueueCard run={run} />
                 </div>
