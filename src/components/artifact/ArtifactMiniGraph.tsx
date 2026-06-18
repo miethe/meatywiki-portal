@@ -48,6 +48,7 @@ import FA2Layout from "graphology-layout-forceatlas2/worker";
 // Sigma CSS — imports sigma's WebGL canvas baseline styles.
 // Requires: pnpm add sigma graphology @react-sigma/core graphology-layout-forceatlas2 graphology-types
 import "@react-sigma/core/lib/style.css";
+import { NodeCircleProgram } from "sigma/rendering";
 import {
   ZoomIn,
   ZoomOut,
@@ -1024,6 +1025,11 @@ export function ArtifactMiniGraphInner({
           settings={{
             renderEdgeLabels: false,
             defaultEdgeType: "arrow",
+            defaultNodeType: "circle",
+            // sigma 3.x DEFAULT_SETTINGS.nodeProgramClasses is empty ({}); the
+            // "circle" program must be registered explicitly (imported from "sigma"
+            // main — the same module instance @react-sigma/core uses).
+            nodeProgramClasses: { circle: NodeCircleProgram },
             labelFont: "Inter, sans-serif",
             labelSize: 10,
             // P4-03: label color updated to slate-600 (#475569) — 5.90:1 vs white,

@@ -71,6 +71,7 @@ import {
   useSigma,
 } from "@react-sigma/core";
 import "@react-sigma/core/lib/style.css";
+import { NodeCircleProgram } from "sigma/rendering";
 import Graph from "graphology";
 import circularLayout from "graphology-layout/circular";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
@@ -4523,13 +4524,13 @@ export function VaultGraphPageClient() {
                               renderEdgeLabels: false,
                               defaultEdgeType: "arrow",
                               defaultNodeType: "circle",
-                              // nodeProgramClasses is intentionally omitted: sigma 3.x
-                              // already registers NodeCircleProgram for "circle" via
-                              // DEFAULT_NODE_PROGRAM_CLASSES. Passing an explicit
-                              // override imported from "sigma/rendering" triggers a
-                              // webpack module-instance mismatch (CJS vs. ESM path)
-                              // that causes the "could not find a suitable program for
-                              // node type 'circle'" runtime error on remote deployments.
+                              // sigma 3.x DEFAULT_SETTINGS.nodeProgramClasses is EMPTY
+                              // ({}), so the "circle" node program MUST be registered
+                              // explicitly — otherwise sigma throws "could not find a
+                              // suitable program for node type 'circle'" once nodes are
+                              // rendered. (NodeCircleProgram is looked up by the string
+                              // key "circle", so the import path is not identity-sensitive.)
+                              nodeProgramClasses: { circle: NodeCircleProgram },
                               // Container height may be 0 on initial mount before
                               // the absolute-positioned parent finishes layout;
                               // sigma's resize() retries on container change so
