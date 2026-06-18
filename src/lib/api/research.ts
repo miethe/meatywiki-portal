@@ -451,7 +451,7 @@ export async function fetchTopics(options?: {
   if (options?.cursor) query.set("cursor", options.cursor);
 
   const qs = query.toString();
-  const path = `/topics${qs ? `?${qs}` : ""}`;
+  const path = `/topics/${qs ? `?${qs}` : ""}`;
 
   return apiFetch<TopicsEnvelope>(path, { method: "GET" });
 }

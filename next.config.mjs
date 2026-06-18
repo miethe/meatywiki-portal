@@ -3,6 +3,15 @@ const nextConfig = {
   // Strict mode for catching potential issues early
   reactStrictMode: true,
 
+  // Prevent Next.js from issuing a 308 redirect that strips trailing slashes
+  // before the /api/* rewrite runs. Without this, a request to /api/topics/
+  // gets redirected to /api/topics (no trailing slash), which then proxies to
+  // the backend with no trailing slash — but the FastAPI backend expects
+  // /api/topics/ and would issue its own absolute redirect to its loopback
+  // host, breaking CORS. Setting this to true passes /api/.../ requests
+  // through to the backend unchanged.
+  skipTrailingSlashRedirect: true,
+
   // Transpile sigma.js and graphology — they ship as ESM-only packages and
   // Next.js requires explicit transpilation for non-CJS node_modules.
   transpilePackages: [

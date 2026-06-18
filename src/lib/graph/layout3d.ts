@@ -1,10 +1,10 @@
 /**
- * layout3d.ts — API client for the POST /api/graph/layout-3d endpoint.
+ * layout3d.ts — API client for the POST /api/portal/graph/layout-3d endpoint.
  *
  * Fetches server-precomputed 3D positions for a given snapshot_id.
  *
  * Contract (from portal-v2.5-graph-immersive phase plan REND-003):
- *   POST /api/graph/layout-3d
+ *   POST /api/portal/graph/layout-3d
  *   Body: { snapshot_id: string }
  *   200 OK → { snapshot_id: string; node_count: number; positions: NodePosition3D[] }
  *   422 → { auto_degrade: true } when N > 15 000 nodes
@@ -44,7 +44,7 @@ export class AutoDegradeError extends Error {
  * @throws Error on network or server errors
  */
 export async function fetchLayout3D(snapshotId: string): Promise<Layout3DResponse> {
-  const res = await fetch("/api/graph/layout-3d", {
+  const res = await fetch("/api/portal/graph/layout-3d", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ snapshot_id: snapshotId }),

@@ -71,7 +71,6 @@ import {
   useSigma,
 } from "@react-sigma/core";
 import "@react-sigma/core/lib/style.css";
-import { NodeCircleProgram } from "sigma/rendering";
 import Graph from "graphology";
 import circularLayout from "graphology-layout/circular";
 import FA2Layout from "graphology-layout-forceatlas2/worker";
@@ -704,7 +703,7 @@ function GraphCanvasSkeleton() {
 }
 
 // ---------------------------------------------------------------------------
-// REND-003: 3D loading overlay — shown while /api/graph/layout-3d is in-flight
+// REND-003: 3D loading overlay — shown while /api/portal/graph/layout-3d is in-flight
 // ---------------------------------------------------------------------------
 
 function Graph3DLoadingSkeleton() {
@@ -2381,7 +2380,7 @@ export function VaultGraphPageClient() {
   //   '3d' → GraphRenderer3D (three.js via 3d-force-graph)
   //
   // On 2D→3D switch:
-  //   1. Call POST /api/graph/layout-3d with a snapshot_id derived from current filters
+  //   1. Call POST /api/portal/graph/layout-3d with a snapshot_id derived from current filters
   //   2. Show 3D loading overlay while in-flight
   //   3. On success: inject positions into GraphRenderer3D via graphData3D state
   //   4. On 422 auto_degrade: abort switch, dispatch warning toast (REND-004)
@@ -4524,7 +4523,13 @@ export function VaultGraphPageClient() {
                               renderEdgeLabels: false,
                               defaultEdgeType: "arrow",
                               defaultNodeType: "circle",
-                              nodeProgramClasses: { circle: NodeCircleProgram },
+                              // nodeProgramClasses is intentionally omitted: sigma 3.x
+                              // already registers NodeCircleProgram for "circle" via
+                              // DEFAULT_NODE_PROGRAM_CLASSES. Passing an explicit
+                              // override imported from "sigma/rendering" triggers a
+                              // webpack module-instance mismatch (CJS vs. ESM path)
+                              // that causes the "could not find a suitable program for
+                              // node type 'circle'" runtime error on remote deployments.
                               // Container height may be 0 on initial mount before
                               // the absolute-positioned parent finishes layout;
                               // sigma's resize() retries on container change so
