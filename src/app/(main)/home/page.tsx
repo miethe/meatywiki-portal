@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { StatusStrip } from "@/components/home/status-strip";
 import { WelcomeHeader } from "@/components/shell/welcome-header";
 import { RecentCapturesSection } from "@/components/home/recent-captures-section";
+import { ProjectHomeHub } from "@/components/home/project-home-hub";
 import { HomeLatestSyntheses, HomeRecentWorkflows } from "@/components/home/home-context-rail-content";
 import { ContextRail } from "@/components/ui/context-rail";
 import type { RailSection } from "@/components/ui/context-rail";
@@ -172,7 +173,7 @@ function HomePageInner() {
           aria-label="App Home content"
           className="flex-1 min-w-0 flex flex-col gap-8"
         >
-          {/* Recent Captures */}
+          <ProjectHomeHub />
           <RecentCapturesSection />
         </main>
 
