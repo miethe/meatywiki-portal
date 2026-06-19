@@ -57,8 +57,6 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import type { MouseEvent } from "react";
 import Link from "next/link";
 import {
-  LayoutGrid,
-  List,
   AlertCircle,
   SlidersHorizontal,
   PanelRight,
@@ -67,6 +65,8 @@ import {
   Clock,
   X,
 } from "lucide-react";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/hooks/use-view-mode";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -113,20 +113,6 @@ import { FirstRunOffer } from "@/components/tour/FirstRunOffer";
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type ViewMode = "grid" | "list";
-const VIEW_MODE_KEY = "meatywiki-library-view";
-
-function getInitialViewMode(): ViewMode {
-  if (typeof window === "undefined") return "grid";
-  try {
-    const stored = window.localStorage.getItem(VIEW_MODE_KEY);
-    if (stored === "list" || stored === "grid") return stored;
-  } catch {
-    // localStorage unavailable — fall back to default
-  }
-  return "grid";
-}
 
 // ---------------------------------------------------------------------------
 // Archive filter state (P3-01 stub — real filter logic wired in P3-04)
@@ -182,54 +168,6 @@ function isRollupLens(lens: LibraryLens): boolean {
 /** "all" lens: flat list, no type filter, no rollup */
 function isAllLens(lens: LibraryLens): boolean {
   return lens === "all";
-}
-
-// ---------------------------------------------------------------------------
-// View toggle
-// ---------------------------------------------------------------------------
-
-interface ViewToggleProps {
-  view: ViewMode;
-  onChange: (v: ViewMode) => void;
-}
-
-function ViewToggle({ view, onChange }: ViewToggleProps) {
-  return (
-    <div role="group" aria-label="View layout" className="flex rounded-md border">
-      <button
-        type="button"
-        aria-label="List view"
-        aria-pressed={view === "list"}
-        onClick={() => onChange("list")}
-        className={cn(
-          "inline-flex min-h-[44px] items-center gap-1.5 rounded-l-md border-r px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-          view === "list"
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        )}
-      >
-        <List aria-hidden="true" className="size-3.5" />
-        <span className="hidden sm:inline">List</span>
-      </button>
-      <button
-        type="button"
-        aria-label="Grid view"
-        aria-pressed={view === "grid"}
-        onClick={() => onChange("grid")}
-        className={cn(
-          "inline-flex min-h-[44px] items-center gap-1.5 rounded-r-md px-3 text-xs font-medium transition-colors sm:h-8 sm:min-h-0",
-          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-          view === "grid"
-            ? "bg-accent text-accent-foreground"
-            : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-        )}
-      >
-        <LayoutGrid aria-hidden="true" className="size-3.5" />
-        <span className="hidden sm:inline">Grid</span>
-      </button>
-    </div>
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1031,23 +969,8 @@ function buildRailSections(artifact: ArtifactCardType | null): RailSection[] {
 // ---------------------------------------------------------------------------
 
 function LibraryPageInner() {
-  // View mode — initialised after mount to avoid SSR/hydration mismatch
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setViewMode(getInitialViewMode());
-    setMounted(true);
-  }, []);
-
-  const handleViewChange = useCallback((next: ViewMode) => {
-    setViewMode(next);
-    try {
-      window.localStorage.setItem(VIEW_MODE_KEY, next);
-    } catch {
-      // Ignore localStorage errors
-    }
-  }, []);
+  // View mode — SSR-safe, localStorage-persisted via shared hook
+  const { viewMode, setViewMode: handleViewChange, mounted } = useViewMode("meatywiki-library-view");
 
   // URL sync for lens filters (P4-09)
   const { readFromUrl, syncToUrl } = useLensFilterUrlSync();
@@ -1370,8 +1293,9 @@ function LibraryPageInner() {
                 className={cn(
                   "grid gap-3",
                   viewMode === "grid"
-                    ? // 2-col masonry-style grid; dense packing fills gaps
-                      "grid-cols-1 sm:grid-cols-2 [grid-auto-flow:dense]"
+                    ? // 2-col grid expands to 3-col at 2xl (widest breakpoint) to avoid
+                      // cramping cards next to the xl context rail
+                      "grid-cols-1 sm:grid-cols-2 2xl:grid-cols-3 [grid-auto-flow:dense]"
                     : "grid-cols-1",
                 )}
               >

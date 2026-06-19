@@ -777,7 +777,7 @@ export function ArtifactCard({
                 : "text-xs text-muted-foreground line-clamp-2",
             )}
           >
-            {preview || "No preview available yet."}
+            {preview || "No description yet."}
           </p>
         )}
 

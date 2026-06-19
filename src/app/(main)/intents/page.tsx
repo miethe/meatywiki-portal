@@ -4,7 +4,7 @@
  * Intents list page — Task B2.
  *
  * Displays the full list of intent artifacts, grouped loosely by layer.
- * Each row navigates to /artifact/{id} (the shared artifact detail route).
+ * Each row/card navigates to /artifact/{id} (the shared artifact detail route).
  *
  * API:
  *   GET /api/intents -> ServiceModeEnvelope<IntentDTO>
@@ -16,6 +16,9 @@
  *   - No create-form dialog in this wave (deferred; noted as concern).
  *   - TanStack Query for data fetching, consistent with projects/page.tsx.
  *   - WCAG 2.1 AA: min-h touch targets, focus-visible rings, role="list".
+ *   - Grid/list view toggle persisted to localStorage via useViewMode.
+ *     Grid mode: 1-col → 2-col (sm) → 3-col (xl).
+ *     List mode: IntentRow (original). Grid mode: IntentCard (new).
  */
 
 import Link from "next/link";
@@ -26,10 +29,14 @@ import {
   ChevronRight,
   Calendar,
   Loader2,
+  User,
+  Tag,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { listIntents } from "@/lib/api/intents";
 import type { IntentDTO, IntentFrontmatter, IntentLayer, IntentStatus } from "@/types/intents";
+import { ViewToggle } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/hooks/use-view-mode";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -69,6 +76,23 @@ function formatDate(iso?: string | null): string {
     month: "short",
     day: "numeric",
   });
+}
+
+/** Relative date (e.g. "3 days ago") with fallback to absolute. */
+function formatRelativeDate(iso?: string | null): string {
+  if (!iso) return "—";
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const days = Math.floor(diff / 86_400_000);
+    if (days === 0) return "Today";
+    if (days === 1) return "Yesterday";
+    if (days < 7) return `${days}d ago`;
+    if (days < 30) return `${Math.floor(days / 7)}w ago`;
+    if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+    return `${Math.floor(days / 365)}y ago`;
+  } catch {
+    return formatDate(iso);
+  }
 }
 
 function getFrontmatter(dto: IntentDTO): IntentFrontmatter {
@@ -136,7 +160,7 @@ function StatusBadge({ intentStatus }: StatusBadgeProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Intent row
+// Intent row — LIST-variant renderer (preserved from original)
 // ---------------------------------------------------------------------------
 
 interface IntentRowProps {
@@ -211,7 +235,113 @@ function IntentRow({ intent }: IntentRowProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Loading skeleton
+// Intent card — GRID-variant renderer
+// ---------------------------------------------------------------------------
+
+interface IntentCardProps {
+  intent: IntentDTO;
+}
+
+function IntentCard({ intent }: IntentCardProps) {
+  const fm = getFrontmatter(intent);
+  // Show up to 3 tags
+  const visibleTags = fm.tags?.slice(0, 3) ?? [];
+  const extraTagCount = (fm.tags?.length ?? 0) - visibleTags.length;
+
+  return (
+    <li>
+      <Link
+        href={`/artifact/${encodeURIComponent(intent.id)}`}
+        aria-label={`Open intent: ${intent.title}`}
+        className={cn(
+          "group flex h-full cursor-pointer flex-col gap-3 rounded-lg border bg-card p-4 transition-all",
+          "hover:border-primary/40 hover:bg-accent/30 hover:shadow-sm",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          // Dim superseded entries
+          intent.status === "superseded" && "opacity-60",
+        )}
+      >
+        {/* Top row: icon + layer/status badges */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-violet-50 dark:bg-violet-950/30">
+            <Target
+              aria-hidden="true"
+              className="size-4 text-violet-600 dark:text-violet-400"
+            />
+          </div>
+          <div className="flex flex-wrap items-center justify-end gap-1">
+            <LayerBadge layer={fm.layer} />
+            <StatusBadge intentStatus={fm.intent_status} />
+          </div>
+        </div>
+
+        {/* Title */}
+        <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground group-hover:text-primary">
+          {intent.title}
+        </p>
+
+        {/* Horizon tag */}
+        {fm.horizon && (
+          <span className="inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+            {fm.horizon}
+          </span>
+        )}
+
+        {/* Tag chips — up to 3 */}
+        {visibleTags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1" aria-label="Tags">
+            {visibleTags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-0.5 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+              >
+                <Tag aria-hidden="true" className="size-2.5 shrink-0" />
+                {tag}
+              </span>
+            ))}
+            {extraTagCount > 0 && (
+              <span className="text-[10px] text-muted-foreground">
+                +{extraTagCount}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Spacer pushes footer to bottom of card */}
+        <div className="flex-1" />
+
+        {/* Footer: owner + version + updated */}
+        <div className="flex items-center justify-between gap-2 border-t pt-2.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-1 truncate">
+            {fm.owner ? (
+              <>
+                <User aria-hidden="true" className="size-3 shrink-0" />
+                <span className="truncate">{fm.owner}</span>
+              </>
+            ) : (
+              fm.intent_version && (
+                <span>v{fm.intent_version}</span>
+              )
+            )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1">
+            {fm.owner && fm.intent_version && (
+              <span className="text-[10px]">v{fm.intent_version}</span>
+            )}
+            <span
+              title={intent.updated_at ? new Date(intent.updated_at).toLocaleString() : undefined}
+            >
+              {formatRelativeDate(intent.updated_at)}
+            </span>
+          </div>
+        </div>
+      </Link>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Loading skeleton — list variant
 // ---------------------------------------------------------------------------
 
 function IntentRowSkeleton() {
@@ -228,6 +358,44 @@ function IntentRowSkeleton() {
           <div className="h-3.5 w-12 animate-pulse rounded bg-muted" />
         </div>
         <div className="h-3 w-24 animate-pulse rounded bg-muted" />
+      </div>
+    </li>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Loading skeleton — grid variant
+// ---------------------------------------------------------------------------
+
+function IntentCardSkeleton() {
+  return (
+    <li
+      className="flex flex-col gap-3 rounded-lg border bg-card p-4"
+      aria-hidden="true"
+    >
+      {/* Top row */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="h-8 w-8 shrink-0 animate-pulse rounded-md bg-muted" />
+        <div className="flex gap-1">
+          <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-10 animate-pulse rounded bg-muted" />
+        </div>
+      </div>
+      {/* Title */}
+      <div className="space-y-1.5">
+        <div className="h-4 w-full animate-pulse rounded bg-muted" />
+        <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+      </div>
+      {/* Horizon chip */}
+      <div className="h-4 w-16 animate-pulse rounded-full bg-muted" />
+      {/* Tags */}
+      <div className="flex gap-1">
+        <div className="h-4 w-12 animate-pulse rounded bg-muted" />
+        <div className="h-4 w-10 animate-pulse rounded bg-muted" />
+      </div>
+      {/* Footer */}
+      <div className="mt-auto border-t pt-2.5">
+        <div className="h-3 w-28 animate-pulse rounded bg-muted" />
       </div>
     </li>
   );
@@ -303,7 +471,12 @@ export default function IntentsPage() {
     staleTime: 30_000,
   });
 
+  const { viewMode, setViewMode, mounted } = useViewMode("meatywiki-intents-view", "grid");
+
   const intents = data?.data ?? [];
+
+  // Effective view mode — render as "grid" during SSR to avoid hydration flash
+  const effectiveView = mounted ? viewMode : "grid";
 
   return (
     <div className="flex flex-col gap-6">
@@ -315,7 +488,8 @@ export default function IntentsPage() {
             Versioned planning artifacts organised by layer and lifecycle.
           </p>
         </div>
-        {/* Create button intentionally omitted in this wave — see concerns */}
+        {/* View toggle — top-right, matching Library page header placement */}
+        <ViewToggle view={effectiveView} onChange={setViewMode} />
       </div>
 
       {/* Loading spinner (secondary indicator while skeleton rows show) */}
@@ -338,25 +512,43 @@ export default function IntentsPage() {
           {isLoading && (
             <ul
               role="list"
-              className="flex flex-col gap-3"
               aria-label="Loading intents"
+              className={cn(
+                "grid gap-3",
+                effectiveView === "grid"
+                  ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+                  : "grid-cols-1",
+              )}
             >
-              {Array.from({ length: 5 }).map((_, i) => (
-                <IntentRowSkeleton key={i} />
-              ))}
+              {Array.from({ length: effectiveView === "grid" ? 6 : 5 }).map((_, i) =>
+                effectiveView === "grid" ? (
+                  <IntentCardSkeleton key={i} />
+                ) : (
+                  <IntentRowSkeleton key={i} />
+                ),
+              )}
             </ul>
           )}
 
-          {/* Intent list */}
+          {/* Intent list / grid */}
           {!isLoading && intents.length > 0 && (
             <ul
               role="list"
-              className="flex flex-col gap-3"
               aria-label="Intents"
+              className={cn(
+                "grid gap-3",
+                effectiveView === "grid"
+                  ? "grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+                  : "grid-cols-1",
+              )}
             >
-              {intents.map((intent) => (
-                <IntentRow key={intent.id} intent={intent} />
-              ))}
+              {intents.map((intent) =>
+                effectiveView === "grid" ? (
+                  <IntentCard key={intent.id} intent={intent} />
+                ) : (
+                  <IntentRow key={intent.id} intent={intent} />
+                ),
+              )}
             </ul>
           )}
 

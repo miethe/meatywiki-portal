@@ -16,12 +16,14 @@
  *   - Create dialog: name + optional description → POST /api/projects/.
  *   - TanStack Query for data fetching (consistent with rest of Portal).
  *   - Empty state: friendly CTA, no filter state needed here.
+ *   - Grid/list view toggle: persisted to localStorage via useViewMode.
  *
  * WCAG 2.1 AA: min-h touch targets, focus-visible rings, role="list",
  * dialog focus trap from existing Dialog primitive.
  */
 
 import { useState, useCallback } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -33,6 +35,7 @@ import {
   Package,
   Loader2,
   X,
+  Link2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -47,6 +50,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ViewToggle, type ViewMode } from "@/components/ui/view-toggle";
+import { useViewMode } from "@/hooks/use-view-mode";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -58,13 +63,22 @@ const PROJECTS_QUERY_KEY = ["projects", "list"] as const;
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatDate(iso?: string | null): string {
+/** Returns a human-friendly relative time string (e.g. "3d ago", "2mo ago"). */
+function formatRelativeDate(iso?: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+  const diff = Date.now() - new Date(iso).getTime();
+  const secs = Math.round(diff / 1000);
+  if (secs < 60) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.round(months / 12);
+  return `${years}y ago`;
 }
 
 // ---------------------------------------------------------------------------
@@ -141,37 +155,101 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// Project card
+// Project card — supports "grid" and "list" variants
 // ---------------------------------------------------------------------------
 
 interface ProjectCardProps {
   pack: ContextPack;
+  variant: "grid" | "list";
 }
 
-function ProjectCard({ pack }: ProjectCardProps) {
-  const router = useRouter();
-
-  const handleClick = useCallback(() => {
-    router.push(`/projects/${encodeURIComponent(pack.pack_id)}`);
-  }, [router, pack.pack_id]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        handleClick();
-      }
-    },
-    [handleClick],
+function ProjectCard({ pack, variant }: ProjectCardProps) {
+  /** Shared badge: artifact count */
+  const artifactBadge = (
+    <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-400">
+      <Package aria-hidden="true" className="size-3 shrink-0" />
+      {pack.artifact_count} artifact{pack.artifact_count !== 1 ? "s" : ""}
+    </span>
   );
 
+  /** Shared badge: version */
+  const versionBadge = (
+    <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+      v{pack.version}
+    </span>
+  );
+
+  /** Shared badge: linked intent (only when root_intent_id is present) */
+  const intentBadge = pack.root_intent_id ? (
+    <span className="inline-flex items-center gap-0.5 rounded bg-violet-100/60 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/40 dark:text-violet-400">
+      <Link2 aria-hidden="true" className="size-2.5 shrink-0" />
+      {variant === "list" ? "Linked intent" : "Intent"}
+    </span>
+  ) : null;
+
+  /** Relative date from updated_at falling back to created_at */
+  const relDate = formatRelativeDate(pack.updated_at ?? pack.created_at);
+
+  // ── GRID variant ──────────────────────────────────────────────────────────
+  if (variant === "grid") {
+    return (
+      <li>
+        <Link
+          href={`/projects/${encodeURIComponent(pack.pack_id)}`}
+          aria-label={`Open project: ${pack.name}`}
+          className={cn(
+            "group flex h-full cursor-pointer flex-col gap-3 rounded-lg border bg-card p-4 transition-all",
+            "hover:border-primary/40 hover:bg-accent/30 hover:shadow-sm",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+          )}
+        >
+          {/* Top row: icon + version/intent badges */}
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-amber-50 dark:bg-amber-950/30">
+              <FolderKanban
+                aria-hidden="true"
+                className="size-4 text-amber-600 dark:text-amber-400"
+              />
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-1">
+              {versionBadge}
+              {intentBadge}
+            </div>
+          </div>
+
+          {/* Name */}
+          <p className="line-clamp-2 text-sm font-semibold leading-snug text-foreground group-hover:text-primary">
+            {pack.name}
+          </p>
+
+          {/* Description */}
+          {pack.description && (
+            <p className="line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+              {pack.description}
+            </p>
+          )}
+
+          {/* Spacer pushes footer to bottom */}
+          <div className="flex-1" />
+
+          {/* Footer: artifact count + relative date */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-3">
+            {artifactBadge}
+            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Calendar aria-hidden="true" className="size-3 shrink-0" />
+              {relDate}
+            </span>
+          </div>
+        </Link>
+      </li>
+    );
+  }
+
+  // ── LIST variant ─────────────────────────────────────────────────────────
   return (
     <li>
-      <div
-        role="link"
-        tabIndex={0}
-        onClick={handleClick}
-        onKeyDown={handleKeyDown}
+      <Link
+        href={`/projects/${encodeURIComponent(pack.pack_id)}`}
         aria-label={`Open project: ${pack.name}`}
         className={cn(
           "group flex cursor-pointer items-start justify-between gap-4 rounded-lg border bg-card p-4 transition-all",
@@ -199,15 +277,18 @@ function ProjectCard({ pack }: ProjectCardProps) {
               </p>
             )}
 
+            {/* Badges row */}
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              {artifactBadge}
+              {versionBadge}
+              {intentBadge}
+            </div>
+
             {/* Meta row */}
-            <div className="mt-2 flex flex-wrap items-center gap-3">
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
               <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Package aria-hidden="true" className="size-3" />
-                {pack.artifact_count} artifact{pack.artifact_count !== 1 ? "s" : ""}
-              </span>
-              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                <Calendar aria-hidden="true" className="size-3" />
-                {formatDate(pack.created_at)}
+                <Calendar aria-hidden="true" className="size-3 shrink-0" />
+                Updated {relDate}
               </span>
             </div>
           </div>
@@ -218,7 +299,7 @@ function ProjectCard({ pack }: ProjectCardProps) {
           aria-hidden="true"
           className="mt-1 size-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
         />
-      </div>
+      </Link>
     </li>
   );
 }
@@ -227,17 +308,49 @@ function ProjectCard({ pack }: ProjectCardProps) {
 // Loading skeleton
 // ---------------------------------------------------------------------------
 
-function ProjectCardSkeleton() {
+function ProjectCardSkeleton({ variant }: { variant: "grid" | "list" }) {
+  if (variant === "grid") {
+    return (
+      <li
+        className="flex flex-col gap-3 rounded-lg border bg-card p-4"
+        aria-hidden="true"
+      >
+        {/* Top row: icon + badge placeholder */}
+        <div className="flex items-start justify-between">
+          <div className="h-8 w-8 animate-pulse rounded-md bg-muted" />
+          <div className="h-4 w-10 animate-pulse rounded bg-muted" />
+        </div>
+        {/* Name */}
+        <div className="h-4 w-4/5 animate-pulse rounded bg-muted" />
+        {/* Description lines */}
+        <div className="space-y-1.5">
+          <div className="h-3 w-full animate-pulse rounded bg-muted" />
+          <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+        </div>
+        {/* Footer */}
+        <div className="flex items-center justify-between border-t pt-3">
+          <div className="h-4 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-3 w-12 animate-pulse rounded bg-muted" />
+        </div>
+      </li>
+    );
+  }
+
+  // list skeleton
   return (
-    <li className="flex items-start gap-3 rounded-lg border bg-card p-4" aria-hidden="true">
+    <li
+      className="flex items-start gap-3 rounded-lg border bg-card p-4"
+      aria-hidden="true"
+    >
       <div className="mt-0.5 h-9 w-9 shrink-0 animate-pulse rounded-md bg-muted" />
       <div className="flex-1 space-y-2">
         <div className="h-4 w-2/5 animate-pulse rounded bg-muted" />
         <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-        <div className="flex gap-3">
-          <div className="h-3 w-16 animate-pulse rounded bg-muted" />
-          <div className="h-3 w-20 animate-pulse rounded bg-muted" />
+        <div className="flex gap-2">
+          <div className="h-4 w-16 animate-pulse rounded bg-muted" />
+          <div className="h-4 w-10 animate-pulse rounded bg-muted" />
         </div>
+        <div className="h-3 w-28 animate-pulse rounded bg-muted" />
       </div>
     </li>
   );
@@ -412,6 +525,14 @@ export default function ProjectsPage() {
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
 
+  // Grid/list view toggle — SSR-safe, persisted to localStorage
+  const { viewMode, setViewMode, mounted } = useViewMode(
+    "meatywiki-projects-view",
+  );
+  // Gate on `mounted` to avoid hydration mismatch: default to "grid" until
+  // the client has read the persisted preference from localStorage.
+  const activeView: ViewMode = mounted ? viewMode : "grid";
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: PROJECTS_QUERY_KEY,
     queryFn: () => listContextPacks({ limit: 50 }),
@@ -427,6 +548,12 @@ export default function ProjectsPage() {
     [router],
   );
 
+  // CSS grid classes driven by the active view
+  const gridClassName =
+    activeView === "grid"
+      ? "grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3"
+      : "grid gap-3 grid-cols-1";
+
   return (
     <div className="flex flex-col gap-6">
       {/* Page header */}
@@ -438,18 +565,21 @@ export default function ProjectsPage() {
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={() => setCreateOpen(true)}
-          className={cn(
-            "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground sm:h-9 sm:min-h-0",
-            "transition-colors hover:bg-primary/90",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-          )}
-        >
-          <Plus aria-hidden="true" className="size-4" />
-          New project
-        </button>
+        <div className="flex items-center gap-2">
+          <ViewToggle view={activeView} onChange={setViewMode} />
+          <button
+            type="button"
+            onClick={() => setCreateOpen(true)}
+            className={cn(
+              "inline-flex min-h-[44px] items-center gap-2 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground sm:h-9 sm:min-h-0",
+              "transition-colors hover:bg-primary/90",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            )}
+          >
+            <Plus aria-hidden="true" className="size-4" />
+            New project
+          </button>
+        </div>
       </div>
 
       {/* Content */}
@@ -462,18 +592,28 @@ export default function ProjectsPage() {
         <>
           {/* Skeleton */}
           {isLoading && (
-            <ul role="list" className="flex flex-col gap-3" aria-label="Loading projects">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <ProjectCardSkeleton key={i} />
-              ))}
+            <ul
+              role="list"
+              className={gridClassName}
+              aria-label="Loading projects"
+            >
+              {Array.from({ length: activeView === "grid" ? 6 : 4 }).map(
+                (_, i) => (
+                  <ProjectCardSkeleton key={i} variant={activeView} />
+                ),
+              )}
             </ul>
           )}
 
-          {/* Project list */}
+          {/* Project grid/list */}
           {!isLoading && projects.length > 0 && (
-            <ul role="list" className="flex flex-col gap-3" aria-label="Projects">
+            <ul role="list" className={gridClassName} aria-label="Projects">
               {projects.map((pack) => (
-                <ProjectCard key={pack.pack_id} pack={pack} />
+                <ProjectCard
+                  key={pack.pack_id}
+                  pack={pack}
+                  variant={activeView}
+                />
               ))}
             </ul>
           )}
