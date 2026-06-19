@@ -1040,6 +1040,10 @@ interface IntentDetailViewProps {
   isLoading: boolean;
   error: Error | null;
   onRetry: () => void;
+  /** Compiled markdown/HTML body — preferred for rendering. */
+  compiledContent?: string | null;
+  /** Raw markdown body — fallback when compiledContent is absent. */
+  rawContent?: string | null;
 }
 
 function formatIntentDate(value?: string | null): string {
@@ -1057,6 +1061,8 @@ function IntentDetailView({
   isLoading,
   error,
   onRetry,
+  compiledContent,
+  rawContent,
 }: IntentDetailViewProps) {
   if (isLoading) {
     return (
@@ -1126,52 +1132,85 @@ function IntentDetailView({
   ];
   const definedEntries = summaryEntries.filter((e) => Boolean(e.value));
 
+  // Prefer compiled_content; fall back to raw_content.
+  const bodyContent = compiledContent ?? rawContent ?? null;
+
   return (
     <div
       aria-label="Intent detail"
       className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]"
     >
-      {/* Active version summary */}
-      <section className="min-w-0 rounded-md border bg-card p-5">
-        <div className="flex flex-col gap-4">
-          <div>
-            <p className="text-xs font-medium uppercase text-muted-foreground">
-              Intent
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-foreground">
-              {activeVersion?.title ?? "—"}
-            </h2>
-            {fm?.intent_version && (
-              <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                v{fm.intent_version}
+      {/* Main content column: header metadata + body */}
+      <div className="flex min-w-0 flex-col gap-4">
+        {/* Active version summary header */}
+        <section className="rounded-md border bg-card p-5">
+          <div className="flex flex-col gap-4">
+            <div>
+              <p className="text-xs font-medium uppercase text-muted-foreground">
+                Intent
+              </p>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">
+                {activeVersion?.title ?? "—"}
+              </h2>
+              {fm?.intent_version && (
+                <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                  v{fm.intent_version}
+                </p>
+              )}
+            </div>
+
+            {definedEntries.length > 0 && (
+              <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs">
+                {definedEntries.map(({ label, value }) => (
+                  <React.Fragment key={label}>
+                    <dt className="font-medium text-muted-foreground">
+                      {label}
+                    </dt>
+                    <dd className="text-foreground">
+                      {value}
+                    </dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+            )}
+
+            {!activeVersion && (
+              <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+                No intent data available.
               </p>
             )}
           </div>
+        </section>
 
-          {definedEntries.length > 0 && (
-            <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1.5 text-xs">
-              {definedEntries.map(({ label, value }) => (
-                <React.Fragment key={label}>
-                  <dt className="font-medium text-muted-foreground">
-                    {label}
-                  </dt>
-                  <dd className="text-foreground">
-                    {value}
-                  </dd>
-                </React.Fragment>
-              ))}
-            </dl>
+        {/* Intent body — compiled_content preferred, raw_content as fallback */}
+        <section aria-label="Intent body">
+          {bodyContent ? (
+            <ArticleViewer
+              content={bodyContent}
+              format="auto"
+              variant="editorial"
+              frontmatter="hide"
+              sanitize={true}
+              generateHeadingIds={true}
+              className="rounded-md border bg-card p-6"
+            />
+          ) : (
+            <div
+              role="status"
+              className="flex flex-col items-center justify-center gap-2 rounded-md border border-dashed py-12 text-center"
+            >
+              <p className="text-sm text-muted-foreground">
+                No intent body available.
+              </p>
+              <p className="text-xs text-muted-foreground/60">
+                Body content is populated after the first vault read.
+              </p>
+            </div>
           )}
+        </section>
+      </div>
 
-          {!activeVersion && (
-            <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
-              No intent data available.
-            </p>
-          )}
-        </div>
-      </section>
-
-      {/* Version history aside */}
+      {/* Sidebar: version history */}
       <aside
         aria-labelledby="intent-versions-heading"
         className="rounded-md border bg-card p-4"
@@ -2172,6 +2211,8 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
               isLoading={intentVersionsQuery.isLoading}
               error={intentVersionsQuery.error ?? null}
               onRetry={() => void intentVersionsQuery.refetch()}
+              compiledContent={artifact?.compiled_content}
+              rawContent={artifact?.raw_content}
             />
           ) : (
             <>

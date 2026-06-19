@@ -44,10 +44,13 @@ import {
   Milestone,
   Scale,
   PackagePlus,
+  Compass,
+  ExternalLink,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getContextPack } from "@/lib/api/projects";
 import type { ContextPack } from "@/types/projects";
+import { useArtifact } from "@/hooks/useArtifact";
 import { ResourcesTab } from "@/components/projects/ResourcesTab";
 import { MilestonesTab } from "@/components/projects/MilestonesTab";
 import { DecisionsTab } from "@/components/projects/DecisionsTab";
@@ -191,6 +194,135 @@ function FetchErrorState({ error, onRetry }: { error: Error; onRetry: () => void
 }
 
 // ---------------------------------------------------------------------------
+// Governing Intent card
+// ---------------------------------------------------------------------------
+
+/**
+ * Truncates `text` to at most `maxChars` characters, breaking on a word
+ * boundary and appending "…" when truncated.
+ */
+function truncateExcerpt(text: string, maxChars = 400): string {
+  if (text.length <= maxChars) return text;
+  const truncated = text.slice(0, maxChars);
+  const lastSpace = truncated.lastIndexOf(" ");
+  return (lastSpace > 0 ? truncated.slice(0, lastSpace) : truncated) + "…";
+}
+
+/**
+ * Strip markdown syntax to produce plain-text excerpt lines.
+ * Removes headings, bold/italic markers, inline code, links, and HR rules.
+ * Keeps paragraph text so the excerpt reads naturally.
+ */
+function markdownToPlainText(md: string): string {
+  return md
+    // Remove headings
+    .replace(/^#{1,6}\s+/gm, "")
+    // Remove HR rules
+    .replace(/^[-*_]{3,}\s*$/gm, "")
+    // Remove bold / italic markers
+    .replace(/(\*{1,3}|_{1,3})(.*?)\1/g, "$2")
+    // Remove inline code
+    .replace(/`([^`]+)`/g, "$1")
+    // Remove markdown links, keep text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    // Collapse multiple blank lines
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+interface GoverningIntentCardProps {
+  rootIntentId: string;
+}
+
+function GoverningIntentCard({ rootIntentId }: GoverningIntentCardProps) {
+  const { artifact, isLoading, isError } = useArtifact(rootIntentId);
+
+  // Loading skeleton
+  if (isLoading) {
+    return (
+      <div
+        aria-busy="true"
+        aria-label="Loading governing intent"
+        className="rounded-lg border bg-card"
+      >
+        <div className="flex items-center gap-2 border-b px-4 py-3">
+          <Compass aria-hidden="true" className="size-4 text-muted-foreground/50" />
+          <div className="h-3 w-36 animate-pulse rounded bg-muted" />
+        </div>
+        <div className="space-y-2 p-4">
+          <div className="h-4 w-2/3 animate-pulse rounded bg-muted" />
+          <div className="h-3 w-full animate-pulse rounded bg-muted" />
+          <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+        </div>
+      </div>
+    );
+  }
+
+  // On error or missing data, render nothing — don't expose broken state
+  if (isError || !artifact) {
+    return null;
+  }
+
+  const rawBody = artifact.compiled_content ?? artifact.raw_content ?? "";
+  const plainText = rawBody ? markdownToPlainText(rawBody) : "";
+  const excerpt = plainText ? truncateExcerpt(plainText) : null;
+
+  return (
+    <div className="rounded-lg border bg-card">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-2 border-b px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className="flex h-6 w-6 items-center justify-center rounded bg-emerald-50 dark:bg-emerald-950/30">
+            <Compass
+              aria-hidden="true"
+              className="size-3.5 text-emerald-600 dark:text-emerald-400"
+            />
+          </div>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Governing Intent
+          </h2>
+        </div>
+        <Link
+          href={`/artifact/${encodeURIComponent(rootIntentId)}`}
+          className={cn(
+            "inline-flex items-center gap-1 rounded text-xs text-muted-foreground transition-colors",
+            "hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+          aria-label={`Open intent: ${artifact.title ?? rootIntentId}`}
+        >
+          Open
+          <ExternalLink aria-hidden="true" className="size-3" />
+        </Link>
+      </div>
+
+      {/* Intent title */}
+      <div className="px-4 pt-3 pb-1">
+        <Link
+          href={`/artifact/${encodeURIComponent(rootIntentId)}`}
+          className={cn(
+            "text-sm font-semibold text-foreground underline-offset-2 transition-colors",
+            "hover:underline hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded",
+          )}
+        >
+          {artifact.title ?? rootIntentId}
+        </Link>
+      </div>
+
+      {/* Excerpt */}
+      {excerpt ? (
+        <p className="px-4 pb-4 text-xs leading-relaxed text-muted-foreground">
+          {excerpt}
+        </p>
+      ) : (
+        <p className="px-4 pb-4 text-xs italic text-muted-foreground/60">
+          No body content available.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Overview tab content
 // ---------------------------------------------------------------------------
 
@@ -204,6 +336,11 @@ function OverviewTab({ pack, projectId }: OverviewTabProps) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Governing Intent — shown only when the pack is linked to a vault intent */}
+      {pack.root_intent_id ? (
+        <GoverningIntentCard rootIntentId={pack.root_intent_id} />
+      ) : null}
+
       {/* Build Context Pack CTA */}
       <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed bg-muted/20 px-4 py-3">
         <div className="min-w-0">

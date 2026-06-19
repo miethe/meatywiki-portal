@@ -27,6 +27,16 @@ export interface ContextPack {
   version: number;
   created_at?: string | null;
   updated_at?: string | null;
+  /**
+   * Artifact ID of the governing project-root Intent linked to this pack by
+   * the project sync job. Null for manually-created packs that are not yet
+   * linked to a vault intent.
+   *
+   * Backend: GET /api/projects/{pack_id} returns this field when the sync job
+   * has run for the corresponding vault project. Use to fetch the intent via
+   * GET /api/artifacts/{root_intent_id}.
+   */
+  root_intent_id?: string | null;
 }
 
 export interface ContextPackVersion {
