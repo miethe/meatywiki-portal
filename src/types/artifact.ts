@@ -478,6 +478,64 @@ export interface SingleEnvelope<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Lint Scope types (P2-02 — Remediation Bundle v1)
+// ---------------------------------------------------------------------------
+
+/**
+ * Scope of a lint-scope request.
+ * Maps 1:1 to the backend LintScopeRequest.scope literal.
+ */
+export type LintScope = "frontmatter" | "content" | "all";
+
+/**
+ * Severity level of a lint run.
+ * Mirrors the backend LintScopeResponse.severity literal.
+ */
+export type LintSeverity = "error" | "warning" | "ok";
+
+/**
+ * A single lint violation returned by PATCH /api/artifacts/:id/lint-scope.
+ */
+export interface LintViolation {
+  check: string;
+  severity: LintSeverity;
+  artifact_id: string;
+  file_path: string | null;
+  message: string;
+  fixable: boolean;
+  fix_detail: string | null;
+}
+
+/**
+ * Per-check result summary inside LintScopeResponse.
+ */
+export interface LintCheckResult {
+  check: string;
+  severity: LintSeverity;
+  passed: boolean;
+  violations: number;
+}
+
+/**
+ * Response shape for PATCH /api/artifacts/:id/lint-scope.
+ * Maps to backend LintScopeResponse DTO (P2-01).
+ */
+export interface LintScopeResponse {
+  artifact_id: string;
+  scope: LintScope;
+  violations: LintViolation[];
+  severity: LintSeverity;
+  checks_run: number;
+  checks_passed: number;
+  checks_failed: number;
+  total_issues: number;
+  results: LintCheckResult[];
+  run_id: string | null;
+  trace_id: string | null;
+  template_id: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // Cost breakdown types (P4-FE-002 / P4-FE-003)
 // ---------------------------------------------------------------------------
 

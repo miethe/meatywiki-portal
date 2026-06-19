@@ -1146,17 +1146,22 @@ export async function reclassifyArtifact(
 }
 
 /**
- * Trigger a lint-scope pass for a single artifact.
+ * Run a scoped lint pass on a single artifact.
  *
- * Backend: POST /api/artifacts/{artifact_id}/lint-scope
- * Response: 202 Accepted with a run_id on success.
+ * Backend: PATCH /api/artifacts/{artifact_id}/lint-scope
+ * Request: { scope: "frontmatter" | "content" | "all" }
+ * Response: LintScopeResponse with violations, severity, totals, and per-check
+ *           results (P2-01 backend DTO).
  * Throws ApiError on non-2xx responses.
  *
- * Audit Wave 3 — P4-FE-008.
+ * Audit Wave 3 — P4-FE-008. Updated to PATCH + scope param: P2-02.
  */
-export async function lintArtifactScope(id: string): Promise<{ run_id?: string }> {
-  return apiFetch<{ run_id?: string }>(
+export async function lintArtifactScope(
+  id: string,
+  scope: import("@/types/artifact").LintScope = "all",
+): Promise<import("@/types/artifact").LintScopeResponse> {
+  return apiFetch<import("@/types/artifact").LintScopeResponse>(
     `/artifacts/${encodeURIComponent(id)}/lint-scope`,
-    { method: "POST", body: JSON.stringify({}) },
+    { method: "PATCH", body: JSON.stringify({ scope }) },
   );
 }

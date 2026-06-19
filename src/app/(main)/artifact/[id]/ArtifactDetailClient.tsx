@@ -59,7 +59,7 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   StickyNote,
   Archive,
@@ -107,6 +107,7 @@ import { useProcessingHistory } from "@/hooks/use-processing-history";
 import { useCostBreakdown } from "@/hooks/useCostBreakdown";
 import { CostHUD } from "@/components/artifact/CostHUD";
 import { ReclassifyModal } from "@/components/artifact/ReclassifyModal";
+import { LintScopeModal } from "@/components/artifact/LintScopeModal";
 import {
   InlineTextField,
   InlineTextarea,
@@ -114,7 +115,6 @@ import {
   InlineChipEditor,
 } from "@/components/inline-edit";
 import type { ArtifactPatchFields } from "@/lib/api/artifacts";
-import { lintArtifactScope } from "@/lib/api/artifacts";
 import { useArtifactFieldSave } from "./useArtifactFieldSave";
 import type { ArtifactDetail, ServiceModeEnvelope } from "@/types/artifact";
 import {
@@ -1799,19 +1799,10 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     return () => clearTimeout(timer);
   }, [compileSuccess]);
 
-  // ---- Lint Scope mutation (P4-FE-008) ----
-  const lintScopeMutation = useMutation({
-    mutationFn: () => lintArtifactScope(id),
-    onSuccess: () => {
-      showToast("success", "Lint scope job queued");
-    },
-    onError: (err) => {
-      showToast(
-        "error",
-        err instanceof Error ? err.message : "Lint scope request failed",
-      );
-    },
-  });
+  // ---- Lint Scope modal state (P2-02 — Remediation Bundle v1) ----
+  // Replaces the old fire-and-forget mutation (P4-FE-008). The modal now owns
+  // the scope selection and renders the full LintScopeResponse in-place.
+  const [lintScopeOpen, setLintScopeOpen] = useState(false);
 
   // ---- Reclassify modal state (P4-FE-007) ----
   const [reclassifyOpen, setReclassifyOpen] = useState(false);
@@ -2054,16 +2045,12 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     ...(!isContextPack && !isIntent
       ? [
           {
-            label: lintScopeMutation.isPending ? "Running…" : "Lint Scope",
-            ariaLabel: lintScopeMutation.isPending
-              ? "Lint scope in progress"
-              : "Run a lint-scope pass on this artifact",
+            label: "Lint Scope",
+            ariaLabel: "Open lint scope picker for this artifact",
             hasEndpoint: true,
-            description: "POST /api/artifacts/:id/lint-scope (P4-FE-008)",
-            onClick: lintScopeMutation.isPending
-              ? undefined
-              : () => lintScopeMutation.mutate(),
-            icon: lintScopeMutation.isPending ? Loader2 : Scan,
+            description: "PATCH /api/artifacts/:id/lint-scope (P2-02)",
+            onClick: () => setLintScopeOpen(true),
+            icon: Scan,
           } satisfies ContextRailAction,
         ]
       : []),
@@ -2148,11 +2135,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
               historicalEvents={historicalEvents}
               liveEvents={compileEvents}
               onStageClick={() => setActiveTab("Processing")}
-              onRunLint={
-                lintScopeMutation.isPending
-                  ? undefined
-                  : () => lintScopeMutation.mutate()
-              }
+              onRunLint={() => setLintScopeOpen(true)}
             />
           )}
 
@@ -2551,6 +2534,13 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
         onSuccess={() => {
           void refetch();
         }}
+      />
+
+      {/* Lint Scope modal (P2-02 — Remediation Bundle v1) */}
+      <LintScopeModal
+        artifactId={detailArtifact.id}
+        open={lintScopeOpen}
+        onOpenChange={setLintScopeOpen}
       />
 
       {/* Delete confirmation dialog */}
