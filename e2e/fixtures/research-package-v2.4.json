@@ -1,0 +1,17 @@
+{
+  "topic": "Container orchestration patterns",
+  "research_question": "What are the most effective patterns for managing stateful workloads in Kubernetes?",
+  "project": ["infrastructure"],
+  "domain": ["technology", "engineering"],
+  "desired_output": "briefing",
+  "sensitivity_profile": "internal",
+  "task_type": "comparative analysis",
+  "audience": "platform engineers",
+  "time_profile": "standard",
+  "cost_sensitivity": "medium",
+  "reuse_likelihood": "high",
+  "route_preference": "auto",
+  "freshness_window": "current",
+  "citation_strictness": "advisory",
+  "save_prompt_package": true
+}
