@@ -140,6 +140,33 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      {/* LLM Settings section — portal-llm-settings-frontend FE-P3 */}
+      <section aria-labelledby="settings-llm-heading">
+        <h2
+          id="settings-llm-heading"
+          className="mb-3 text-base font-semibold"
+        >
+          LLM Settings
+        </h2>
+        <div className="rounded-md border p-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Provider profiles &amp; model assignments</p>
+              <p className="text-xs text-muted-foreground">
+                Configure LLM provider profiles, per-purpose model assignments,
+                provider credentials, and secret keys used by the engine.
+              </p>
+            </div>
+            <Link
+              href="/settings/llm"
+              className="inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Manage
+            </Link>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
