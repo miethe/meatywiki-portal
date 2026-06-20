@@ -5,26 +5,23 @@
  *
  * Tabs: Profiles | Models | Providers | Keys (default: Profiles)
  *
- * Tab bodies are placeholders with a loading spinner; FE-P4 will replace
- * each TabsContent with the real panel component. FE-P4 imports this
- * component and swaps in panel bodies without touching the shell.
+ * Tab bodies are the real panel components wired in FE-P4. React Query's
+ * caching means switching tabs never triggers a redundant network fetch —
+ * do NOT add remount-forcing keys here.
  *
  * Keyboard navigation is handled by Radix Tabs (arrow keys move between
  * triggers; Tab/Shift-Tab moves focus in/out of the tab list).
  *
- * Traces: portal-llm-settings-frontend FE-P3.
+ * Traces: portal-llm-settings-frontend FE-P4 (tab wiring).
  */
 
-import {
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  TabsContent,
-  Spinner,
-} from "@miethe/ui";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@miethe/ui";
+import { ProfilesTab } from "@/components/settings/llm/tabs/ProfilesTab";
+import { ModelsTab } from "@/components/settings/llm/tabs/ModelsTab";
+import { ProvidersTab } from "@/components/settings/llm/tabs/ProvidersTab";
+import { KeysTab } from "@/components/settings/llm/tabs/KeysTab";
 
-// Tab value constants — exported so FE-P4 can reference them when composing
-// the real panel components.
+// Tab value constants — exported so panel components can reference them.
 export const LLM_SETTINGS_TAB = {
   PROFILES: "profiles",
   MODELS: "models",
@@ -34,19 +31,6 @@ export const LLM_SETTINGS_TAB = {
 
 export type LlmSettingsTabValue =
   (typeof LLM_SETTINGS_TAB)[keyof typeof LLM_SETTINGS_TAB];
-
-// ── Placeholder panel ────────────────────────────────────────────────────────
-
-function PlaceholderPanel({ label }: { label: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-md border p-10 text-muted-foreground">
-      <Spinner size="md" aria-label={`Loading ${label}`} />
-      <p className="text-sm">
-        {label} — coming up
-      </p>
-    </div>
-  );
-}
 
 // ── LlmSettingsTabs ──────────────────────────────────────────────────────────
 
@@ -61,19 +45,19 @@ export function LlmSettingsTabs() {
       </TabsList>
 
       <TabsContent value={LLM_SETTINGS_TAB.PROFILES}>
-        <PlaceholderPanel label="Profiles" />
+        <ProfilesTab />
       </TabsContent>
 
       <TabsContent value={LLM_SETTINGS_TAB.MODELS}>
-        <PlaceholderPanel label="Models" />
+        <ModelsTab />
       </TabsContent>
 
       <TabsContent value={LLM_SETTINGS_TAB.PROVIDERS}>
-        <PlaceholderPanel label="Providers" />
+        <ProvidersTab />
       </TabsContent>
 
       <TabsContent value={LLM_SETTINGS_TAB.KEYS}>
-        <PlaceholderPanel label="Keys" />
+        <KeysTab />
       </TabsContent>
     </Tabs>
   );

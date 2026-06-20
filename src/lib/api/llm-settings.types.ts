@@ -26,6 +26,7 @@ export const LLM_SETTINGS_ERROR_CODES = [
   "RELOAD_IN_PROGRESS",
   "SECRET_KEY_FORBIDDEN",
   "CONFIG_INVALID",
+  "PROVIDER_NOT_FOUND",
 ] as const;
 
 export type LlmSettingsErrorCode = (typeof LLM_SETTINGS_ERROR_CODES)[number];

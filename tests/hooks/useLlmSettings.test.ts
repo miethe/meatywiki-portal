@@ -486,6 +486,50 @@ describe("usePatchModels", () => {
 
     expect(returned?.restart_required).toBe(false);
   });
+  it("clears restartRequired context to false when response.restart_required=false (DEC-FE-4)", async () => {
+    // Raise the banner first, then clear it — verifies unconditional assignment.
+    mockPatchModels
+      .mockResolvedValueOnce(makeModelMap({ restart_required: true }))
+      .mockResolvedValueOnce(makeModelMap({ restart_required: false }));
+
+    let capturedRestart: boolean | undefined;
+
+    function Probe() {
+      const { restartRequired } = useRestartRequired();
+      capturedRestart = restartRequired;
+      return null;
+    }
+
+    function wrapper({ children }: { children: React.ReactNode }) {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      return React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(
+          RestartRequiredProvider,
+          null,
+          children,
+          React.createElement(Probe),
+        ),
+      );
+    }
+
+    const { result } = renderHook(() => usePatchModels(), { wrapper });
+
+    // First call raises the banner.
+    await act(async () => {
+      await result.current.mutateAsync({ compile: "claude-opus-4-8" });
+    });
+    expect(capturedRestart).toBe(true);
+
+    // Second call — server says restart_required=false — banner must clear.
+    await act(async () => {
+      await result.current.mutateAsync({ compile: "claude-sonnet-4-6" });
+    });
+    expect(capturedRestart).toBe(false);
+  });
 });
 
 // ===========================================================================
@@ -682,6 +726,50 @@ describe("useTriggerReload", () => {
     expect(caught).toBeInstanceOf(ApiError);
     expect(caught?.status).toBe(409);
     expect((caught?.body as { code?: string })?.code).toBe("RELOAD_IN_PROGRESS");
+  });
+  it("clears restartRequired context to false when response.restart_required=false (DEC-FE-4)", async () => {
+    // Raise the banner first, then clear it — verifies unconditional assignment.
+    mockTriggerReload
+      .mockResolvedValueOnce(makeReloadResponse({ restart_required: true }))
+      .mockResolvedValueOnce(makeReloadResponse({ restart_required: false }));
+
+    let capturedRestart: boolean | undefined;
+
+    function Probe() {
+      const { restartRequired } = useRestartRequired();
+      capturedRestart = restartRequired;
+      return null;
+    }
+
+    function wrapper({ children }: { children: React.ReactNode }) {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      return React.createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        React.createElement(
+          RestartRequiredProvider,
+          null,
+          children,
+          React.createElement(Probe),
+        ),
+      );
+    }
+
+    const { result } = renderHook(() => useTriggerReload(), { wrapper });
+
+    // First call raises the banner.
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+    expect(capturedRestart).toBe(true);
+
+    // Second call — server says restart_required=false — banner must clear.
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+    expect(capturedRestart).toBe(false);
   });
 });
 

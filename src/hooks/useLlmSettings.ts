@@ -268,9 +268,8 @@ export function usePatchModels(): UsePatchModelsResult {
     onSuccess: (response) => {
       // Persist the updated model map into the query cache immediately.
       queryClient.setQueryData(llmSettingsKeys.models(), response);
-      if (response.restart_required) {
-        setRestartRequired(true);
-      }
+      // Unconditional: clears the banner when server reports false (DEC-FE-4).
+      setRestartRequired(response.restart_required ?? false);
     },
   });
 
@@ -359,9 +358,8 @@ export function useTriggerReload(): UseTriggerReloadResult {
   const mutation = useMutation<ReloadResponse, Error, void>({
     mutationFn: triggerReload,
     onSuccess: (response) => {
-      if (response.restart_required) {
-        setRestartRequired(true);
-      }
+      // Unconditional: clears the banner when server reports false (DEC-FE-4).
+      setRestartRequired(response.restart_required ?? false);
       // Re-fetch everything after a reload so settings reflect the new state.
       void queryClient.invalidateQueries({ queryKey: ["llm-settings"] });
     },

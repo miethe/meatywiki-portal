@@ -270,6 +270,237 @@ export function GroupedSelect({
 }
 
 // ---------------------------------------------------------------------------
+// FormField stub — renders label + child + optional error/hint
+// ---------------------------------------------------------------------------
+
+export interface FormFieldProps {
+  label?: string;
+  htmlFor?: string;
+  error?: string;
+  hint?: string;
+  required?: boolean;
+  children?: React.ReactNode;
+  className?: string;
+}
+
+export function FormField({ label, htmlFor, error, hint, children }: FormFieldProps) {
+  return (
+    <div data-testid="form-field-stub">
+      {label && <label htmlFor={htmlFor}>{label}</label>}
+      {children}
+      {error && <p role="alert">{error}</p>}
+      {hint && !error && <p>{hint}</p>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Label stub
+// ---------------------------------------------------------------------------
+
+export interface LabelProps {
+  htmlFor?: string;
+  className?: string;
+  children?: React.ReactNode;
+}
+
+export function Label({ htmlFor, children }: LabelProps) {
+  return <label htmlFor={htmlFor}>{children}</label>;
+}
+
+// ---------------------------------------------------------------------------
+// Input stub
+// ---------------------------------------------------------------------------
+
+export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {}
+
+export function Input(props: InputProps) {
+  return <input data-testid="input-stub" {...props} />;
+}
+
+// ---------------------------------------------------------------------------
+// Spinner stub
+// ---------------------------------------------------------------------------
+
+export interface SpinnerProps {
+  size?: "sm" | "md" | "lg";
+  "aria-label"?: string;
+  className?: string;
+}
+
+export function Spinner({ "aria-label": ariaLabel, size }: SpinnerProps) {
+  return (
+    <span
+      role="status"
+      aria-label={ariaLabel ?? "Loading"}
+      data-testid={`spinner-stub${size ? `-${size}` : ""}`}
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Card stubs
+// ---------------------------------------------------------------------------
+
+export interface CardProps {
+  className?: string;
+  "aria-label"?: string;
+  children?: React.ReactNode;
+}
+
+export function Card({ children, className, "aria-label": ariaLabel }: CardProps) {
+  return (
+    <div data-testid="card-stub" className={className} aria-label={ariaLabel}>
+      {children}
+    </div>
+  );
+}
+
+export interface CardHeaderProps {
+  className?: string;
+  children?: React.ReactNode;
+}
+
+export function CardHeader({ children, className }: CardHeaderProps) {
+  return (
+    <div data-testid="card-header-stub" className={className}>
+      {children}
+    </div>
+  );
+}
+
+export interface CardContentProps {
+  className?: string;
+  children?: React.ReactNode;
+}
+
+export function CardContent({ children, className }: CardContentProps) {
+  return (
+    <div data-testid="card-content-stub" className={className}>
+      {children}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Badge stub (also exported from miethe-ui for primary imports)
+// ---------------------------------------------------------------------------
+
+export interface BadgeProps {
+  variant?: string;
+  className?: string;
+  children?: React.ReactNode;
+  [key: string]: unknown;
+}
+
+export function Badge({ children, className }: BadgeProps) {
+  return (
+    <span data-testid="badge-stub" className={className}>
+      {children}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tabs stubs (used by LlmSettingsTabs and ProfilesTab tests)
+// ---------------------------------------------------------------------------
+
+export interface TabsProps {
+  defaultValue?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
+  children?: React.ReactNode;
+  className?: string;
+}
+
+export function Tabs({ children, defaultValue }: TabsProps) {
+  return <div data-testid="tabs-stub" data-default-value={defaultValue}>{children}</div>;
+}
+
+export interface TabsListProps {
+  "aria-label"?: string;
+  children?: React.ReactNode;
+  className?: string;
+}
+
+export function TabsList({ children, "aria-label": ariaLabel }: TabsListProps) {
+  return <div role="tablist" aria-label={ariaLabel}>{children}</div>;
+}
+
+export interface TabsTriggerProps {
+  value: string;
+  children?: React.ReactNode;
+  className?: string;
+}
+
+export function TabsTrigger({ children }: TabsTriggerProps) {
+  return <button role="tab" type="button">{children}</button>;
+}
+
+// ---------------------------------------------------------------------------
+// SecretField stub (DEC-FE-5) — write-only; no value prop, no value in DOM.
+//
+// The stub exposes an <input> so RTL userEvent.type works, and a Save button
+// that calls onSubmit then clears the input — matching the real component's
+// write-only contract.
+// ---------------------------------------------------------------------------
+
+export interface SecretFieldProps {
+  label: string;
+  isSet: boolean;
+  onSubmit: (newValue: string) => void | Promise<void>;
+  disabled?: boolean;
+  description?: string;
+  error?: string;
+}
+
+export function SecretField({
+  label,
+  isSet,
+  onSubmit,
+  disabled = false,
+  error,
+}: SecretFieldProps) {
+  const [value, setValue] = React.useState("");
+
+  async function handleSave() {
+    if (!value) return;
+    await onSubmit(value);
+    setValue(""); // clear immediately — write-only contract
+  }
+
+  return (
+    <div data-testid={`secret-field-stub-${label}`}>
+      {isSet && (
+        <span data-testid={`secret-field-is-set-${label}`}>Configured</span>
+      )}
+      {/* Input is always rendered in stub so tests can type into it */}
+      <input
+        aria-label={`New value for ${label}`}
+        data-testid={`secret-field-input-${label}`}
+        type="password"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        disabled={disabled}
+      />
+      <button
+        type="button"
+        data-testid={`secret-field-save-${label}`}
+        onClick={() => void handleSave()}
+        disabled={disabled || !value}
+      >
+        Save
+      </button>
+      {error && (
+        <p role="alert" data-testid={`secret-field-error-${label}`}>
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Re-export anything else that might be imported from @miethe/ui
 // (extend as needed when new imports are added)
 // ---------------------------------------------------------------------------
