@@ -52,6 +52,9 @@ const config: Config = {
     // manual mock stub that provides minimal RTL-testable stubs for all
     // exported components. When @miethe/ui ships a CJS build, remove this entry.
     "^@miethe/ui$": "<rootDir>/tests/mocks/miethe-ui.tsx",
+    // Subpath exports for @miethe/ui — same reason as above.
+    "^@miethe/ui/primitives$": "<rootDir>/tests/mocks/miethe-ui-primitives.tsx",
+    "^@miethe/ui/filters$": "<rootDir>/tests/mocks/miethe-ui-filters.tsx",
   },
 
   // Discover tests in tests/**

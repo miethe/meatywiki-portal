@@ -1165,3 +1165,52 @@ export async function lintArtifactScope(
     { method: "PATCH", body: JSON.stringify({ scope }) },
   );
 }
+
+// ---------------------------------------------------------------------------
+// Unlink edge between two artifacts (Portal v2.6 P2-04)
+// ---------------------------------------------------------------------------
+
+/**
+ * Request parameters for DELETE /api/artifacts/{source_id}/edges/{target_id}.
+ *
+ * ``edgeType`` is an optional filter — when supplied, only the edge of that
+ * specific type is removed; when omitted, all edges between source and target
+ * are removed.
+ */
+export interface UnlinkEdgeParams {
+  edgeType?: string;
+}
+
+/**
+ * Remove one or all directed edges between two artifacts.
+ *
+ * Calls DELETE /api/artifacts/{source_id}/edges/{target_id} with an optional
+ * ?edge_type= query parameter.
+ *
+ * When ``params.edgeType`` is provided, only the edge matching that type is
+ * deleted. When omitted, the backend removes all edges between the two
+ * artifacts regardless of type.
+ *
+ * Returns void on success (backend responds with 204 No Content).
+ *
+ * Throws ApiError on:
+ *   - 404 — source or target artifact not found, or no matching edge exists
+ *   - 422 — invalid edge_type value
+ *
+ * Portal v2.6 Phase 2 (P2-04 data layer).
+ */
+export async function unlinkEdge(
+  sourceId: string,
+  targetId: string,
+  params: UnlinkEdgeParams = {},
+): Promise<void> {
+  const query = new URLSearchParams();
+  if (params.edgeType) query.set("edge_type", params.edgeType);
+
+  const qs = query.toString();
+  const path =
+    `/artifacts/${encodeURIComponent(sourceId)}/edges/${encodeURIComponent(targetId)}` +
+    (qs ? `?${qs}` : "");
+
+  return apiFetch<void>(path, { method: "DELETE" });
+}

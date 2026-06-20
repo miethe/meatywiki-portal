@@ -159,6 +159,7 @@ const GROUPED_LENS_TYPES: Partial<Record<LibraryLens, string>> = {
   evidence: "evidence",
   contradictions: "contradiction",
   glossary: "glossary",
+  intents: "intent",
 };
 
 function isRollupLens(lens: LibraryLens): boolean {

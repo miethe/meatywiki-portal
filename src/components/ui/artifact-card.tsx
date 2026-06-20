@@ -57,7 +57,7 @@
 import type React from "react";
 import { useState, useRef, useCallback } from "react";
 import Link from "next/link";
-import { MoreVertical, Archive, Trash2, Link2 } from "lucide-react";
+import { MoreVertical, Archive, Trash2, Link2, Eye } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ArtifactCard as ArtifactCardType, WorkflowRunStatus } from "@/types/artifact";
 import { RouteModal } from "@/components/inbox/RouteModal";
@@ -222,6 +222,13 @@ interface ArtifactCardProps {
   onArchive?: (id: string) => void;
   /** Called with the artifact ID when the user selects "Delete" from the meatballs menu */
   onDelete?: (id: string) => void;
+  /**
+   * Called with the artifact ID when the user selects "Preview" from the meatballs menu.
+   * Intended to be wired to useArtifactPeek().openPeek — surfaces the peek modal from
+   * the card without requiring the caller to manage the modal directly (P2-01 consumer wire).
+   * When omitted, the "Preview" item is not rendered in the meatballs menu.
+   */
+  onPeek?: (id: string) => void;
   className?: string;
 }
 
@@ -266,6 +273,7 @@ export function ArtifactCard({
   ctaSlot,
   onArchive,
   onDelete,
+  onPeek,
   className,
 }: ArtifactCardProps) {
   const {
@@ -584,7 +592,7 @@ export function ArtifactCard({
   const excerptClamp = isHero ? "line-clamp-3" : "line-clamp-2";
 
   // Show the meatballs menu only when at least one callback is provided
-  const hasMeatballsMenu = !!(onArchive || onDelete);
+  const hasMeatballsMenu = !!(onPeek || onArchive || onDelete);
 
   return (
     <article
@@ -1006,6 +1014,15 @@ export function ArtifactCard({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-36">
+              {onPeek && (
+                <DropdownMenuItem
+                  onClick={() => onPeek(id)}
+                  className="gap-2 cursor-pointer"
+                >
+                  <Eye aria-hidden="true" className="size-3.5" />
+                  Preview
+                </DropdownMenuItem>
+              )}
               {onArchive && (
                 <DropdownMenuItem
                   onClick={() => onArchive(id)}

@@ -510,9 +510,11 @@ function EmptyState() {
         <Activity aria-hidden="true" className="h-6 w-6 text-muted-foreground/60" />
       </div>
       <div className="max-w-xs">
-        <p className="text-sm font-medium text-foreground">No processing history yet.</p>
+        <p className="text-sm font-medium text-foreground">No pipeline events recorded.</p>
         <p className="mt-1.5 text-xs text-muted-foreground">
-          Stage events appear here once the artifact has been processed by the pipeline.
+          This artifact was imported directly from the vault and has not been processed by the
+          compilation pipeline. Events are only recorded when an artifact is compiled via
+          &ldquo;Compile&rdquo; or ingested through Quick Add.
         </p>
       </div>
     </div>

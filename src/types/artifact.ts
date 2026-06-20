@@ -183,6 +183,12 @@ export interface ArtifactCard {
   publish_state?: string | null;
   /** Brief excerpt for card preview — backend may include via summary field */
   preview?: string | null;
+  /**
+   * Frontmatter tags for this artifact.
+   * Populated from the `tags` frontmatter field by the backend reconciler.
+   * Used for tag filtering in ArtifactSearchDialog.
+   */
+  tags?: string[] | null;
   /** Lightweight graph context projected when ?card_context=true is requested. */
   graph_context?: ArtifactGraphContext | null;
   /** Active workflow run for this artifact, if any */

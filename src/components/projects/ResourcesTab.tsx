@@ -38,6 +38,7 @@ import {
   ChevronDown,
   Loader2,
   FileText,
+  Target,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -57,6 +58,7 @@ import {
   detachArtifactFromProject,
 } from "@/lib/api/projects";
 import { useToast } from "@/hooks/use-toast";
+import { useArtifactPeek } from "@/components/artifact/ArtifactPeekProvider";
 import type { ProjectAttachment } from "@/types/projects";
 import type { ServiceModeEnvelope } from "@/types/artifact";
 
@@ -95,6 +97,104 @@ function formatDate(iso: string): string {
     month: "short",
     day: "numeric",
   });
+}
+
+// ---------------------------------------------------------------------------
+// Per-row item component (keeps row logic self-contained)
+// ---------------------------------------------------------------------------
+
+interface AttachmentRowProps {
+  item: ProjectAttachment;
+  onDetach: (id: string) => void;
+  isDetaching: boolean;
+}
+
+function AttachmentRow({ item, onDetach, isDetaching }: AttachmentRowProps) {
+  const { openPeek } = useArtifactPeek();
+  const isIntent = item.type === "intent";
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-3">
+      {/* Icon — intent gets Target affordance, others get FileText */}
+      {isIntent ? (
+        <button
+          type="button"
+          aria-label={`Preview intent: ${item.name}`}
+          onClick={() => openPeek(item.artifact_id)}
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border transition-colors",
+            "bg-amber-50 border-amber-200 text-amber-600",
+            "hover:bg-amber-100 hover:border-amber-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400",
+          )}
+        >
+          <Target aria-hidden="true" className="size-3.5" />
+        </button>
+      ) : (
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted">
+          <FileText aria-hidden="true" className="size-3.5 text-muted-foreground" />
+        </span>
+      )}
+
+      {/* Name + meta */}
+      <span className="min-w-0 flex-1">
+        {isIntent ? (
+          <button
+            type="button"
+            aria-label={`Open intent: ${item.name}`}
+            onClick={() => openPeek(item.artifact_id)}
+            className={cn(
+              "block w-full truncate text-left text-sm font-medium leading-tight",
+              "text-amber-700 hover:text-amber-900 hover:underline underline-offset-2",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 rounded-sm",
+            )}
+            title={item.name}
+          >
+            {item.name}
+          </button>
+        ) : (
+          <span
+            className="block truncate text-sm font-medium leading-tight text-foreground"
+            title={item.name}
+          >
+            {item.name}
+          </span>
+        )}
+        <span className="block truncate text-xs text-muted-foreground">
+          {item.type}
+          <span
+            aria-hidden="true"
+            className="mx-1 select-none text-muted-foreground/40"
+          >
+            ·
+          </span>
+          <time dateTime={item.attached_at}>
+            Attached {formatDate(item.attached_at)}
+          </time>
+        </span>
+      </span>
+
+      {/* Detach button */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Detach ${item.name}`}
+        onClick={() => onDetach(item.artifact_id)}
+        disabled={isDetaching}
+        className={cn(
+          "h-7 gap-1 text-xs text-muted-foreground hover:text-destructive",
+          isDetaching && "opacity-50",
+        )}
+      >
+        {isDetaching ? (
+          <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+        ) : (
+          <Trash2 aria-hidden="true" className="size-3.5" />
+        )}
+        Detach
+      </Button>
+    </li>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -313,71 +413,15 @@ export function ResourcesTab({ projectId }: ResourcesTabProps) {
         {!isEmpty && (
           <ul aria-label="Attached resources" className="divide-y">
             {allItems.map((item) => (
-              <li
+              <AttachmentRow
                 key={item.artifact_id}
-                className="flex items-center gap-3 px-4 py-3"
-              >
-                {/* Icon */}
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted">
-                  <FileText
-                    aria-hidden="true"
-                    className="size-3.5 text-muted-foreground"
-                  />
-                </span>
-
-                {/* Name + meta */}
-                <span className="min-w-0 flex-1">
-                  <span
-                    className="block truncate text-sm font-medium leading-tight text-foreground"
-                    title={item.name}
-                  >
-                    {item.name}
-                  </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {item.type}
-                    <span
-                      aria-hidden="true"
-                      className="mx-1 select-none text-muted-foreground/40"
-                    >
-                      ·
-                    </span>
-                    <time dateTime={item.attached_at}>
-                      Attached {formatDate(item.attached_at)}
-                    </time>
-                  </span>
-                </span>
-
-                {/* Detach button */}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  aria-label={`Detach ${item.name}`}
-                  onClick={() => setConfirmDetachId(item.artifact_id)}
-                  disabled={
-                    detachMutation.isPending &&
-                    detachMutation.variables?.artifactId === item.artifact_id
-                  }
-                  className={cn(
-                    "h-7 gap-1 text-xs text-muted-foreground hover:text-destructive",
-                    detachMutation.isPending &&
-                      detachMutation.variables?.artifactId ===
-                        item.artifact_id &&
-                      "opacity-50",
-                  )}
-                >
-                  {detachMutation.isPending &&
-                  detachMutation.variables?.artifactId === item.artifact_id ? (
-                    <Loader2
-                      aria-hidden="true"
-                      className="size-3.5 animate-spin"
-                    />
-                  ) : (
-                    <Trash2 aria-hidden="true" className="size-3.5" />
-                  )}
-                  Detach
-                </Button>
-              </li>
+                item={item}
+                onDetach={setConfirmDetachId}
+                isDetaching={
+                  detachMutation.isPending &&
+                  detachMutation.variables?.artifactId === item.artifact_id
+                }
+              />
             ))}
           </ul>
         )}

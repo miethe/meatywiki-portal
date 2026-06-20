@@ -3,7 +3,7 @@
 /**
  * LibraryLensSwitcher — horizontal chip group for selecting the Library view lens.
  *
- * Eight lenses are available:
+ * Nine lenses are available:
  *   default       → source rollup view (view=source_rollup)
  *   concepts      → flat type=concept
  *   entities      → flat type=entity
@@ -11,6 +11,7 @@
  *   evidence      → flat type=evidence
  *   contradictions → flat type=contradiction
  *   glossary      → flat type=glossary
+ *   intents       → flat type=intent
  *   orphans       → source rollup + rollup_lens=orphans
  *
  * The active lens chip uses aria-pressed=true. All chips are keyboard
@@ -38,6 +39,7 @@ export type LibraryLens =
   | "evidence"
   | "contradictions"
   | "glossary"
+  | "intents"
   | "orphans";
 
 // ---------------------------------------------------------------------------
@@ -60,6 +62,7 @@ const LENS_OPTIONS: LensOption[] = [
   { value: "evidence", label: "Evidence" },
   { value: "contradictions", label: "Contradictions" },
   { value: "glossary", label: "Glossary" },
+  { value: "intents", label: "Intents" },
   {
     value: "orphans",
     label: "Orphans",

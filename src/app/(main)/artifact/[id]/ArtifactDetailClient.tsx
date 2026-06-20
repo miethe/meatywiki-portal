@@ -111,11 +111,17 @@ import { LintScopeModal } from "@/components/artifact/LintScopeModal";
 import {
   InlineTextField,
   InlineTextarea,
-  InlineSelect,
   InlineChipEditor,
 } from "@/components/inline-edit";
+import {
+  ProjectComboboxField,
+  TagEditorField,
+  OptionSelectField,
+} from "@/components/inline-edit/fields";
 import type { ArtifactPatchFields } from "@/lib/api/artifacts";
 import { useArtifactFieldSave } from "./useArtifactFieldSave";
+import { ConnectionsTab } from "@/components/artifact/ConnectionsTab";
+import { useArtifactPeek } from "@/components/artifact/ArtifactPeekProvider";
 import type { ArtifactDetail, ServiceModeEnvelope } from "@/types/artifact";
 import {
   useArchiveArtifact,
@@ -284,6 +290,7 @@ function EdgeTypeBadge({ edgeType }: { edgeType: EdgeType }) {
 const BASE_TABS = [
   "Source",
   "Knowledge",
+  "Connections",
   "Draft",
   "Workflow OS",
   "Backlinks",
@@ -297,44 +304,6 @@ function tabPanelId(tab: TabId) {
 function tabButtonId(tab: TabId) {
   return `artifact-tab-btn-${tab.toLowerCase().replace(/\s+/g, "-")}`;
 }
-
-// ---------------------------------------------------------------------------
-// Inline-edit select options (enum values from backend schemas/core.py)
-// ---------------------------------------------------------------------------
-
-const STATUS_OPTIONS = [
-  { value: "active", label: "Active" },
-  { value: "archived", label: "Archived" },
-  { value: "superseded", label: "Superseded" },
-];
-
-const WORKSPACE_OPTIONS = [
-  { value: "inbox", label: "Inbox" },
-  { value: "library", label: "Library" },
-  { value: "research", label: "Research" },
-  { value: "blog", label: "Blog" },
-  { value: "projects", label: "Projects" },
-];
-
-const FRESHNESS_CLASS_OPTIONS = [
-  { value: "current", label: "Current" },
-  { value: "aging", label: "Aging" },
-  { value: "stale", label: "Stale" },
-];
-
-const VERIFICATION_STATUS_OPTIONS = [
-  { value: "unverified", label: "Unverified" },
-  { value: "human_review_pending", label: "Human Review Pending" },
-  { value: "human_reviewed", label: "Human Reviewed" },
-  { value: "machine_verified", label: "Machine Verified" },
-];
-
-const PUBLISH_STATE_OPTIONS = [
-  { value: "internal", label: "Internal" },
-  { value: "draft", label: "Draft" },
-  { value: "review", label: "Review" },
-  { value: "published", label: "Published" },
-];
 
 // ---------------------------------------------------------------------------
 // Minimal toast system — no external library; shows up to one message at a time
@@ -496,36 +465,74 @@ function DerivativesPanel({ artifactId }: { artifactId: string }) {
 
 /**
  * Backlink row — mirrors EdgeRow from BacklinksPanel but uses BacklinkItem type.
+ *
+ * When onPeek is provided, clicking the artifact title/id opens the peek modal
+ * (P3-05). A full-page link is still rendered as a fallback for context-menu/
+ * middle-click navigation.
  */
-function BacklinkRow({ item }: { item: BacklinkItem }) {
+function BacklinkRow({
+  item,
+  onPeek,
+}: {
+  item: BacklinkItem;
+  onPeek?: (id: string) => void;
+}) {
   const hasTitle = item.title !== null && item.title !== undefined;
   return (
     <li className="flex flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2.5 text-sm transition-shadow hover:shadow-sm">
       {item.subtype && <TypeBadge type={item.subtype} />}
       <EdgeTypeBadge edgeType={item.type} />
       {hasTitle ? (
-        <Link
-          href={`/artifact/${item.artifact_id}`}
-          className={cn(
-            "min-w-0 flex-1 truncate font-medium text-foreground leading-snug",
-            "hover:underline underline-offset-2",
-            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
-          )}
-        >
-          {item.title}
-        </Link>
-      ) : (
-        <span className="min-w-0 flex-1 truncate">
-          <Link
-            href={`/artifact/${item.artifact_id}`}
+        onPeek ? (
+          <button
+            type="button"
+            onClick={() => onPeek(item.artifact_id)}
             className={cn(
-              "font-mono text-[12px] text-foreground/80",
+              "min-w-0 flex-1 truncate text-left font-medium text-foreground leading-snug",
               "hover:underline underline-offset-2",
               "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
             )}
           >
-            {item.artifact_id}
+            {item.title}
+          </button>
+        ) : (
+          <Link
+            href={`/artifact/${item.artifact_id}`}
+            className={cn(
+              "min-w-0 flex-1 truncate font-medium text-foreground leading-snug",
+              "hover:underline underline-offset-2",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+            )}
+          >
+            {item.title}
           </Link>
+        )
+      ) : (
+        <span className="min-w-0 flex-1 truncate">
+          {onPeek ? (
+            <button
+              type="button"
+              onClick={() => onPeek(item.artifact_id)}
+              className={cn(
+                "font-mono text-[12px] text-foreground/80",
+                "hover:underline underline-offset-2",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+              )}
+            >
+              {item.artifact_id}
+            </button>
+          ) : (
+            <Link
+              href={`/artifact/${item.artifact_id}`}
+              className={cn(
+                "font-mono text-[12px] text-foreground/80",
+                "hover:underline underline-offset-2",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm",
+              )}
+            >
+              {item.artifact_id}
+            </Link>
+          )}
           <span className="ml-1.5 text-[11px] text-muted-foreground">
             (not indexed)
           </span>
@@ -544,12 +551,14 @@ function BacklinksSection({
   icon,
   emptyHint,
   listAriaLabel,
+  onPeek,
 }: {
   label: string;
   items: BacklinkItem[];
   icon: React.ReactNode;
   emptyHint: string;
   listAriaLabel: string;
+  onPeek?: (id: string) => void;
 }) {
   const headingId = `backlinks-section-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
@@ -576,7 +585,11 @@ function BacklinksSection({
           className="flex flex-col gap-1.5"
         >
           {items.map((item) => (
-            <BacklinkRow key={`${item.artifact_id}-${item.type}`} item={item} />
+            <BacklinkRow
+              key={`${item.artifact_id}-${item.type}`}
+              item={item}
+              onPeek={onPeek}
+            />
           ))}
         </ul>
       )}
@@ -590,9 +603,12 @@ function BacklinksSection({
  * Renders an edge_type filter dropdown + incoming/outgoing sections.
  * Primary data source: GET /api/artifacts/:id/backlinks.
  * Fallback: client-side edge-walk via GET /api/artifacts/:id/edges.
+ *
+ * P3-05: clicking a backlink row opens the peek modal via useArtifactPeek().
  */
 function BacklinksTab({ artifactId }: { artifactId: string }) {
   const [edgeType, setEdgeType] = useState<EdgeType | "">("");
+  const { openPeek } = useArtifactPeek();
 
   const {
     incoming,
@@ -756,6 +772,7 @@ function BacklinksTab({ artifactId }: { artifactId: string }) {
             icon={<ArrowDownLeft className="size-4" />}
             emptyHint="No artifacts reference this one."
             listAriaLabel="Incoming edges"
+            onPeek={openPeek}
           />
           <BacklinksSection
             label="Outgoing"
@@ -763,6 +780,7 @@ function BacklinksTab({ artifactId }: { artifactId: string }) {
             icon={<ArrowUpRight className="size-4" />}
             emptyHint="This artifact does not reference others."
             listAriaLabel="Outgoing edges"
+            onPeek={openPeek}
           />
         </>
       )}
@@ -781,6 +799,7 @@ function BacklinksTab({ artifactId }: { artifactId: string }) {
               <BacklinkRow
                 key={`${item.artifact_id}-${item.type}`}
                 item={item}
+                onPeek={openPeek}
               />
             ))}
           </ul>
@@ -1400,6 +1419,35 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
+// handleInternalArtifactClick — click-delegation helper shared by all readers.
+//
+// ArticleViewer (@miethe/ui) renders internal `/artifact/:id` links as plain
+// <a> tags (no Next.js router integration). We intercept those clicks at the
+// wrapper level so that plain-click opens the peek modal while modifier-key
+// clicks (Cmd/Ctrl/middle-click) fall through to browser default behaviour
+// (new tab), preserving OQ-2 "peek for content contexts" invariant.
+// ---------------------------------------------------------------------------
+
+function handleInternalArtifactClick(
+  e: React.MouseEvent<HTMLDivElement>,
+  openPeek: (id: string) => void,
+): void {
+  // Allow modifier-key clicks to proceed to default (open in new tab / window).
+  if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey || e.button !== 0) return;
+
+  const target = (e.target as HTMLElement).closest("a");
+  if (!target) return;
+
+  const href = target.getAttribute("href") ?? "";
+  // Match both absolute (/artifact/:id) and wiki-link patterns.
+  const match = href.match(/^\/artifact\/([^/?#]+)/);
+  if (!match) return;
+
+  e.preventDefault();
+  openPeek(match[1]);
+}
+
+// ---------------------------------------------------------------------------
 // Source Reader — raw markdown rendered via ArticleViewer (M-02)
 //
 // Variant decision: @miethe/ui ArticleViewer exposes "editorial" | "compact" |
@@ -1409,7 +1457,13 @@ function ErrorState({ error, onRetry }: { error: Error; onRetry: () => void }) {
 // optional CSS distinction without introducing a new upstream variant.
 // ---------------------------------------------------------------------------
 
-function SourceReader({ content }: { content: string | null | undefined }) {
+function SourceReader({
+  content,
+  onPeek,
+}: {
+  content: string | null | undefined;
+  onPeek: (id: string) => void;
+}) {
   if (!content) {
     return (
       <div
@@ -1427,7 +1481,11 @@ function SourceReader({ content }: { content: string | null | undefined }) {
   }
 
   return (
-    <div data-variant="source">
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+    <div
+      data-variant="source"
+      onClick={(e) => handleInternalArtifactClick(e, onPeek)}
+    >
       <ArticleViewer
         content={content}
         format="auto"
@@ -1448,7 +1506,13 @@ function SourceReader({ content }: { content: string | null | undefined }) {
 // internally via rehype-sanitize. No dangerouslySetInnerHTML on this path.
 // ---------------------------------------------------------------------------
 
-function KnowledgeReader({ content }: { content: string | null | undefined }) {
+function KnowledgeReader({
+  content,
+  onPeek,
+}: {
+  content: string | null | undefined;
+  onPeek: (id: string) => void;
+}) {
   if (!content) {
     return (
       <div
@@ -1465,15 +1529,18 @@ function KnowledgeReader({ content }: { content: string | null | undefined }) {
     );
   }
   return (
-    <ArticleViewer
-      content={content}
-      format="auto"
-      variant="editorial"
-      frontmatter="hide"
-      sanitize={true}
-      generateHeadingIds={true}
-      className="rounded-md border bg-card p-6"
-    />
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+    <div onClick={(e) => handleInternalArtifactClick(e, onPeek)}>
+      <ArticleViewer
+        content={content}
+        format="auto"
+        variant="editorial"
+        frontmatter="hide"
+        sanitize={true}
+        generateHeadingIds={true}
+        className="rounded-md border bg-card p-6"
+      />
+    </div>
   );
 }
 
@@ -1483,7 +1550,13 @@ function KnowledgeReader({ content }: { content: string | null | undefined }) {
 // DP3-02 #7: Draft uses same typography ruleset as Knowledge to avoid drift.
 // ---------------------------------------------------------------------------
 
-function DraftReader({ content }: { content: string | null | undefined }) {
+function DraftReader({
+  content,
+  onPeek,
+}: {
+  content: string | null | undefined;
+  onPeek: (id: string) => void;
+}) {
   if (!content) {
     return (
       <div
@@ -1498,15 +1571,18 @@ function DraftReader({ content }: { content: string | null | undefined }) {
     );
   }
   return (
-    <ArticleViewer
-      content={content}
-      format="auto"
-      variant="editorial"
-      frontmatter="hide"
-      sanitize={true}
-      generateHeadingIds={true}
-      className="rounded-md border bg-card p-6"
-    />
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+    <div onClick={(e) => handleInternalArtifactClick(e, onPeek)}>
+      <ArticleViewer
+        content={content}
+        format="auto"
+        variant="editorial"
+        frontmatter="hide"
+        sanitize={true}
+        generateHeadingIds={true}
+        className="rounded-md border bg-card p-6"
+      />
+    </div>
   );
 }
 
@@ -1561,22 +1637,23 @@ function EditableMetadataSection({
   artifact,
   onSave,
 }: EditableMetadataSectionProps) {
-  // Tags and owners have special diff semantics — their onSave wrappers handle
-  // the tags_add / tags_remove transformation so the generic handler isn't used.
+  // Tags: diff semantics via tags_add / tags_remove.
   const currentTags =
     (artifact.frontmatter_jsonb?.["tags"] as string[] | null) ?? [];
   const currentOwners =
     (artifact.frontmatter_jsonb?.["owners"] as string[] | null) ?? [];
 
-  const handleTagsSave = useCallback(
-    async (newTags: string[]) => {
-      const tagsAdd = newTags.filter((t) => !currentTags.includes(t));
-      const tagsRemove = currentTags.filter((t) => !newTags.includes(t));
+  // P3-01: TagEditorField diff bridge — receives (tagsAdd, tagsRemove) from
+  // TagEditorField and assembles the { tags_add, tags_remove } payload that
+  // handleFieldSave expects on the "tags_add" special-case branch.
+  const handleTagsDiff = useCallback(
+    async (tagsAdd: string[], tagsRemove: string[]) => {
       await onSave("tags_add", { tags_add: tagsAdd, tags_remove: tagsRemove });
     },
-    [currentTags, onSave],
+    [onSave],
   );
 
+  // Owners: plain array save (not diffed).
   const handleOwnersSave = useCallback(
     async (newOwners: string[]) => {
       await onSave("owners", newOwners);
@@ -1589,7 +1666,7 @@ function EditableMetadataSection({
       aria-label="Editable artifact metadata"
       className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-md border bg-card/50 p-4 sm:grid-cols-2"
     >
-      {/* 1. title */}
+      {/* 1. title — free-text, keep InlineTextField */}
       <MetaRow label="Title">
         <InlineTextField
           value={artifact.title ?? ""}
@@ -1600,7 +1677,7 @@ function EditableMetadataSection({
         />
       </MetaRow>
 
-      {/* 2. description */}
+      {/* 2. description — free-text, keep InlineTextarea */}
       <MetaRow label="Description">
         <InlineTextarea
           value={(artifact.frontmatter_jsonb?.["description"] as string) ?? ""}
@@ -1611,39 +1688,39 @@ function EditableMetadataSection({
         />
       </MetaRow>
 
-      {/* 3. status */}
+      {/* 3. status — P3-01: OptionSelectField (replaces InlineSelect) */}
       <MetaRow label="Status">
-        <InlineSelect
+        <OptionSelectField
+          field="status"
           value={artifact.status ?? ""}
-          options={STATUS_OPTIONS}
           onSave={(v) => onSave("status", v)}
           label="Status"
-          placeholder="Select status"
+          placeholder="Select status…"
         />
       </MetaRow>
 
-      {/* 4. workspace */}
+      {/* 4. workspace — P3-01: OptionSelectField (replaces InlineSelect) */}
       <MetaRow label="Workspace">
-        <InlineSelect
+        <OptionSelectField
+          field="workspace"
           value={artifact.workspace ?? ""}
-          options={WORKSPACE_OPTIONS}
           onSave={(v) => onSave("workspace", v)}
           label="Workspace"
-          placeholder="Select workspace"
+          placeholder="Select workspace…"
         />
       </MetaRow>
 
-      {/* 5. tags */}
+      {/* 5. tags — P3-01: TagEditorField (replaces InlineChipEditor) */}
       <MetaRow label="Tags">
-        <InlineChipEditor
-          values={currentTags}
-          onSave={handleTagsSave}
+        <TagEditorField
+          currentTags={currentTags}
+          onSave={handleTagsDiff}
           label="Tags"
           placeholder="Add tag…"
         />
       </MetaRow>
 
-      {/* 6. domain */}
+      {/* 6. domain — free-form chips, keep InlineChipEditor */}
       <MetaRow label="Domain">
         <InlineChipEditor
           values={
@@ -1655,44 +1732,45 @@ function EditableMetadataSection({
         />
       </MetaRow>
 
-      {/* 7. project */}
+      {/* 7. project — P3-01: ProjectComboboxField (replaces InlineTextField) */}
       <MetaRow label="Project">
-        <InlineTextField
-          value={(artifact.frontmatter_jsonb?.["project"] as string) ?? ""}
-          onSave={(v) => onSave("project", v)}
+        <ProjectComboboxField
+          currentProjectId={
+            (artifact.frontmatter_jsonb?.["project"] as string | null) ?? null
+          }
+          onSave={(projectId) => onSave("project", projectId || null)}
           label="Project"
-          placeholder="Project name"
         />
       </MetaRow>
 
-      {/* 8. freshness_class */}
+      {/* 8. freshness_class — P3-01: OptionSelectField (replaces InlineSelect) */}
       <MetaRow label="Freshness">
-        <InlineSelect
+        <OptionSelectField
+          field="freshness_class"
           value={
             (artifact.frontmatter_jsonb?.["freshness_class"] as string) ?? ""
           }
-          options={FRESHNESS_CLASS_OPTIONS}
           onSave={(v) => onSave("freshness_class", v)}
           label="Freshness class"
-          placeholder="Select freshness"
+          placeholder="Select freshness…"
         />
       </MetaRow>
 
-      {/* 9. verification_status */}
+      {/* 9. verification_status — P3-01: OptionSelectField (replaces InlineSelect) */}
       <MetaRow label="Verification">
-        <InlineSelect
+        <OptionSelectField
+          field="verification_status"
           value={
             (artifact.frontmatter_jsonb?.["verification_status"] as string) ??
             ""
           }
-          options={VERIFICATION_STATUS_OPTIONS}
           onSave={(v) => onSave("verification_status", v)}
           label="Verification status"
-          placeholder="Select verification"
+          placeholder="Select verification…"
         />
       </MetaRow>
 
-      {/* 10. series */}
+      {/* 10. series — free-text, keep InlineTextField */}
       <MetaRow label="Series">
         <InlineTextField
           value={(artifact.frontmatter_jsonb?.["series"] as string) ?? ""}
@@ -1702,20 +1780,20 @@ function EditableMetadataSection({
         />
       </MetaRow>
 
-      {/* 11. publish_state */}
+      {/* 11. publish_state — P3-01: OptionSelectField (replaces InlineSelect) */}
       <MetaRow label="Publish State">
-        <InlineSelect
+        <OptionSelectField
+          field="publish_state"
           value={
             (artifact.frontmatter_jsonb?.["publish_state"] as string) ?? ""
           }
-          options={PUBLISH_STATE_OPTIONS}
           onSave={(v) => onSave("publish_state", v)}
           label="Publish state"
-          placeholder="Select publish state"
+          placeholder="Select publish state…"
         />
       </MetaRow>
 
-      {/* 12. owners */}
+      {/* 12. owners — free-form chips, keep InlineChipEditor */}
       <MetaRow label="Owners">
         <InlineChipEditor
           values={currentOwners}
@@ -1783,6 +1861,9 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
     retry: false,
   });
   const isIntent = effectiveArtifact ? isIntentArtifact(effectiveArtifact) : false;
+
+  // ---- Peek modal (P3-05) ----
+  const { openPeek } = useArtifactPeek();
 
   // ---- Toast notifications (P2-06) ----
   const {
@@ -2260,7 +2341,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
                   aria-labelledby={tabButtonId("Source")}
                   hidden={activeTab !== "Source"}
                 >
-                  <SourceReader content={detailArtifact.raw_content} />
+                  <SourceReader content={detailArtifact.raw_content} onPeek={openPeek} />
                 </div>
 
                 {/* Knowledge tab */}
@@ -2270,7 +2351,23 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
                   aria-labelledby={tabButtonId("Knowledge")}
                   hidden={activeTab !== "Knowledge"}
                 >
-                  <KnowledgeReader content={detailArtifact.compiled_content} />
+                  <KnowledgeReader content={detailArtifact.compiled_content} onPeek={openPeek} />
+                </div>
+
+                {/* Connections tab (P3-02/P3-03) */}
+                <div
+                  id={tabPanelId("Connections")}
+                  role="tabpanel"
+                  aria-labelledby={tabButtonId("Connections")}
+                  hidden={activeTab !== "Connections"}
+                  data-tour="artifact-detail-connections"
+                >
+                  {activeTab === "Connections" && (
+                    <ConnectionsTab
+                      artifactId={detailArtifact.id}
+                      onPeek={openPeek}
+                    />
+                  )}
                 </div>
 
                 {/* Draft tab */}
@@ -2280,7 +2377,7 @@ export function ArtifactDetailClient({ id }: ArtifactDetailClientProps) {
                   aria-labelledby={tabButtonId("Draft")}
                   hidden={activeTab !== "Draft"}
                 >
-                  <DraftReader content={detailArtifact.draft_content} />
+                  <DraftReader content={detailArtifact.draft_content} onPeek={openPeek} />
                 </div>
 
                 {/* Workflow OS tab */}

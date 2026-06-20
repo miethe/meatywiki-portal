@@ -45,16 +45,30 @@ import {
   Scale,
   PackagePlus,
   Compass,
-  ExternalLink,
+  GitMerge,
+  PaperclipIcon,
+  ChevronDown,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getContextPack } from "@/lib/api/projects";
+import { getContextPack, deleteProject } from "@/lib/api/projects";
 import type { ContextPack } from "@/types/projects";
 import { useArtifact } from "@/hooks/useArtifact";
+import { useArtifactPeek } from "@/components/artifact/ArtifactPeekProvider";
+import { useToast } from "@/hooks/use-toast";
 import { ResourcesTab } from "@/components/projects/ResourcesTab";
 import { MilestonesTab } from "@/components/projects/MilestonesTab";
 import { DecisionsTab } from "@/components/projects/DecisionsTab";
 import { ContextPackBuilderDialog } from "@/components/projects/ContextPackBuilderDialog";
+import { MergeProjectsDialog } from "@/components/projects/MergeProjectsDialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // ---------------------------------------------------------------------------
 // Tab definitions
@@ -236,6 +250,7 @@ interface GoverningIntentCardProps {
 
 function GoverningIntentCard({ rootIntentId }: GoverningIntentCardProps) {
   const { artifact, isLoading, isError } = useArtifact(rootIntentId);
+  const { openPeek } = useArtifactPeek();
 
   // Loading skeleton
   if (isLoading) {
@@ -282,30 +297,32 @@ function GoverningIntentCard({ rootIntentId }: GoverningIntentCardProps) {
             Governing Intent
           </h2>
         </div>
-        <Link
-          href={`/artifact/${encodeURIComponent(rootIntentId)}`}
+        {/* P4-05: "Open" opens the peek modal; Expand inside modal navigates to full page */}
+        <button
+          type="button"
+          onClick={() => openPeek(rootIntentId)}
           className={cn(
             "inline-flex items-center gap-1 rounded text-xs text-muted-foreground transition-colors",
             "hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           )}
-          aria-label={`Open intent: ${artifact.title ?? rootIntentId}`}
+          aria-label={`Preview intent: ${artifact.title ?? rootIntentId}`}
         >
-          Open
-          <ExternalLink aria-hidden="true" className="size-3" />
-        </Link>
+          Preview
+        </button>
       </div>
 
-      {/* Intent title */}
+      {/* Intent title — clicking opens peek modal */}
       <div className="px-4 pt-3 pb-1">
-        <Link
-          href={`/artifact/${encodeURIComponent(rootIntentId)}`}
+        <button
+          type="button"
+          onClick={() => openPeek(rootIntentId)}
           className={cn(
-            "text-sm font-semibold text-foreground underline-offset-2 transition-colors",
+            "text-left text-sm font-semibold text-foreground underline-offset-2 transition-colors",
             "hover:underline hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded",
           )}
         >
           {artifact.title ?? rootIntentId}
-        </Link>
+        </button>
       </div>
 
       {/* Excerpt */}
@@ -323,6 +340,203 @@ function GoverningIntentCard({ rootIntentId }: GoverningIntentCardProps) {
 }
 
 // ---------------------------------------------------------------------------
+// Action bar (P4-01)
+// ---------------------------------------------------------------------------
+
+interface ProjectActionBarProps {
+  pack: ContextPack;
+  projectId: string;
+  onAttachResource: () => void;
+  onBuildContextPack: () => void;
+}
+
+function ProjectActionBar({
+  pack,
+  projectId,
+  onAttachResource,
+  onBuildContextPack,
+}: ProjectActionBarProps) {
+  const router = useRouter();
+  const { add: addToast } = useToast();
+
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+
+  async function handleDelete() {
+    setIsDeleting(true);
+    try {
+      await deleteProject(projectId);
+      addToast({ type: "success", message: `"${pack.name}" deleted.` });
+      router.push("/projects");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      addToast({ type: "error", message: `Failed to delete project: ${msg}` });
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
+  }
+
+  return (
+    <>
+      {/* Rail */}
+      <div
+        className="flex shrink-0 flex-col gap-2"
+        aria-label="Project actions"
+        role="group"
+      >
+        {/* Primary: Build Context Pack */}
+        <button
+          type="button"
+          onClick={onBuildContextPack}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground",
+            "transition-colors hover:bg-primary/90",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          )}
+        >
+          <PackagePlus aria-hidden="true" className="size-4" />
+          Build context pack
+        </button>
+
+        {/* Primary: Attach Resource */}
+        <button
+          type="button"
+          onClick={onAttachResource}
+          className={cn(
+            "inline-flex items-center gap-2 rounded-md border px-3.5 py-2 text-sm font-medium",
+            "transition-colors hover:bg-accent hover:text-accent-foreground",
+            "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+          )}
+        >
+          <PaperclipIcon aria-hidden="true" className="size-4" />
+          Attach resource
+        </button>
+
+        {/* Advanced dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground",
+                "transition-colors hover:bg-accent hover:text-foreground",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              )}
+            >
+              Advanced
+              <ChevronDown aria-hidden="true" className="size-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuItem
+              onClick={() => setMergeOpen(true)}
+              className="gap-2"
+            >
+              <GitMerge aria-hidden="true" className="size-4 text-muted-foreground" />
+              Merge projects
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => setDeleteConfirmOpen(true)}
+              className="gap-2 text-destructive focus:text-destructive focus:bg-destructive/10"
+            >
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete project
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      {/* Delete confirmation dialog */}
+      {deleteConfirmOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-confirm-title"
+          aria-describedby="delete-confirm-desc"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            onClick={() => !isDeleting && setDeleteConfirmOpen(false)}
+            aria-hidden="true"
+          />
+          {/* Panel */}
+          <div className="relative z-10 w-full max-w-sm rounded-lg border bg-card shadow-lg p-6 flex flex-col gap-4">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/10">
+                <Trash2 aria-hidden="true" className="size-4 text-destructive" />
+              </div>
+              <div>
+                <h2
+                  id="delete-confirm-title"
+                  className="text-sm font-semibold leading-snug"
+                >
+                  Delete project?
+                </h2>
+                <p
+                  id="delete-confirm-desc"
+                  className="mt-1 text-xs text-muted-foreground"
+                >
+                  <span className="font-medium text-foreground">{pack.name}</span>{" "}
+                  and all its milestones, decisions, and attachment records will be
+                  permanently removed. Vault artifacts are not affected.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={isDeleting}
+                className={cn(
+                  "inline-flex h-8 items-center rounded-md border px-3 text-xs font-medium transition-colors",
+                  "hover:bg-accent hover:text-accent-foreground",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "disabled:cursor-not-allowed disabled:opacity-50",
+                )}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDelete()}
+                disabled={isDeleting}
+                className={cn(
+                  "inline-flex h-8 items-center gap-1.5 rounded-md bg-destructive px-3 text-xs font-medium text-destructive-foreground transition-colors",
+                  "hover:bg-destructive/90",
+                  "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  "disabled:cursor-not-allowed disabled:opacity-50",
+                )}
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 aria-hidden="true" className="size-3.5 animate-spin" />
+                    Deleting…
+                  </>
+                ) : (
+                  "Delete project"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Merge dialog */}
+      <MergeProjectsDialog
+        open={mergeOpen}
+        onOpenChange={setMergeOpen}
+        sourcePack={pack}
+      />
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Overview tab content
 // ---------------------------------------------------------------------------
 
@@ -331,42 +545,13 @@ interface OverviewTabProps {
   projectId: string;
 }
 
-function OverviewTab({ pack, projectId }: OverviewTabProps) {
-  const [builderOpen, setBuilderOpen] = useState(false);
-
+function OverviewTab({ pack }: OverviewTabProps) {
   return (
     <div className="flex flex-col gap-6">
       {/* Governing Intent — shown only when the pack is linked to a vault intent */}
       {pack.root_intent_id ? (
         <GoverningIntentCard rootIntentId={pack.root_intent_id} />
       ) : null}
-
-      {/* Build Context Pack CTA */}
-      <div className="flex items-center justify-between gap-4 rounded-lg border border-dashed bg-muted/20 px-4 py-3">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">Context packs</p>
-          <p className="text-xs text-muted-foreground">
-            Bundle artifacts into a compiled context pack for this project.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setBuilderOpen(true)}
-          className={cn(
-            "inline-flex shrink-0 items-center gap-2 rounded-md bg-primary px-3.5 py-2 text-sm font-medium text-primary-foreground",
-            "transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
-          )}
-        >
-          <PackagePlus aria-hidden="true" className="size-4" />
-          Build context pack
-        </button>
-      </div>
-
-      <ContextPackBuilderDialog
-        open={builderOpen}
-        onOpenChange={setBuilderOpen}
-        projectId={projectId}
-      />
 
       {/* Summary stat cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -462,6 +647,7 @@ interface ProjectDetailClientProps {
 function ProjectDetailClient({ id }: ProjectDetailClientProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [builderOpen, setBuilderOpen] = useState(false);
 
   // Derive active tab from URL, defaulting to "overview"
   const rawView = searchParams.get("view");
@@ -545,20 +731,37 @@ function ProjectDetailClient({ id }: ProjectDetailClientProps) {
         <span className="truncate max-w-[200px] text-foreground">{pack.name}</span>
       </nav>
 
-      {/* Page header */}
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-amber-50 dark:bg-amber-950/30">
-          <FolderKanban aria-hidden="true" className="size-5 text-amber-600 dark:text-amber-400" />
+      {/* Page header + action bar */}
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-amber-50 dark:bg-amber-950/30">
+            <FolderKanban aria-hidden="true" className="size-5 text-amber-600 dark:text-amber-400" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-xl font-semibold tracking-tight">{pack.name}</h1>
+            {pack.description && (
+              <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">
+                {pack.description}
+              </p>
+            )}
+          </div>
         </div>
-        <div className="min-w-0">
-          <h1 className="truncate text-xl font-semibold tracking-tight">{pack.name}</h1>
-          {pack.description && (
-            <p className="mt-0.5 line-clamp-1 text-sm text-muted-foreground">
-              {pack.description}
-            </p>
-          )}
-        </div>
+
+        {/* P4-01: right-side action bar */}
+        <ProjectActionBar
+          pack={pack}
+          projectId={id}
+          onAttachResource={() => handleTabChange("resources")}
+          onBuildContextPack={() => setBuilderOpen(true)}
+        />
       </div>
+
+      {/* Context pack builder dialog (driven by action bar) */}
+      <ContextPackBuilderDialog
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        projectId={id}
+      />
 
       {/* Tab bar */}
       <div className="sticky top-0 z-10 shrink-0 border-b bg-background">

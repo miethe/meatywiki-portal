@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Projects workspace shell — P5-FE-001.
+ * Projects workspace shell — P5-FE-001 + P4-03 (sort & filter).
  *
  * Replaces the previous facet-filtered Library view with a proper project
  * workspace backed by the context-pack overlay API:
@@ -10,6 +10,13 @@
  *   POST /api/projects/          → create new ContextPack
  *
  * Each project card navigates to /projects/[id] (P5-FE-002).
+ *
+ * P4-03 additions:
+ *   - Sort by: name (A–Z), artifact_count (desc), updated_at (newest first)
+ *   - Filter by: all | has-intent | non-empty
+ *   - Both controls rendered as inline pill-button groups in the toolbar
+ *   - State persisted to localStorage (SSR-safe, mounted-gated)
+ *   - Client-side over already-fetched list (OQ-4: no server sort params)
  *
  * Design decisions:
  *   - No multi-user / RBAC affordances (personal-use-first per CLAUDE.md).
@@ -22,7 +29,7 @@
  * dialog focus trap from existing Dialog primitive.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -36,6 +43,8 @@ import {
   Loader2,
   X,
   Link2,
+  ArrowUpDown,
+  Filter,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -52,12 +61,40 @@ import {
 import { Input } from "@/components/ui/input";
 import { ViewToggle, type ViewMode } from "@/components/ui/view-toggle";
 import { useViewMode } from "@/hooks/use-view-mode";
+import {
+  type ProjectSortKey,
+  type ProjectFilterKey,
+  applyFilter,
+  applySort,
+} from "./project-filters";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const PROJECTS_QUERY_KEY = ["projects", "list"] as const;
+
+// ---------------------------------------------------------------------------
+// Sort / filter constants
+// ---------------------------------------------------------------------------
+
+const SORT_LABELS: Record<ProjectSortKey, string> = {
+  name: "Name",
+  artifact_count: "Artifacts",
+  updated_at: "Updated",
+};
+
+const FILTER_LABELS: Record<ProjectFilterKey, string> = {
+  all: "All",
+  "has-intent": "Has intent",
+  "non-empty": "Non-empty",
+};
+
+const DEFAULT_SORT: ProjectSortKey = "updated_at";
+const DEFAULT_FILTER: ProjectFilterKey = "all";
+
+const SORT_STORAGE_KEY = "meatywiki-projects-sort";
+const FILTER_STORAGE_KEY = "meatywiki-projects-filter";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,6 +116,130 @@ function formatRelativeDate(iso?: string | null): string {
   if (months < 12) return `${months}mo ago`;
   const years = Math.round(months / 12);
   return `${years}y ago`;
+}
+
+// ---------------------------------------------------------------------------
+// SSR-safe localStorage hook (generic, minimal)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns [value, setValue, mounted] from localStorage.
+ * Hydrates after first mount to avoid SSR mismatch.
+ */
+function useLocalStorageString<T extends string>(
+  key: string,
+  defaultValue: T,
+  isValid: (v: string) => v is T,
+): [T, (next: T) => void, boolean] {
+  const [value, setValue] = useState<T>(defaultValue);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    let initial: T = defaultValue;
+    try {
+      const stored = window.localStorage.getItem(key);
+      if (stored !== null && isValid(stored)) {
+        initial = stored;
+      }
+    } catch {
+      // localStorage unavailable — fall back to default
+    }
+    setValue(initial);
+    setMounted(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const set = useCallback(
+    (next: T) => {
+      setValue(next);
+      try {
+        window.localStorage.setItem(key, next);
+      } catch {
+        // Ignore storage errors
+      }
+    },
+    [key],
+  );
+
+  return [value, set, mounted];
+}
+
+const VALID_SORT_KEYS: readonly ProjectSortKey[] = [
+  "name",
+  "artifact_count",
+  "updated_at",
+] as const;
+
+const VALID_FILTER_KEYS: readonly ProjectFilterKey[] = [
+  "all",
+  "has-intent",
+  "non-empty",
+] as const;
+
+function isSortKey(v: string): v is ProjectSortKey {
+  return (VALID_SORT_KEYS as readonly string[]).includes(v);
+}
+
+function isFilterKey(v: string): v is ProjectFilterKey {
+  return (VALID_FILTER_KEYS as readonly string[]).includes(v);
+}
+
+// ---------------------------------------------------------------------------
+// Sort/filter toolbar controls
+// ---------------------------------------------------------------------------
+
+interface PillGroupProps<T extends string> {
+  label: string;
+  icon: React.ReactNode;
+  options: readonly T[];
+  labels: Record<T, string>;
+  value: T;
+  onChange: (next: T) => void;
+}
+
+function PillGroup<T extends string>({
+  label,
+  icon,
+  options,
+  labels,
+  value,
+  onChange,
+}: PillGroupProps<T>) {
+  return (
+    <div
+      className="flex items-center gap-1.5"
+      role="group"
+      aria-label={label}
+    >
+      <span className="hidden items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground/70 sm:flex">
+        {icon}
+        {label}
+      </span>
+      <div className="flex items-center rounded-md border border-border/60 bg-muted/30 p-0.5 gap-0.5">
+        {options.map((opt) => {
+          const active = opt === value;
+          return (
+            <button
+              key={opt}
+              type="button"
+              aria-pressed={active}
+              aria-label={`${label}: ${labels[opt]}`}
+              onClick={() => onChange(opt)}
+              className={cn(
+                "inline-flex min-h-[28px] items-center rounded px-2.5 py-0.5 text-xs font-medium transition-all",
+                "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+                active
+                  ? "bg-background text-foreground shadow-sm ring-1 ring-border/80"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+              )}
+            >
+              {labels[opt]}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -117,6 +278,51 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
       >
         <Plus aria-hidden="true" className="size-4" />
         Create your first project
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Empty filtered state (distinct from "no projects at all")
+// ---------------------------------------------------------------------------
+
+function EmptyFilteredState({
+  filter,
+  onClear,
+}: {
+  filter: ProjectFilterKey;
+  onClear: () => void;
+}) {
+  const filterLabel = FILTER_LABELS[filter];
+  return (
+    <div
+      role="status"
+      className="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed py-14 text-center"
+    >
+      <Filter
+        aria-hidden="true"
+        className="size-7 text-muted-foreground/50"
+      />
+      <div className="max-w-xs">
+        <p className="text-sm font-medium text-foreground">
+          No projects match &ldquo;{filterLabel}&rdquo;
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Try a different filter or clear it to see all projects.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={onClear}
+        className={cn(
+          "inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-3 text-xs font-medium",
+          "transition-colors hover:bg-accent hover:text-accent-foreground",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+        )}
+      >
+        <X aria-hidden="true" className="size-3" />
+        Clear filter
       </button>
     </div>
   );
@@ -526,12 +732,29 @@ export default function ProjectsPage() {
   const [createOpen, setCreateOpen] = useState(false);
 
   // Grid/list view toggle — SSR-safe, persisted to localStorage
-  const { viewMode, setViewMode, mounted } = useViewMode(
+  const { viewMode, setViewMode, mounted: viewMounted } = useViewMode(
     "meatywiki-projects-view",
   );
+
+  // Sort + filter state — SSR-safe, persisted to localStorage
+  const [sortKey, setSortKey, sortMounted] = useLocalStorageString<ProjectSortKey>(
+    SORT_STORAGE_KEY,
+    DEFAULT_SORT,
+    isSortKey,
+  );
+  const [filterKey, setFilterKey, filterMounted] =
+    useLocalStorageString<ProjectFilterKey>(
+      FILTER_STORAGE_KEY,
+      DEFAULT_FILTER,
+      isFilterKey,
+    );
+
   // Gate on `mounted` to avoid hydration mismatch: default to "grid" until
   // the client has read the persisted preference from localStorage.
-  const activeView: ViewMode = mounted ? viewMode : "grid";
+  const allMounted = viewMounted && sortMounted && filterMounted;
+  const activeView: ViewMode = allMounted ? viewMode : "grid";
+  const activeSort: ProjectSortKey = allMounted ? sortKey : DEFAULT_SORT;
+  const activeFilter: ProjectFilterKey = allMounted ? filterKey : DEFAULT_FILTER;
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: PROJECTS_QUERY_KEY,
@@ -539,7 +762,13 @@ export default function ProjectsPage() {
     staleTime: 30_000,
   });
 
-  const projects = data?.data ?? [];
+  const rawProjects = data?.data ?? [];
+
+  /** Derived: filter then sort — memoised on the raw list + control values. */
+  const projects = useMemo(
+    () => applySort(applyFilter(rawProjects, activeFilter), activeSort),
+    [rawProjects, activeFilter, activeSort],
+  );
 
   const handleCreated = useCallback(
     (packId: string) => {
@@ -582,6 +811,44 @@ export default function ProjectsPage() {
         </div>
       </div>
 
+      {/* Sort + filter toolbar — hidden during skeleton / SSR */}
+      {!isLoading && rawProjects.length > 0 && (
+        <div
+          className="flex flex-wrap items-center gap-x-4 gap-y-2"
+          aria-label="List controls"
+        >
+          <PillGroup
+            label="Sort"
+            icon={<ArrowUpDown aria-hidden="true" className="size-3" />}
+            options={VALID_SORT_KEYS}
+            labels={SORT_LABELS}
+            value={activeSort}
+            onChange={setSortKey}
+          />
+
+          <div
+            aria-hidden="true"
+            className="hidden h-4 w-px bg-border sm:block"
+          />
+
+          <PillGroup
+            label="Filter"
+            icon={<Filter aria-hidden="true" className="size-3" />}
+            options={VALID_FILTER_KEYS}
+            labels={FILTER_LABELS}
+            value={activeFilter}
+            onChange={setFilterKey}
+          />
+
+          {/* Count indicator */}
+          {allMounted && (
+            <span className="ml-auto text-[11px] text-muted-foreground">
+              {projects.length} of {rawProjects.length}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Content */}
       {isError && error ? (
         <ErrorState
@@ -618,9 +885,17 @@ export default function ProjectsPage() {
             </ul>
           )}
 
-          {/* Empty state */}
-          {!isLoading && projects.length === 0 && (
+          {/* No projects at all */}
+          {!isLoading && rawProjects.length === 0 && (
             <EmptyState onCreate={() => setCreateOpen(true)} />
+          )}
+
+          {/* Projects exist but filter produced zero results */}
+          {!isLoading && rawProjects.length > 0 && projects.length === 0 && (
+            <EmptyFilteredState
+              filter={activeFilter}
+              onClear={() => setFilterKey("all")}
+            />
           )}
         </>
       )}
