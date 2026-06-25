@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### [Frontend] Op Story Library UI
+
+**Added:**
+
+- **Story catalog page at `/stories`**: list view showing all imported op-story records with title, lifecycle state, source type, project, publication status, domains, topics, and sensitivity level indicators.
+- **Story detail route (`/stories/{story_id}`)**: full story metadata, body content, and related-artifact links. Non-public stories redact raw source paths; public stories show complete data.
+- **Filtering and search**: list page supports filtering by lifecycle state, project, source type, and publication status via query parameters (shareable URLs).
+- **Story card component**: reusable story metadata display with lifecycle-state badges and sensitivity indicators.
+
 ### Graph Immersive Redesign (Portal v2.5)
 
 Full-viewport immersive dark canvas with floating translucent overlay panels, 2D/3D toggle powered by server-precomputed three.js layout, touch gesture support, and WCAG 2.1 AA accessibility.

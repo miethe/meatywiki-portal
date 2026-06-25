@@ -272,6 +272,92 @@ const intentSupersededStub: IntentDTOStub = {
 };
 
 // ---------------------------------------------------------------------------
+// Story stubs (op-story catalog)
+// ---------------------------------------------------------------------------
+
+interface StoryListItemStub {
+  story_id: string;
+  title: string | null;
+  project_id: string | null;
+  lifecycle_state: string;
+  story_status: string;
+  source_type: string;
+  date: string | null;
+  domains: string[];
+  sensitivity: { level: string; agent_access: string };
+  scrub: { status: string; issue_count: number; summary: string };
+  publication: {
+    state: string;
+    draft_pr_url: string | null;
+    published_url: string | null;
+    post_slug: string | null;
+  };
+  source: { safe_ref: string | null; safe_uri: string | null };
+  sync: { synced_at: string; source_system: string };
+  updated_at: string | null;
+}
+
+interface StoryDetailStub extends StoryListItemStub {
+  lifecycle: {
+    status: string;
+    created_at: string | null;
+    updated_at: string | null;
+    archived_at: string | null;
+    reason_code: string | null;
+  };
+  related_refs: { ccdash_session: string | null; ccdash_feature: string | null };
+  routing_tags: string[];
+  reason: string | null;
+}
+
+function makeStoryListItem(
+  overrides: Partial<StoryListItemStub> = {},
+): StoryListItemStub {
+  return {
+    story_id: "story-stub-001",
+    title: "Stub op story",
+    project_id: null,
+    lifecycle_state: "drafted",
+    story_status: "drafted",
+    source_type: "aar",
+    date: "2026-06-01",
+    domains: ["platform"],
+    sensitivity: { level: "public", agent_access: "read" },
+    scrub: { status: "clean", issue_count: 0, summary: "" },
+    publication: {
+      state: "draft",
+      draft_pr_url: "https://github.com/example/repo/pull/1",
+      published_url: null,
+      post_slug: null,
+    },
+    source: { safe_ref: "commit:abc123", safe_uri: null },
+    sync: { synced_at: new Date().toISOString(), source_system: "ccdash" },
+    updated_at: "2026-06-20T12:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeStoryDetail(
+  overrides: Partial<StoryDetailStub> = {},
+): StoryDetailStub {
+  const base = makeStoryListItem(overrides);
+  return {
+    ...base,
+    lifecycle: {
+      status: "drafted",
+      created_at: "2026-06-01T00:00:00Z",
+      updated_at: "2026-06-20T12:00:00Z",
+      archived_at: null,
+      reason_code: null,
+    },
+    related_refs: { ccdash_session: "sess-abc", ccdash_feature: null },
+    routing_tags: ["platform", "backend"],
+    reason: null,
+    ...(overrides as Partial<StoryDetailStub>),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
 
@@ -964,5 +1050,43 @@ export const handlers = [
       ],
       cursor: "contra-page2",
     });
+  }),
+
+  // ------------------------------------------------------------------
+  // Stories — list (GET /api/stories)
+  // ------------------------------------------------------------------
+  http.get(`${API_BASE}/api/stories`, () => {
+    return HttpResponse.json({
+      data: [
+        makeStoryListItem({ story_id: "story-stub-001", title: "Caching spike retro" }),
+        makeStoryListItem({
+          story_id: "story-stub-002",
+          title: null,
+          sensitivity: { level: "internal", agent_access: "none" },
+        }),
+        makeStoryListItem({
+          story_id: "story-stub-003",
+          title: null,
+          lifecycle_state: "published",
+          sensitivity: { level: "public", agent_access: "read" },
+          publication: {
+            state: "published",
+            draft_pr_url: null,
+            published_url: "https://example.com/stories/story-003",
+            post_slug: "story-003-lessons",
+          },
+        }),
+      ],
+      cursor: null,
+    });
+  }),
+
+  // Story detail (GET /api/stories/:story_id)
+  http.get(`${API_BASE}/api/stories/:story_id`, ({ params }) => {
+    const { story_id } = params;
+    if (story_id === "not-found") {
+      return new HttpResponse(null, { status: 404 });
+    }
+    return HttpResponse.json(makeStoryDetail({ story_id: story_id as string }));
   }),
 ];
