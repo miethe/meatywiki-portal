@@ -16,3 +16,15 @@
  */
 export const OPERATOR_CONTROL_ENABLED =
   process.env.NEXT_PUBLIC_PORTAL_ENABLE_OPERATOR_CONTROL === "1";
+
+/**
+ * When true, the Stories views never render the "details hidden (held)" state:
+ * every op-story is shown in full regardless of its sensitivity.level. Pair
+ * with the backend's PORTAL_STORIES_DISABLE_REDACTION flag (which surfaces the
+ * source refs). Intended for single-user, trusted-LAN deployments (e.g. a
+ * personal NUC node) where redacting your own AARs adds no value.
+ *
+ * Default: false (held rows stay redacted, matching the OQ-4 safety rule).
+ */
+export const STORIES_REDACTION_DISABLED =
+  process.env.NEXT_PUBLIC_PORTAL_STORIES_DISABLE_REDACTION === "1";

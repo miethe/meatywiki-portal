@@ -31,6 +31,7 @@ import {
   Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { STORIES_REDACTION_DISABLED } from "@/lib/env";
 import type { StoryDetail } from "@/types/stories";
 import { StoryStatusBadge } from "@/components/ui/StoryStatusBadge";
 
@@ -190,7 +191,8 @@ interface StoryDetailClientProps {
 }
 
 export function StoryDetailClient({ story }: StoryDetailClientProps) {
-  const isHeld = story.sensitivity.level !== "public";
+  const isHeld =
+    !STORIES_REDACTION_DISABLED && story.sensitivity.level !== "public";
   const stale = isStale(story.sync.synced_at);
 
   // Primary action: View Published > View Draft PR > none

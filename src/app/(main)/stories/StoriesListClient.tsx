@@ -36,6 +36,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { STORIES_REDACTION_DISABLED } from "@/lib/env";
 import { listStories } from "@/lib/api/stories";
 import { storiesQueryKey } from "@/hooks/useStories";
 import type {
@@ -556,7 +557,8 @@ function ErrorState({
 // ---------------------------------------------------------------------------
 
 function StoryRow({ story }: { story: StoryListItem }) {
-  const isHeld = story.sensitivity.level !== "public";
+  const isHeld =
+    !STORIES_REDACTION_DISABLED && story.sensitivity.level !== "public";
   const stale = isStale(story.sync.synced_at);
 
   const titleContent = isHeld ? (
