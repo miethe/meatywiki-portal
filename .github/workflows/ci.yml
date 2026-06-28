@@ -38,6 +38,12 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Build
+        run: pnpm build
+        env:
+          MEATYWIKI_PORTAL_API_URL: http://127.0.0.1:8765
+          MEATYWIKI_PORTAL_TOKEN: ci-token
+
       - name: Run unit + component tests
         # --forceExit: MSW server can hold the process open after tests complete;
         #   --forceExit ensures CI doesn't hang.

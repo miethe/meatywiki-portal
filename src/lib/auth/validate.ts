@@ -38,7 +38,8 @@ export interface ValidationResult {
  * { valid: true } for any non-empty token (still requires non-empty so the
  * cookie has a meaningful value).
  *
- * Otherwise, sends `GET <backend>/api/auth/validate` with the token in an
+ * Otherwise, sends `GET <backend>/auth/validate` against the configured API
+ * base with the token in an
  * Authorization: Bearer header. Network or parse errors are treated as
  * invalid tokens (fail-closed).
  */
@@ -53,7 +54,7 @@ export async function validateTokenWithBackend(
   }
 
   try {
-    const response = await fetch(`${getApiBase()}/api/auth/validate`, {
+    const response = await fetch(`${getApiBase()}/auth/validate`, {
       method: "GET",
       headers: { Authorization: `Bearer ${token}` },
       // Short timeout — backend is local; long waits indicate it's down

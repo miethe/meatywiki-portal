@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### [Frontend] Containerized Portal deployment
+
+**Added:**
+
+- **Frontend Docker image** — added a production Next.js Dockerfile and `.dockerignore` so the
+  sibling MeatyWiki compose stack can build and run the Portal UI alongside the backend.
+- **Deployability CI gate** — CI now runs `pnpm build` in addition to lint, typecheck, and tests.
+
+**Fixed:**
+
+- **Auth validation URL** — token validation now calls `/api/auth/validate` exactly once instead of
+  double-prefixing `/api`.
+- **Story route protection** — `/stories` is included in middleware-protected routes so unauthenticated
+  deep links preserve `next=/stories`.
+
 ### [Frontend] Op Story Library UI
 
 **Added:**

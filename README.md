@@ -7,6 +7,7 @@ Next.js 15 frontend for the MeatyWiki Portal v1. Sibling of the [`meatywiki`](..
 A web interface for the MeatyWiki knowledge compilation engine: browse artifacts, capture notes/URLs, monitor workflow runs, and initiate compilations — without the CLI. All vault writes flow through the backend (write-through-engine invariant).
 
 Screens: Inbox, Library, Artifact Detail (Source/Knowledge/Draft readers), Quick Add, Workflow Status surface.
+The op-story Story Library ships in the same app at `/stories`.
 
 ## Screenshots (Portal v1.5 Stitch Reskin)
 
@@ -40,7 +41,19 @@ pnpm install
 pnpm dev                     # http://localhost:3000
 ```
 
-The backend must be running at the URL in `MEATYWIKI_PORTAL_API_URL` (default `http://127.0.0.1:8787`).
+The backend must be running at the URL in `MEATYWIKI_PORTAL_API_URL` (default `http://127.0.0.1:8765`).
+
+## Container deployment
+
+The sibling backend repo owns the local compose stack. From `../meatywiki`:
+
+```bash
+docker-compose -f deploy/docker-compose.yml --profile frontend up -d --build
+```
+
+That profile builds this repo's `Dockerfile`, starts the FastAPI backend, and
+publishes the Next.js UI on `PORTAL_FRONTEND_PORT` (default `3000`). The Story
+Library UI deploys with the rest of Portal at `/stories`.
 
 ## Commands
 

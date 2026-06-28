@@ -51,6 +51,7 @@ const MAIN_ROUTES = [
   "/inbox",
   "/library",
   "/artifact",
+  "/stories",
   "/workflows",
   // Root redirect is also protected
   "/",

@@ -20,7 +20,7 @@ const PLAYWRIGHT_BASE_URL =
  *
  * Backend dependency:
  *   Tests require the backend API at MEATYWIKI_PORTAL_API_URL (default:
- *   http://127.0.0.1:8787) and a valid MEATYWIKI_PORTAL_TOKEN. Tests use
+ *   http://127.0.0.1:8765) and a valid MEATYWIKI_PORTAL_TOKEN. Tests use
  *   the skipIfBackendDown fixture to skip gracefully when the backend is
  *   unreachable, so the suite can run in frontend-only CI environments
  *   without false failures.

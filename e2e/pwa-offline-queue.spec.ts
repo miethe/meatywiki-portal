@@ -4,7 +4,7 @@
  * TODO (P4-04): Enable when e2e infrastructure is stable.
  *
  * This spec requires:
- *   1. Backend running at http://127.0.0.1:8787 with PORTAL_ENABLE_PWA=1
+ *   1. Backend running at http://127.0.0.1:8765 with PORTAL_ENABLE_PWA=1
  *   2. Frontend built with NEXT_PUBLIC_PORTAL_ENABLE_PWA=1
  *   3. A valid auth session (cookie set before the test runs)
  *

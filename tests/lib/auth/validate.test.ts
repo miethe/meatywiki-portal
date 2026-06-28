@@ -78,7 +78,7 @@ describe("validateTokenWithBackend — normal path", () => {
   });
 
   it("returns { valid: true } when the backend responds { valid: true } with 200", async () => {
-    jest.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+    const fetchSpy = jest.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ valid: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -87,6 +87,13 @@ describe("validateTokenWithBackend — normal path", () => {
 
     const result = await validateTokenWithBackend("real-token");
     expect(result).toEqual({ valid: true });
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/auth/validate",
+      expect.objectContaining({
+        method: "GET",
+        headers: { Authorization: "Bearer real-token" },
+      }),
+    );
   });
 
   it("returns { valid: false, reason } when the backend returns 401", async () => {

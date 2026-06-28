@@ -13,7 +13,7 @@
  *
  * Backend dependency:
  *   Most tests are labelled @layout and perform DOM/CSS assertions only.
- *   Tests labelled @backend require the API running at http://127.0.0.1:8787
+ *   Tests labelled @backend require the API running at http://127.0.0.1:8765
  *   with MEATYWIKI_PORTAL_TOKEN set in .env.local.
  *
  * ============================================================================

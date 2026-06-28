@@ -19,5 +19,5 @@ pnpm e2e --ui      # open Playwright UI mode
 
 ## Backend dependency
 
-E2E tests require the backend running at `http://127.0.0.1:8787`.
+E2E tests require the backend running at `http://127.0.0.1:8765`.
 Set `MEATYWIKI_PORTAL_TOKEN` in `.env.local` before running.
