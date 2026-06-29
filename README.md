@@ -66,6 +66,10 @@ Library UI deploys with the rest of Portal at `/stories`.
 | `pnpm test` | Jest + RTL component tests |
 | `pnpm e2e` | Playwright E2E tests |
 
+## Web capture bookmarklet
+
+Drag `../meatywiki/docs/assets/meatywiki-web-capture-bookmarklet.js` into your bookmarks bar to capture any page to Portal via `POST /api/intake/web`. Set `PORTAL` and `TOKEN` constants at the top of the file before installing. Full distribution (NPM, extension, Portal UI embed) is deferred — see OQ-A6-1 in the intake-provenance PRD.
+
 ## Key docs (in backend repo)
 
 - **PRD**: `../meatywiki/docs/project_plans/llm_wiki/portal/PRDs/portal-v1.md`
