@@ -95,6 +95,13 @@ export interface StoryDetail extends StoryListItem {
   related_refs: StoryRelatedRefs;
   routing_tags: string[];
   reason: string | null;
+  /**
+   * Rendered AAR markdown body — the narrative content of the op-story file,
+   * surfaced by GET /api/stories/{id} after reading the vault artifact body.
+   * Null when the vault record has no body or the record cannot be loaded.
+   * Detail endpoint only; NOT present on StoryListItem.
+   */
+  body?: string | null;
 }
 
 // ---------------------------------------------------------------------------

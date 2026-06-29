@@ -203,4 +203,42 @@ describe("StoryDetailClient", () => {
     const backLink = screen.getByRole("link", { name: /stories/i });
     expect(backLink).toHaveAttribute("href", "/stories");
   });
+
+  // ---------------------------------------------------------------------------
+  // AAR body rendering (FE-2)
+  // ---------------------------------------------------------------------------
+
+  it("renders ArticleViewer with body markdown when body is present", () => {
+    const bodyText = "## What happened\n\nWe shipped the caching layer successfully.";
+    const story = makeDetail({ body: bodyText });
+    renderWithProviders(<StoryDetailClient story={story} />);
+
+    // Section heading
+    expect(screen.getByText(/after-action review/i)).toBeInTheDocument();
+
+    // ArticleViewer stub renders a div[data-testid="article-viewer-stub"] with the content
+    const viewer = screen.getByTestId("article-viewer-stub");
+    expect(viewer).toBeInTheDocument();
+    expect(viewer).toHaveTextContent("## What happened");
+  });
+
+  it("renders empty state when body is absent (null)", () => {
+    const story = makeDetail({ body: null });
+    renderWithProviders(<StoryDetailClient story={story} />);
+
+    // Section heading still rendered
+    expect(screen.getByText(/after-action review/i)).toBeInTheDocument();
+
+    // Empty state message shown; ArticleViewer NOT rendered
+    expect(screen.getByText(/no aar body available/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("article-viewer-stub")).not.toBeInTheDocument();
+  });
+
+  it("renders empty state when body is undefined", () => {
+    const story = makeDetail({ body: undefined });
+    renderWithProviders(<StoryDetailClient story={story} />);
+
+    expect(screen.getByText(/no aar body available/i)).toBeInTheDocument();
+    expect(screen.queryByTestId("article-viewer-stub")).not.toBeInTheDocument();
+  });
 });

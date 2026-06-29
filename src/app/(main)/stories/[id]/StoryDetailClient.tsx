@@ -4,13 +4,14 @@
  * StoryDetailClient — rich detail view for a single op story.
  *
  * Sections (per task UX spec):
- *   1. Metadata    — title, project, lifecycle status badge, date, domains
- *   2. Status timeline — lifecycle dates + reason_code
- *   3. Safety / scrub — sensitivity badge + scrub.summary + issue count
- *   4. Publication — draft_pr_url, published_url, post_slug
- *   5. Source      — safe_ref/safe_uri (only when present; omitted if held)
- *   6. Related refs — ccdash_session, ccdash_feature, routing_tags
- *   7. Primary action — View Draft PR / View Published / no-op
+ *   1. Metadata           — title, project, lifecycle status badge, date, domains
+ *   2. After-Action Review — AAR markdown body via ArticleViewer; empty-state when absent
+ *   3. Status timeline    — lifecycle dates + reason_code
+ *   4. Safety / scrub     — sensitivity badge + scrub.summary + issue count
+ *   5. Publication        — draft_pr_url, published_url, post_slug
+ *   6. Source             — safe_ref/safe_uri (only when present; omitted if held)
+ *   7. Related refs       — ccdash_session, ccdash_feature, routing_tags
+ *   8. Primary action     — View Draft PR / View Published / no-op
  *
  * "Held" UX: when sensitivity.level != "public", source.safe_ref/safe_uri
  * are null. Render "Details hidden (held)" + scrub.summary instead.
@@ -30,6 +31,7 @@ import {
   Lock,
   Shield,
 } from "lucide-react";
+import { ArticleViewer } from "@miethe/ui";
 import { cn } from "@/lib/utils";
 import { STORIES_REDACTION_DISABLED } from "@/lib/env";
 import type { StoryDetail } from "@/types/stories";
@@ -347,7 +349,29 @@ export function StoryDetailClient({ story }: StoryDetailClientProps) {
         )}
       </Section>
 
-      {/* Section 2: Status timeline */}
+      {/* Section 2: After-Action Review body */}
+      <Section title="After-Action Review">
+        {story.body ? (
+          <ArticleViewer
+            content={story.body}
+            variant="editorial"
+            format="auto"
+            frontmatter="hide"
+            sanitize={true}
+            generateHeadingIds={true}
+            className="rounded-md border bg-card p-6"
+          />
+        ) : (
+          <div
+            role="status"
+            className="flex items-center justify-center rounded-md border border-dashed py-10 text-center"
+          >
+            <p className="text-sm text-muted-foreground">No AAR body available.</p>
+          </div>
+        )}
+      </Section>
+
+      {/* Section 3: Status timeline */}
       <Section title="Status Timeline">
         <dl className="flex flex-col gap-2">
           <MetaRow label="Current status">
@@ -376,7 +400,7 @@ export function StoryDetailClient({ story }: StoryDetailClientProps) {
         </dl>
       </Section>
 
-      {/* Section 3: Safety / Scrub */}
+      {/* Section 4: Safety / Scrub */}
       <Section title="Safety and Scrub">
         <dl className="flex flex-col gap-2">
           <MetaRow label="Sensitivity">
@@ -406,7 +430,7 @@ export function StoryDetailClient({ story }: StoryDetailClientProps) {
         </dl>
       </Section>
 
-      {/* Section 4: Publication */}
+      {/* Section 5: Publication */}
       <Section title="Publication">
         <dl className="flex flex-col gap-2">
           <MetaRow label="State">
@@ -438,7 +462,7 @@ export function StoryDetailClient({ story }: StoryDetailClientProps) {
         </dl>
       </Section>
 
-      {/* Section 5: Source (only when not held) */}
+      {/* Section 6: Source (only when not held) */}
       {!isHeld && (story.source.safe_ref || story.source.safe_uri) && (
         <Section title="Source">
           <dl className="flex flex-col gap-2">
@@ -458,7 +482,7 @@ export function StoryDetailClient({ story }: StoryDetailClientProps) {
         </Section>
       )}
 
-      {/* Section 6: Related refs */}
+      {/* Section 7: Related refs */}
       {/* Optional-chain guards: backend guarantees non-null but be resilient */}
       {(story.related_refs?.ccdash_session ||
         story.related_refs?.ccdash_feature ||
