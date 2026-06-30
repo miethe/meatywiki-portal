@@ -60,6 +60,8 @@ const EDGE_TYPE_LABELS: Record<string, string> = {
   possible_duplicate_of: "Possible duplicate of",
   redirects_to: "Redirects to",
   merged_into: "Merged into",
+  handoff_to: "Hands off to",
+  handoff_from: "Handed off from",
 };
 
 const EDGE_TYPE_COLOURS: Record<string, string> = {
@@ -74,6 +76,8 @@ const EDGE_TYPE_COLOURS: Record<string, string> = {
   possible_duplicate_of: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
   redirects_to: "bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-300",
   merged_into: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
+  handoff_to: "bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-200",
+  handoff_from: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
 };
 
 /** All selectable edge types for the "Add connection" flow. */
@@ -89,6 +93,7 @@ const LINK_EDGE_TYPES: ArtifactEdgeType[] = [
   "possible_duplicate_of",
   "redirects_to",
   "merged_into",
+  "handoff_to",
 ];
 
 // ---------------------------------------------------------------------------

@@ -36,6 +36,8 @@ export type GraphEdgeType =
   | "supports"
   | "contains"
   | "superseded_by"
+  | "handoff_to"
+  | "handoff_from"
   | (string & {}); // forward-compatible
 
 // ---------------------------------------------------------------------------
@@ -257,6 +259,8 @@ export const EDGE_TYPE_STYLES: Record<string, EdgeLineStyle> = {
   supports: "dotted",
   contains: "thick-solid",
   superseded_by: "red-dashed",
+  handoff_to: "dashed",
+  handoff_from: "dashed",
 } as const;
 
 /** Edge type → human-readable label. */
@@ -266,6 +270,8 @@ export const EDGE_TYPE_LABELS: Record<string, string> = {
   supports: "Supports",
   contains: "Contains",
   superseded_by: "Superseded by",
+  handoff_to: "Hands off to",
+  handoff_from: "Handed off from",
 } as const;
 
 /**
@@ -362,6 +368,8 @@ export const FIDELITY_SIZE_DEFAULT = 7;
  *   semantic_similar      #a21caf (fuchsia-700)  7.15:1 ✓  (dashed)
  *   merged_into           #be185d (pink-700)     6.40:1 ✓
  *   redirects_to          #0e7490 (cyan-700)     5.94:1 ✓
+ *   handoff_to            #d97706 (amber-600)    4.88:1 ✓
+ *   handoff_from          #f59e0b (amber-500)    3.04:1 ✓  (lighter companion shade)
  */
 export const EDGE_TYPE_COLORS: Record<string, string> = {
   derived_from:          "#4f46e5",
@@ -377,6 +385,8 @@ export const EDGE_TYPE_COLORS: Record<string, string> = {
   semantic_similar:      "#a21caf",
   merged_into:           "#be185d",
   redirects_to:          "#0e7490",
+  handoff_to:            "#d97706",
+  handoff_from:          "#f59e0b",
 } as const;
 
 /** Fallback edge color for unknown edge types. */

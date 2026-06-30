@@ -70,6 +70,7 @@ import {
   Link2,
   BookOpen,
   GitMerge,
+  Share2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { TypeBadge } from "@/components/ui/type-badge";
@@ -79,7 +80,10 @@ import {
   type ArtifactEdgeItem,
   type EdgeType,
 } from "@/hooks/useArtifactEdges";
-import type { ArtifactDetail } from "@/types/artifact";
+import { useArtifactHandoffs, type HandoffEdgeItem } from "@/hooks/useArtifactHandoffs";
+import { useCreateHandoff } from "@/hooks/useCreateHandoff";
+import { ArtifactSearchDialog } from "@/components/search/ArtifactSearchDialog";
+import type { ArtifactDetail, ArtifactCard } from "@/types/artifact";
 
 // Convenience alias — ContextRail panels operate on ArtifactDetail
 type Artifact = ArtifactDetail;
@@ -867,6 +871,182 @@ function ResearchMetadataPanel({ artifact }: { artifact: Artifact | undefined })
 }
 
 // ---------------------------------------------------------------------------
+// HandoffsPanel — Bundle E / P4-02 + P4-03
+// ---------------------------------------------------------------------------
+
+/**
+ * Inline panel for GET /api/artifacts/:id/handoffs.
+ *
+ * Renders a flat list of handoff targets with nullable metadata (confidence,
+ * source, agent_id, agent_role). Includes a minimal "Declare handoff" button
+ * that opens ArtifactSearchDialog to pick a target, then calls useCreateHandoff.
+ * target_not_found (HTTP 400) errors are surfaced inline below the button.
+ *
+ * P4-03 resilience: never crashes on null/empty data — empty state is shown
+ * when data.data is missing or empty.
+ */
+function HandoffsPanel({ artifactId }: { artifactId: string | undefined }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const { data, isLoading, isError, error, refetch } = useArtifactHandoffs(
+    artifactId ?? null,
+  );
+  const {
+    mutate,
+    isPending,
+    error: createError,
+    reset: resetMutation,
+  } = useCreateHandoff(artifactId ?? "");
+
+  // Guard: no artifact selected
+  if (!artifactId) {
+    return (
+      <div
+        role="status"
+        className="py-6 text-center text-xs text-muted-foreground"
+      >
+        No artifact selected
+      </div>
+    );
+  }
+
+  // Loading skeleton
+  if (isLoading) {
+    return (
+      <div aria-busy="true" aria-label="Loading handoffs" className="flex flex-col gap-2">
+        {Array.from({ length: 3 }, (_, i) => (
+          <div
+            key={i}
+            aria-hidden="true"
+            className="flex animate-pulse items-center gap-1.5 rounded-md border bg-card px-2.5 py-2"
+          >
+            <div className="h-3 w-16 rounded-sm bg-muted" />
+            <div className="h-3 w-24 rounded bg-muted" />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Error state
+  if (isError && error) {
+    return (
+      <div
+        role="alert"
+        className="flex flex-col items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-4 text-center"
+      >
+        <AlertCircle aria-hidden="true" className="size-4 text-destructive" />
+        <p className="text-xs text-muted-foreground">{error.message}</p>
+        <button
+          type="button"
+          onClick={refetch}
+          className={cn(
+            "inline-flex h-7 items-center rounded border border-destructive/40 px-2 text-[11px] text-destructive",
+            "hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  // P4-03: safe empty-state — data may be undefined or have an empty data array
+  const handoffs: HandoffEdgeItem[] = data?.data ?? [];
+
+  function handleSelect(artifacts: ArtifactCard[]) {
+    const target = artifacts[0];
+    if (!target?.id) return;
+    resetMutation();
+    mutate({ target_id: target.id });
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {/* Declare handoff affordance */}
+      <button
+        type="button"
+        onClick={() => {
+          resetMutation();
+          setDialogOpen(true);
+        }}
+        disabled={isPending}
+        className={cn(
+          "inline-flex h-7 w-full items-center justify-center gap-1.5 rounded-md border border-dashed px-3 text-[11px] font-medium",
+          "text-muted-foreground transition-colors",
+          "hover:border-primary/40 hover:text-foreground",
+          "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          isPending && "cursor-not-allowed opacity-60",
+        )}
+      >
+        <Share2 aria-hidden="true" className="size-3 shrink-0" />
+        {isPending ? "Declaring…" : "Declare handoff"}
+      </button>
+
+      {/* Inline create error (includes target_not_found mapped message) */}
+      {createError && (
+        <p
+          role="alert"
+          className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5 text-[11px] text-destructive"
+        >
+          {createError}
+        </p>
+      )}
+
+      {/* P4-03: empty state */}
+      {handoffs.length === 0 ? (
+        <div
+          role="status"
+          className="flex flex-col items-center gap-2 rounded-md border border-dashed px-3 py-6 text-center"
+        >
+          <Share2 aria-hidden="true" className="size-5 text-muted-foreground/40" />
+          <p className="text-xs font-medium text-foreground">No handoffs declared</p>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Use &ldquo;Declare handoff&rdquo; to mark this artifact as the source for another.
+          </p>
+        </div>
+      ) : (
+        <ul role="list" aria-label="Handoff targets" className="flex flex-col gap-1.5">
+          {handoffs.map((item) => {
+            // Build a compact metadata line from all nullable fields
+            const metaParts = [
+              item.artifact_type,
+              item.confidence != null
+                ? `conf. ${(item.confidence * 100).toFixed(0)}%`
+                : null,
+              item.source,
+              item.agent_role,
+            ].filter(Boolean);
+
+            return (
+              <li
+                key={item.id}
+                className="flex flex-col gap-0.5 rounded-md border bg-card px-2.5 py-2"
+              >
+                <span className="truncate text-xs font-medium text-foreground">
+                  {item.title ?? item.id}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {metaParts.length > 0 ? metaParts.join(" · ") : "No metadata"}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {/* Target picker dialog */}
+      <ArtifactSearchDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        onSelect={handleSelect}
+        mode="single"
+      />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Tab sets
 // ---------------------------------------------------------------------------
 
@@ -887,6 +1067,11 @@ const GENERIC_TABS: ContextRailTab[] = [
     // Activity entries are not yet fetched (endpoint not shipped).
     // OQ-P3-03-C: pass null so HistoryPanel renders the graceful empty state.
     renderContent: () => <HistoryPanel entries={null} />,
+  },
+  {
+    id: "handoffs",
+    label: "Handoffs",
+    renderContent: (artifactId) => <HandoffsPanel artifactId={artifactId} />,
   },
 ];
 

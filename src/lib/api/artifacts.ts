@@ -760,7 +760,9 @@ export type ArtifactEdgeType =
   | "generated_by"
   | "possible_duplicate_of"
   | "redirects_to"
-  | "merged_into";
+  | "merged_into"
+  | "handoff_to"
+  | "handoff_from";
 
 export interface LinkArtifactRequest {
   target_id: string;
@@ -1213,4 +1215,44 @@ export async function unlinkEdge(
     (qs ? `?${qs}` : "");
 
   return apiFetch<void>(path, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Handoff edges (Entity Linkage Handoff — Bundle E / P4-02)
+// ---------------------------------------------------------------------------
+
+export interface CreateHandoffBody {
+  target_id: string;
+  agent_id?: string;
+  agent_role?: string;
+}
+
+/** Shape of the created handoff edge returned by POST /api/artifacts/:id/handoff-to. */
+export interface HandoffEdgeCreated {
+  source_id: string;
+  target_id: string;
+  agent_id?: string | null;
+  agent_role?: string | null;
+}
+
+/**
+ * Declare a handoff from this artifact to a target artifact.
+ *
+ * Backend: POST /api/artifacts/{source_id}/handoff-to
+ * Body: { target_id, agent_id?, agent_role? }
+ *
+ * On unknown target the backend returns HTTP 400 with:
+ *   { error: { code: "target_not_found", ... } }
+ *
+ * This function lets the ApiError propagate — callers are responsible for
+ * inspecting the error envelope and surfacing it inline.
+ */
+export async function createHandoff(
+  sourceId: string,
+  body: CreateHandoffBody,
+): Promise<HandoffEdgeCreated> {
+  return apiFetch<HandoffEdgeCreated>(
+    `/artifacts/${encodeURIComponent(sourceId)}/handoff-to`,
+    { method: "POST", body: JSON.stringify(body) },
+  );
 }
